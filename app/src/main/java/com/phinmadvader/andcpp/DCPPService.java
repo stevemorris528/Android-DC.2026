@@ -767,14 +767,6 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								}
 							}
 							
-							try {
-								Thread.sleep(500);
-							} catch (InterruptedException e) {
-								break;
-							}
-						}
-									break;
-							}
 							FileSize fs = new FileSize(work.avg_speed());
 							long total = work.total_bytes();
 							long done = work.bytes_done();
@@ -1470,6 +1462,40 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public List<String> get_board_messages() {
 		return get_board_messages(null);
+	}
+
+	public boolean send_chat_message(String hubIp, String text) {
+		if (text == null || text.trim().isEmpty()) return false;
+		HubSession session = getSession(hubIp);
+		if (session == null && hubIp != null && !hubIp.contains(":")) {
+			for (HubSession s : sessions.values()) {
+				if (s.hubIp.equals(hubIp)) {
+					session = s;
+					break;
+				}
+			}
+		}
+		if (session == null && !sessions.isEmpty()) {
+			session = sessions.values().iterator().next();
+		}
+		if (session != null && session.client != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
+			String myNick = session.myuser.nick;
+			String formatted = "<" + myNick + "> " + text.trim();
+			final HubSession activeSession = session;
+			new Thread(() -> {
+				try {
+					activeSession.client.sendRaw(formatted);
+				} catch (Exception e) {
+					Log.e("andcpp", "Failed to send chat message: " + e.getMessage(), e);
+				}
+			}).start();
+			return true;
+		}
+		return false;
+	}
+
+	public boolean send_chat_message(String text) {
+		return send_chat_message(null, text);
 	}
 
 	public DCPPService() {
