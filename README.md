@@ -13,6 +13,9 @@ Original project: AnDCpp
 
 Developed further by the Android DC++ Plus Plus project.
 
-Current development passive dl , multy hub /fave users ect....
+Current development passive dl , multy hub /fav hubs  / and much more 
+
+
+
 
 
