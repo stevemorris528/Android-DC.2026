@@ -1508,6 +1508,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		ensureForeground("");
 		if (initiated_downloads == null)
 			initiated_downloads = new ArrayList<DownloadObject>();
 		if (normal_queue == null)
@@ -1742,13 +1743,25 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			
 			long sharedSize = (uploadManager != null) ? uploadManager.getSharedSize() : (17000L * 1024 * 1024);
 			session.prefs = new DCPreferences(nick, sharedSize, ip, activeMode, uploadPort);
+			String savedPass = prefs.getString("favorite_passwords_" + hubKey, "");
+			if (savedPass.isEmpty()) {
+				savedPass = prefs.getString("favorite_passwords_" + ip, "");
+			}
+			if (!savedPass.isEmpty()) {
+				session.prefs.password = savedPass;
+			}
 			session.myuser = new DCUser();
 			session.myuser.nick = nick;
 			session.myuser.active = activeMode;
 
 			connectToHub(hubKey, session);
 		} else {
-			Log.e("andcpp", "Already connecting/connected to " + hubKey);
+			HubSession session = sessions.get(hubKey);
+			Log.d("andcpp", "Session already exists for " + hubKey + ", status: " + (session != null ? session.status : "null"));
+			if (session != null && (session.status == DCClientStatus.DISCONNECTED || session.status == DCClientStatus.RECONNECTING || session.status == DCClientStatus.INVALIDIP)) {
+				session.reconnectAttempts = 0;
+				connectToHub(hubKey, session);
+			}
 			mySendBroadcast(ip, false, true);
 		}
 
@@ -1761,6 +1774,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				if (session.client != null) {
 					session.client.close();
+				}
+				if (session.prefs != null) {
+					SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, 0);
+					String savedPass = prefs.getString("favorite_passwords_" + hubKey, "");
+					if (savedPass.isEmpty()) {
+						savedPass = prefs.getString("favorite_passwords_" + session.hubIp, "");
+					}
+					if (!savedPass.isEmpty()) {
+						session.prefs.password = savedPass;
+					}
 				}
 				session.client = new DCClient();
 				session.client.connect(session.hubIp, session.hubPort, session.prefs);

@@ -1,0 +1,344 @@
+package com.phinmadvader.andcpp;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.BaseAdapter;
+import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.ListView;
+import android.widget.TextView;
+import android.widget.Toast;
+import android.app.AlertDialog;
+import com.phinvader.libjdcpp.DCUser;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+public class HubListFragment extends Fragment {
+    private ListView listView;
+    private CheckBox autoReconnectCheckBox;
+    private HubListAdapter adapter;
+    private MainActivity mainActivity;
+    private static final String FAVORITE_HUBS_PREF = "favorite_hubs";
+
+    @Override
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        mainActivity = (MainActivity) getActivity();
+        View view = inflater.inflate(R.layout.hub_list_layout, container, false);
+        autoReconnectCheckBox = (CheckBox) view.findViewById(R.id.checkbox_auto_reconnect);
+        if (autoReconnectCheckBox != null) {
+            autoReconnectCheckBox.setChecked(Settings.getAutoReconnectHubs(mainActivity));
+            autoReconnectCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                Settings.putAutoReconnectHubs(isChecked, mainActivity);
+            });
+        }
+        listView = (ListView) view.findViewById(R.id.hub_list_view);
+        listView.setOnTouchListener((v, event) -> {
+            v.getParent().requestDisallowInterceptTouchEvent(true);
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN || event.getAction() == android.view.MotionEvent.ACTION_MOVE) {
+                v.getParent().requestDisallowInterceptTouchEvent(true);
+            }
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP) {
+                v.performClick();
+            }
+            return false;
+        });
+        adapter = new HubListAdapter();
+        listView.setAdapter(adapter);
+
+        listView.setOnItemClickListener((parent, view1, position, id) -> {
+            HubEntry entry = (HubEntry) adapter.getItem(position);
+            showHubOptionsDialog(entry);
+        });
+
+        listView.setOnItemLongClickListener((parent, view1, position, id) -> {
+            HubEntry entry = (HubEntry) adapter.getItem(position);
+            showHubOptionsDialog(entry);
+            return true;
+        });
+
+        return view;
+    }
+
+    private void showHubOptionsDialog(HubEntry entry) {
+        if (entry == null) return;
+        SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+        Set<String> favorites = prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>());
+        boolean isFav = favorites.contains(entry.hubIp);
+        boolean isConnected = (entry.session != null && entry.session.status == DCPPService.DCClientStatus.CONNECTED);
+
+        List<String> optionsList = new ArrayList<>();
+        if (isConnected) {
+            optionsList.add("Open Hub");
+            optionsList.add("Disconnect");
+            optionsList.add("Delete Hub");
+        } else {
+            optionsList.add("Connect");
+            optionsList.add("Delete Hub");
+        }
+        if (isFav) {
+            optionsList.add("Remove Hub");
+        } else {
+            optionsList.add("Add to Favorite Hubs");
+        }
+        optionsList.add("Save Password");
+
+        final String[] options = optionsList.toArray(new String[0]);
+
+        new AlertDialog.Builder(getActivity())
+                .setTitle(entry.hubIp)
+                .setItems(options, (dialog, which) -> {
+                    String selected = options[which];
+                    switch (selected) {
+                        case "Open Hub":
+                            if (entry.session != null) {
+                                mainActivity.openChatForHub(entry.session.hubIp);
+                            }
+                            break;
+                        case "Disconnect":
+                            if (mainActivity.mService != null && entry.session != null) {
+                                mainActivity.mService.shutdownSession(entry.session.hubIp);
+                                refresh();
+                            }
+                            break;
+                        case "Delete Hub":
+                            if (mainActivity.mService != null && entry.session != null) {
+                                mainActivity.mService.shutdownSession(entry.session.hubIp);
+                            }
+                            SharedPreferences delPrefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+                            Set<String> delFavorites = new HashSet<>(delPrefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
+                            delFavorites.remove(entry.hubIp);
+                            if (entry.session != null) {
+                                delFavorites.remove(entry.session.hubIp + ":" + entry.session.hubPort);
+                            }
+                            delPrefs.edit().putStringSet(FAVORITE_HUBS_PREF, delFavorites).apply();
+                            refresh();
+                            Toast.makeText(getActivity(), "Hub deleted", Toast.LENGTH_SHORT).show();
+                            break;
+                        case "Connect":
+                            adapter.connectToHub(entry.hubIp);
+                            break;
+                        case "Add to Favorite Hubs":
+                        case "Remove Hub":
+                            adapter.toggleFavorite(entry.hubIp);
+                            refresh();
+                            break;
+                        case "Save Password":
+                            showPasswordDialog(entry.hubIp);
+                            break;
+                    }
+                })
+                .show();
+    }
+
+    private void showPasswordDialog(final String hubIp) {
+        final android.widget.EditText input = new android.widget.EditText(getActivity());
+        input.setHint("Enter hub password");
+        input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+
+        SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+        String savedPass = prefs.getString("favorite_passwords_" + hubIp, "");
+        if (savedPass.isEmpty() && hubIp.contains(":")) {
+            savedPass = prefs.getString("favorite_passwords_" + hubIp.split(":")[0], "");
+        }
+        input.setText(savedPass);
+
+        new AlertDialog.Builder(getActivity())
+                .setTitle("Save Password for " + hubIp)
+                .setView(input)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    String pass = input.getText().toString();
+                    SharedPreferences.Editor editor = prefs.edit();
+                    editor.putString("favorite_passwords_" + hubIp, pass);
+                    if (hubIp.contains(":")) {
+                        editor.putString("favorite_passwords_" + hubIp.split(":")[0], pass);
+                    }
+                    editor.apply();
+                    if (mainActivity.mService != null) {
+                        DCPPService.HubSession session = mainActivity.mService.getSession(hubIp);
+                        if (session != null && session.prefs != null) {
+                            session.prefs.password = pass;
+                        }
+                    }
+                    Toast.makeText(getActivity(), "Password saved for " + hubIp, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    public void refresh() {
+        if (autoReconnectCheckBox != null && mainActivity != null) {
+            autoReconnectCheckBox.setChecked(Settings.getAutoReconnectHubs(mainActivity));
+        }
+        if (adapter != null) {
+            adapter.updateEntries();
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    private class HubEntry {
+        String hubIp;
+        DCPPService.HubSession session;
+        boolean isFavorite;
+
+        HubEntry(String hubIp, DCPPService.HubSession session, boolean isFavorite) {
+            this.hubIp = hubIp;
+            this.session = session;
+            this.isFavorite = isFavorite;
+        }
+    }
+
+    private class HubListAdapter extends BaseAdapter {
+        private List<HubEntry> entries = new ArrayList<>();
+
+        private void updateEntries() {
+            List<HubEntry> newEntries = new ArrayList<>();
+            SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+            Set<String> favorites = prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>());
+            
+            List<DCPPService.HubSession> activeSessions = new ArrayList<>();
+            if (mainActivity.mService != null) {
+                activeSessions = mainActivity.mService.getActiveSessions();
+            }
+
+            Set<String> processedIps = new HashSet<>();
+
+            for (DCPPService.HubSession session : activeSessions) {
+                String hubIdentifier = session.hubIp + (session.hubPort != 411 ? ":" + session.hubPort : "");
+                newEntries.add(new HubEntry(hubIdentifier, session, favorites.contains(session.hubIp) || favorites.contains(hubIdentifier)));
+                processedIps.add(session.hubIp);
+                processedIps.add(hubIdentifier);
+            }
+
+            for (String favIp : favorites) {
+                if (!processedIps.contains(favIp)) {
+                    // Check if favIp contains port already or if we can find matching active session
+                    boolean alreadyAdded = false;
+                    for (HubEntry e : newEntries) {
+                        if (e.hubIp.startsWith(favIp) || favIp.startsWith(e.hubIp)) {
+                            alreadyAdded = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyAdded) {
+                        newEntries.add(new HubEntry(favIp, null, true));
+                    }
+                }
+            }
+            this.entries = newEntries;
+        }
+
+        @Override
+        public int getCount() {
+            return entries.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return entries.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (convertView == null) {
+                convertView = LayoutInflater.from(getActivity()).inflate(R.layout.hub_list_item, parent, false);
+            }
+            final HubEntry entry = (HubEntry) getItem(position);
+            TextView address = (TextView) convertView.findViewById(R.id.hub_address);
+            TextView status = (TextView) convertView.findViewById(R.id.hub_status);
+            TextView info = (TextView) convertView.findViewById(R.id.hub_info);
+
+            if (entry.session != null) {
+                String hubNameStr = entry.session.hubName;
+                String favIndicator = entry.isFavorite ? " ✓" : "";
+                
+                if (hubNameStr != null && !hubNameStr.isEmpty()) {
+                    address.setText(hubNameStr + favIndicator);
+                    status.setText((entry.session.status != null ? entry.session.status.toString() : "UNKNOWN") + " - " + entry.session.hubIp + ":" + entry.session.hubPort);
+                } else {
+                    address.setText(entry.session.hubIp + ":" + entry.session.hubPort + favIndicator);
+                    status.setText(entry.session.status != null ? entry.session.status.toString() : "UNKNOWN");
+                }
+                
+                int userCount = 0;
+                String tag = "N/A";
+                if (entry.session.client != null) {
+                    List<DCUser> nicks = entry.session.client.get_nick_list();
+                    if (nicks != null) userCount = nicks.size();
+                    if (entry.session.myuser != null && entry.session.myuser.tag != null) tag = entry.session.myuser.tag;
+                }
+                info.setText("Users: " + userCount + " | Tag: " + tag);
+                
+                // Color the favorite tick green if it's a favorite
+                if (entry.isFavorite) {
+                    android.text.SpannableString spannable = new android.text.SpannableString(address.getText());
+                    int tickIndex = spannable.toString().lastIndexOf("✓");
+                    if (tickIndex >= 0) {
+                        spannable.setSpan(new android.text.style.ForegroundColorSpan(0xFF4CAF50), tickIndex, tickIndex + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                    address.setText(spannable);
+                }
+            } else {
+                address.setText(entry.hubIp + (entry.isFavorite ? " ✓" : ""));
+                
+                if (entry.isFavorite) {
+                    android.text.SpannableString spannable = new android.text.SpannableString(address.getText());
+                    int tickIndex = spannable.toString().lastIndexOf("✓");
+                    if (tickIndex >= 0) {
+                        spannable.setSpan(new android.text.style.ForegroundColorSpan(0xFF4CAF50), tickIndex, tickIndex + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    }
+                    address.setText(spannable);
+                }
+                
+                status.setText("OFFLINE (Favorite)");
+                info.setText("");
+            }
+
+            return convertView;
+        }
+
+        private void connectToHub(String hubIp) {
+            SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+            String nick = prefs.getString(Constants.SETTINGS_NICK_KEY, "");
+            if (nick.isEmpty()) {
+                Toast.makeText(mainActivity, "Please set a nickname in Login tab first", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String ip = hubIp;
+            String port = "411";
+            String[] parts = hubIp.split(":");
+            if (parts.length == 2) {
+                ip = parts[0];
+                port = parts[1];
+            } else if (parts.length > 2) {
+                Toast.makeText(mainActivity, "Invalid Hub Address", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            mainActivity.startBackgroundService(nick, ip, port);
+        }
+
+        private void toggleFavorite(String hubIp) {
+            SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+            Set<String> favorites = new HashSet<>(prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
+            if (favorites.contains(hubIp)) {
+                favorites.remove(hubIp);
+            } else {
+                favorites.add(hubIp);
+            }
+            prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
+        }
+    }
+}

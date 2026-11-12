@@ -1,0 +1,4 @@
+#Thu Nov 12 17:28:23 NZDT 2026
+base.0=D\:\\Downloads\\AnDCpp-Hub-Connection-Test-Gradle\\andcpp-gradle\\app\\build\\intermediates\\dex\\debug\\mergeDexDebug\\classes.dex
+path.0=classes.dex
+renamed.0=classes.dex

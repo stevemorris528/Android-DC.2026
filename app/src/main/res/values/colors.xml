@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand / Accent Colors - Teal (Default) -->
+    <color name="brand_primary">#00796B</color>
+    <color name="brand_primary_dark">#004D40</color>
+    <color name="brand_accent">#009688</color>
+    <color name="brand_tab_selected">#00796B</color>
+    <color name="brand_tab_pressed">#E0F2F1</color>
+    <color name="brand_tab_unselected">#757575</color>
+    <color name="brand_tab_background">#FAFAFA</color>
+    <color name="brand_tab_bar_bg">#EEEEEE</color>
+
+    <!-- Blue Theme Accent -->
+    <color name="theme_blue_primary">#1976D2</color>
+    <color name="theme_blue_primary_dark">#0D47A1</color>
+    <color name="theme_blue_accent">#2196F3</color>
+    <color name="theme_blue_pressed">#E3F2FD</color>
+
+    <!-- Orange Theme Accent -->
+    <color name="theme_orange_primary">#E65100</color>
+    <color name="theme_orange_primary_dark">#BF360C</color>
+    <color name="theme_orange_accent">#FF9800</color>
+    <color name="theme_orange_pressed">#FFF3E0</color>
+
+    <!-- Purple Theme Accent -->
+    <color name="theme_purple_primary">#512DA8</color>
+    <color name="theme_purple_primary_dark">#311B92</color>
+    <color name="theme_purple_accent">#7E57C2</color>
+    <color name="theme_purple_pressed">#EDE7F6</color>
+
+    <!-- Green Theme Accent -->
+    <color name="theme_green_primary">#2E7D32</color>
+    <color name="theme_green_primary_dark">#1B5E20</color>
+    <color name="theme_green_accent">#4CAF50</color>
+    <color name="theme_green_pressed">#E8F5E9</color>
+
+    <!-- Light Mode Surfaces & Text -->
+    <color name="light_bg">#F5F5F5</color>
+    <color name="light_surface">#FFFFFF</color>
+    <color name="light_header_bg">#F5F5F5</color>
+    <color name="light_text_primary">#212121</color>
+    <color name="light_text_secondary">#757575</color>
+    <color name="light_divider">#EEEEEE</color>
+    <color name="light_input_bg">#FFFFFF</color>
+    <color name="light_dialog_bg">#FFFFFF</color>
+    <color name="light_dialog_stroke">#E0E0E0</color>
+
+    <!-- Dark Mode Surfaces & Text -->
+    <color name="dark_bg">#121212</color>
+    <color name="dark_surface">#1E1E1E</color>
+    <color name="dark_header_bg">#252525</color>
+    <color name="dark_text_primary">#EEEEEE</color>
+    <color name="dark_text_secondary">#B0B0B0</color>
+    <color name="dark_divider">#333333</color>
+    <color name="dark_input_bg">#2A2A2A</color>
+    <color name="dark_dialog_bg">#242424</color>
+    <color name="dark_dialog_stroke">#424242</color>
+    <color name="dark_tab_background">#1E1E1E</color>
+    <color name="dark_tab_bar_bg">#181818</color>
+    <color name="dark_tab_pressed">#2C2C2C</color>
+
+    <!-- Dialog Colors -->
+    <color name="dialog_background">#FFFFFF</color>
+    <color name="dialog_stroke">#E0E0E0</color>
+
+    <!-- Welcome Screen Button Colors -->
+    <color name="btn_blue_normal">#2196F3</color>
+    <color name="btn_blue_pressed">#1976D2</color>
+    <color name="btn_green_normal">#4CAF50</color>
+    <color name="btn_green_pressed">#388E3C</color>
+</resources>

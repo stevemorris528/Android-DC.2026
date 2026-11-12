@@ -1,0 +1,14 @@
+<resources>
+    <!-- Default screen margins, per the Android Design guidelines. -->
+    <dimen name="activity_horizontal_margin">16dp</dimen>
+    <dimen name="activity_vertical_margin">16dp</dimen>
+
+    <!-- Rounded corner radii -->
+    <dimen name="tab_corner_radius">12dp</dimen>
+    <dimen name="dialog_corner_radius">16dp</dimen>
+    <dimen name="button_corner_radius">12dp</dimen>
+
+    <!-- Tab dimensions -->
+    <dimen name="tab_padding_horizontal">6dp</dimen>
+    <dimen name="tab_text_size">11sp</dimen>
+</resources>

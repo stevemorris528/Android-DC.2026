@@ -1,0 +1,94 @@
+<resources>
+
+    <!-- Base Light Theme -->
+    <style name="AppBaseTheme" parent="android:Theme.Light">
+        <item name="appBackgroundColor">@color/light_bg</item>
+        <item name="appSurfaceColor">@color/light_surface</item>
+        <item name="appHeaderBackgroundColor">@color/light_header_bg</item>
+        <item name="appTextColorPrimary">@color/light_text_primary</item>
+        <item name="appTextColorSecondary">@color/light_text_secondary</item>
+        <item name="appDividerColor">@color/light_divider</item>
+        <item name="appInputBackgroundColor">@color/light_input_bg</item>
+
+        <item name="android:dialogTheme">@style/RoundedDialogTheme</item>
+        <item name="android:alertDialogTheme">@style/RoundedAlertDialogTheme</item>
+    </style>
+
+    <!-- Base Dark Theme -->
+    <style name="AppBaseThemeDark" parent="android:Theme.Black">
+        <item name="appBackgroundColor">@color/dark_bg</item>
+        <item name="appSurfaceColor">@color/dark_surface</item>
+        <item name="appHeaderBackgroundColor">@color/dark_header_bg</item>
+        <item name="appTextColorPrimary">@color/dark_text_primary</item>
+        <item name="appTextColorSecondary">@color/dark_text_secondary</item>
+        <item name="appDividerColor">@color/dark_divider</item>
+        <item name="appInputBackgroundColor">@color/dark_input_bg</item>
+
+        <item name="android:dialogTheme">@style/RoundedDialogThemeDark</item>
+        <item name="android:alertDialogTheme">@style/RoundedAlertDialogThemeDark</item>
+    </style>
+
+    <!-- Application theme. -->
+    <style name="AppTheme" parent="AppBaseTheme">
+        <item name="appColorAccent">@color/brand_tab_selected</item>
+        <item name="appColorAccentPressed">@color/brand_tab_pressed</item>
+    </style>
+
+    <style name="AppThemeDark" parent="AppBaseThemeDark">
+        <item name="appColorAccent">@color/brand_accent</item>
+        <item name="appColorAccentPressed">@color/dark_tab_pressed</item>
+    </style>
+
+    <!-- Light Theme Variants -->
+    <style name="AppTheme.Blue">
+        <item name="appColorAccent">@color/theme_blue_primary</item>
+        <item name="appColorAccentPressed">@color/theme_blue_pressed</item>
+    </style>
+    <style name="AppTheme.Orange">
+        <item name="appColorAccent">@color/theme_orange_primary</item>
+        <item name="appColorAccentPressed">@color/theme_orange_pressed</item>
+    </style>
+    <style name="AppTheme.Purple">
+        <item name="appColorAccent">@color/theme_purple_primary</item>
+        <item name="appColorAccentPressed">@color/theme_purple_pressed</item>
+    </style>
+    <style name="AppTheme.Green">
+        <item name="appColorAccent">@color/theme_green_primary</item>
+        <item name="appColorAccentPressed">@color/theme_green_pressed</item>
+    </style>
+
+    <!-- Dark Theme Variants -->
+    <style name="AppThemeDark.Blue">
+        <item name="appColorAccent">@color/theme_blue_accent</item>
+        <item name="appColorAccentPressed">@color/theme_blue_primary_dark</item>
+    </style>
+    <style name="AppThemeDark.Orange">
+        <item name="appColorAccent">@color/theme_orange_accent</item>
+        <item name="appColorAccentPressed">@color/theme_orange_primary_dark</item>
+    </style>
+    <style name="AppThemeDark.Purple">
+        <item name="appColorAccent">@color/theme_purple_accent</item>
+        <item name="appColorAccentPressed">@color/theme_purple_primary_dark</item>
+    </style>
+    <style name="AppThemeDark.Green">
+        <item name="appColorAccent">@color/theme_green_accent</item>
+        <item name="appColorAccentPressed">@color/theme_green_primary_dark</item>
+    </style>
+
+    <style name="RoundedDialogTheme" parent="android:Theme.Dialog">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg</item>
+    </style>
+
+    <style name="RoundedAlertDialogTheme" parent="android:Theme.Dialog">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg</item>
+    </style>
+
+    <style name="RoundedDialogThemeDark" parent="android:Theme.Dialog">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg_dark</item>
+    </style>
+
+    <style name="RoundedAlertDialogThemeDark" parent="android:Theme.Dialog">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg_dark</item>
+    </style>
+
+</resources>

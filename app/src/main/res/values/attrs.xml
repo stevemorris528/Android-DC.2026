@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Custom themeable attributes for Light and Dark modes -->
+    <attr name="appBackgroundColor" format="color|reference" />
+    <attr name="appSurfaceColor" format="color|reference" />
+    <attr name="appTextColorPrimary" format="color|reference" />
+    <attr name="appTextColorSecondary" format="color|reference" />
+    <attr name="appDividerColor" format="color|reference" />
+    <attr name="appInputBackgroundColor" format="color|reference" />
+    <attr name="appHeaderBackgroundColor" format="color|reference" />
+    <attr name="appColorAccent" format="color|reference" />
+    <attr name="appColorAccentPressed" format="color|reference" />
+</resources>

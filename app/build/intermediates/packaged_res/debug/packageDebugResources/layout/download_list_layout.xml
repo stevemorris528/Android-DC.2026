@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/appSurfaceColor">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="?attr/appHeaderBackgroundColor"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Downloads"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?attr/appTextColorSecondary" />
+
+        <Button
+            android:id="@+id/btnClearFinished"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Clear Finished"
+            android:textSize="12sp"
+            android:visibility="visible" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/uploadStatsLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:background="#E8F5E9"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/txtUploadSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Upload Speed: 0 KB/s"
+            android:textSize="12sp"
+            android:textColor="#2E7D32"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/txtUploadStats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Active: 0 | Queued: 0 | Total: 0 MB"
+            android:textSize="11sp"
+            android:textColor="#388E3C" />
+
+        <TextView
+            android:id="@+id/txtUploadPeers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Peers: None"
+            android:textSize="11sp"
+            android:textColor="#388E3C"
+            android:ellipsize="end"
+            android:maxLines="1" />
+
+        <TextView
+            android:id="@+id/txtUploadErrors"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Handshake Failures: 0 | Connection Errors: 0"
+            android:textSize="10sp"
+            android:textColor="#D32F2F" />
+    </LinearLayout>
+
+    <ListView
+        android:id="@+id/downloadListView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="?attr/appDividerColor"
+        android:dividerHeight="1dp" />
+</LinearLayout>

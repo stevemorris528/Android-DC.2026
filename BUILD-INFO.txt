@@ -1,0 +1,20 @@
+Android DC++ Hub Connection Test - Android Studio Gradle project
+
+Open this folder in Android Studio (the folder containing settings.gradle).
+Allow Android Studio to download the Gradle plugin, Gradle distribution, Android SDK platform 35,
+and the Android Support Library 28.0.0 when prompted.
+
+This conversion preserves the existing Java application source, resources, manifest, original
+libjdcpp Java source (as included in the application source tree), and the hub connection test.
+The old Eclipse/ADT project metadata is retained separately in libjdcpp-original where relevant.
+
+Build configuration:
+- Android Gradle Plugin 8.13.2
+- compile SDK 35
+- min SDK 14
+- target SDK 28 (kept low to avoid unrelated modern behavior changes during the connection test)
+- Java 8 source/target compatibility
+
+No claim is made that an APK has been successfully built here: a local Android SDK/Gradle build
+was not available in this environment. The first Android Studio Gradle sync/build will confirm
+whether any further source-level compatibility fixes are needed.

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="?attr/appSurfaceColor">
+
+    <ScrollView
+        android:id="@+id/messageScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:padding="12dp"
+        android:fadeScrollbars="false">
+
+        <TextView
+            android:id="@+id/msg_board"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?attr/appTextColorPrimary"
+            android:lineSpacingExtra="4dp"
+            android:textIsSelectable="true" />
+    </ScrollView>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/appDividerColor" />
+
+    <LinearLayout
+        android:id="@+id/chat_input_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:background="?attr/appHeaderBackgroundColor"
+        android:gravity="center_vertical">
+
+        <EditText
+            android:id="@+id/chat_input_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/chat_input_bg"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:minHeight="40dp"
+            android:hint="Type a message..."
+            android:textColor="?attr/appTextColorPrimary"
+            android:textColorHint="?attr/appTextColorSecondary"
+            android:inputType="textShortMessage|textCapSentences"
+            android:imeOptions="actionSend"
+            android:maxLines="4" />
+
+        <Button
+            android:id="@+id/chat_send_button"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginLeft="8dp"
+            android:background="@drawable/btn_green_rounded"
+            android:text="Send"
+            android:textColor="#FFFFFF"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

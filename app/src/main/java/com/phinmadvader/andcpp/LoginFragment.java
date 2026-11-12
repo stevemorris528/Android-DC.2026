@@ -1,0 +1,170 @@
+package com.phinmadvader.andcpp;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.os.Bundle;
+import android.support.v4.app.Fragment;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.TextView;
+import android.widget.Toast;
+
+/**
+ * Created by invader on 8/11/13.
+ */
+public class LoginFragment extends Fragment {
+	private MainActivity mainActivity;
+	private TextView downloadLocation;
+	private Button connectButton;
+	private EditText nickText;
+	private EditText ipText;
+	private android.widget.CheckBox activeCheckBox;
+	private final static String ConnectString = "Connect";
+	private final static String DisconnectString = "Disconnect";
+	private boolean is_connected = false;
+	private final static String VIEW_IS_CONNECTED_BUNDLE_KEY = "VIEWCONNECTSTATE";
+
+	@Override
+	public View onCreateView(LayoutInflater inflater, ViewGroup container,
+			Bundle savedInstanceState) {
+		this.mainActivity = (MainActivity) getActivity();
+		View rootView = inflater.inflate(R.layout.login_layout, container,
+				false);
+		downloadLocation = (TextView) rootView.findViewById(R.id.textView5);
+		nickText = (EditText) rootView.findViewById(R.id.editText2);
+		ipText = (EditText) rootView.findViewById(R.id.editText);
+		activeCheckBox = (android.widget.CheckBox) rootView.findViewById(R.id.checkBoxActive);
+		downloadLocation.setText(Settings.getDCDownloadsDirectory(getActivity()));
+		connectButton = (Button) rootView.findViewById(R.id.button);
+		connectButton.setText(ConnectString);
+		
+		
+		
+		connectButton.setOnClickListener(view -> {
+			connect();
+		});
+
+		// Get preference
+		String ip = mainActivity.getprefs().getString(
+				Constants.SETTINGS_IP_KEY, "");
+		String nick = mainActivity.getprefs().getString(
+				Constants.SETTINGS_NICK_KEY, "");
+		boolean active = mainActivity.getprefs().getBoolean(
+				Constants.SETTINGS_ACTIVE_KEY, false);
+		nickText.setText(nick);
+		ipText.setText(ip);
+		activeCheckBox.setChecked(active);
+		if (savedInstanceState != null)
+			is_connected = savedInstanceState
+					.getBoolean(VIEW_IS_CONNECTED_BUNDLE_KEY);
+		else
+			is_connected = false;
+		if (savedInstanceState == null)
+			Log.d("andcpp", "LoginFragment recreated with null state");
+		else
+			Log.d("andcpp", "LoginFragment recreated with save state");
+		setViewState(is_connected);
+		return rootView;
+	}
+
+	/**
+	 * Called to update view when poller service changes state (On
+	 * connect/disconnect)
+	 * 
+	 * @param is_connected
+	 */
+	public void setViewState(boolean is_connected) {
+		Log.d("andcpp",
+				"VIEW STATE SETTING TO : " + Boolean.toString(is_connected));
+		// this.is_connected = is_connected; // No longer just a single state
+		if (connectButton == null || nickText == null || ipText == null)
+			return;
+		// For now we allow multiple connects from the same UI, 
+		// but a more robust multi-hub UI would list active sessions.
+		connectButton.setText(ConnectString);
+		nickText.setEnabled(true);
+		ipText.setEnabled(true);
+	}
+
+	@Override
+	public void onSaveInstanceState(Bundle outState) {
+		super.onSaveInstanceState(outState);
+		outState.putBoolean(VIEW_IS_CONNECTED_BUNDLE_KEY, is_connected);
+		Log.d("andcpp", "Login fragment is saving...");
+	}
+
+	public void disconnect() {
+		mainActivity.stopBackgroundService();
+		connectButton.setText(ConnectString);
+	}
+
+	public void connect() {
+		String nick = nickText.getText().toString();
+		String ip_original = ipText.getText().toString();
+		String ip = ip_original;
+		String[] ip_port_raw = ip_original.split(":");
+		String port = "411";
+		if(ip_port_raw.length ==2){
+			ip = ip_port_raw[0];
+			port = ip_port_raw[1];
+			
+		}
+		
+
+		// Check Valid IP
+		if (ip_port_raw.length > 2) {
+			Toast.makeText(mainActivity, "Invalid Address",
+					Toast.LENGTH_LONG).show();
+			return;
+		}
+
+		if (nick.length() == 0 || nick.contains(" ")) {
+			Toast.makeText(mainActivity, "Invalid Nickname", Toast.LENGTH_LONG)
+					.show();
+			return;
+		}
+		//Check valid internet connection.
+		if(!Connectivity.isConnected(getActivity())){
+			Toast.makeText(getActivity(), "Please connect to the internet!", Toast.LENGTH_LONG)
+				.show();
+			return;
+		}
+		
+		// Store in preference
+		SharedPreferences.Editor editor = mainActivity.getprefs().edit();
+		editor.putString(Constants.SETTINGS_NICK_KEY, nick);
+		editor.putString(Constants.SETTINGS_IP_KEY, ip_original);
+		editor.commit();
+
+		// Connect
+		if (mainActivity != null) {
+			mainActivity.startBackgroundService(nick, ip, port);
+		}
+	}
+	public static class Connectivity {
+	    public static NetworkInfo getNetworkInfo(Context context){
+	        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+	        return cm.getActiveNetworkInfo();
+	    }
+	    public static boolean isConnected(Context context){
+	    	Log.d("andcpp", "isConntectd?");
+	        NetworkInfo info = Connectivity.getNetworkInfo(context);
+	        return (info != null && info.isConnected());
+	    }
+	}
+	@Override
+	public void onResume() {
+		// Need to refresh directory displayed if changed in settings
+		downloadLocation.setText(Settings.getDCDownloadsDirectory(getActivity()));
+		super.onResume();
+	}
+}
+
+

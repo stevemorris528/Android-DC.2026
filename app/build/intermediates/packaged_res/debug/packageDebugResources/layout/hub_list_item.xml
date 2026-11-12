@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:descendantFocusability="blocksDescendants">
+
+    <TextView
+        android:id="@+id/hub_address"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="127.0.0.1"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:textColor="?attr/appTextColorPrimary"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/hub_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Connected"
+        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:textColor="?attr/appTextColorSecondary" />
+
+    <TextView
+        android:id="@+id/hub_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Users: 0 | Tag: [AnDCpp V1]"
+        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:textColor="?attr/appTextColorSecondary" />
+
+</LinearLayout>

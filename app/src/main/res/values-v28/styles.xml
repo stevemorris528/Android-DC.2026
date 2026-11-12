@@ -1,0 +1,178 @@
+<resources>
+
+    <!-- Base Light Theme for API 28+ -->
+    <style name="AppBaseTheme" parent="android:Theme.Material.Light.DarkActionBar">
+        <!-- Brand Colors -->
+        <item name="android:colorPrimary">@color/brand_primary</item>
+        <item name="android:colorPrimaryDark">@color/brand_primary_dark</item>
+        <item name="android:colorAccent">@color/brand_accent</item>
+
+        <item name="appBackgroundColor">@color/light_bg</item>
+        <item name="appSurfaceColor">@color/light_surface</item>
+        <item name="appHeaderBackgroundColor">@color/light_header_bg</item>
+        <item name="appTextColorPrimary">@color/light_text_primary</item>
+        <item name="appTextColorSecondary">@color/light_text_secondary</item>
+        <item name="appDividerColor">@color/light_divider</item>
+        <item name="appInputBackgroundColor">@color/light_input_bg</item>
+
+        <!-- Rounded Tabs -->
+        <item name="android:actionBarTabStyle">@style/RoundedActionBarTab</item>
+        <item name="android:actionBarTabTextStyle">@style/RoundedActionBarTabText</item>
+        <item name="android:actionBarTabBarStyle">@style/RoundedActionBarTabBar</item>
+
+        <!-- Rounded Windows / Dialogs -->
+        <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
+        <item name="android:dialogTheme">@style/RoundedDialogTheme</item>
+        <item name="android:alertDialogTheme">@style/RoundedAlertDialogTheme</item>
+    </style>
+
+    <!-- Base Dark Theme for API 28+ -->
+    <style name="AppBaseThemeDark" parent="android:Theme.Material">
+        <!-- Brand Colors -->
+        <item name="android:colorPrimary">@color/dark_header_bg</item>
+        <item name="android:colorPrimaryDark">#000000</item>
+        <item name="android:colorAccent">@color/brand_accent</item>
+
+        <item name="appBackgroundColor">@color/dark_bg</item>
+        <item name="appSurfaceColor">@color/dark_surface</item>
+        <item name="appHeaderBackgroundColor">@color/dark_header_bg</item>
+        <item name="appTextColorPrimary">@color/dark_text_primary</item>
+        <item name="appTextColorSecondary">@color/dark_text_secondary</item>
+        <item name="appDividerColor">@color/dark_divider</item>
+        <item name="appInputBackgroundColor">@color/dark_input_bg</item>
+
+        <!-- Rounded Tabs Dark -->
+        <item name="android:actionBarTabStyle">@style/RoundedActionBarTabDark</item>
+        <item name="android:actionBarTabTextStyle">@style/RoundedActionBarTabTextDark</item>
+        <item name="android:actionBarTabBarStyle">@style/RoundedActionBarTabBarDark</item>
+
+        <!-- Rounded Windows / Dialogs Dark -->
+        <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
+        <item name="android:dialogTheme">@style/RoundedDialogThemeDark</item>
+        <item name="android:alertDialogTheme">@style/RoundedAlertDialogThemeDark</item>
+    </style>
+
+    <style name="RoundedActionBarTab" parent="android:Widget.Material.Light.ActionBar.TabView">
+        <item name="android:background">@drawable/tab_indicator_rounded</item>
+        <item name="android:paddingLeft">@dimen/tab_padding_horizontal</item>
+        <item name="android:paddingRight">@dimen/tab_padding_horizontal</item>
+        <item name="android:paddingStart">@dimen/tab_padding_horizontal</item>
+        <item name="android:paddingEnd">@dimen/tab_padding_horizontal</item>
+    </style>
+
+    <style name="RoundedActionBarTabText" parent="android:Widget.Material.Light.ActionBar.TabText">
+        <item name="android:textColor">@color/tab_text_color_selector</item>
+        <item name="android:textSize">@dimen/tab_text_size</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">8sp</item>
+        <item name="android:autoSizeMaxTextSize">11sp</item>
+        <item name="android:autoSizeStepGranularity">1sp</item>
+    </style>
+
+    <style name="RoundedActionBarTabBar" parent="android:Widget.Material.Light.ActionBar.TabBar">
+        <item name="android:background">@color/brand_tab_bar_bg</item>
+    </style>
+
+    <style name="RoundedDialogTheme" parent="android:Theme.Material.Light.Dialog">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg</item>
+        <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
+    </style>
+
+    <style name="RoundedAlertDialogTheme" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg</item>
+        <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
+    </style>
+
+    <!-- Dark Tab Styles -->
+    <style name="RoundedActionBarTabDark" parent="android:Widget.Material.ActionBar.TabView">
+        <item name="android:background">@drawable/tab_indicator_rounded_dark</item>
+        <item name="android:paddingLeft">@dimen/tab_padding_horizontal</item>
+        <item name="android:paddingRight">@dimen/tab_padding_horizontal</item>
+        <item name="android:paddingStart">@dimen/tab_padding_horizontal</item>
+        <item name="android:paddingEnd">@dimen/tab_padding_horizontal</item>
+    </style>
+
+    <style name="RoundedActionBarTabTextDark" parent="android:Widget.Material.ActionBar.TabText">
+        <item name="android:textColor">@color/tab_text_color_selector_dark</item>
+        <item name="android:textSize">@dimen/tab_text_size</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">8sp</item>
+        <item name="android:autoSizeMaxTextSize">11sp</item>
+        <item name="android:autoSizeStepGranularity">1sp</item>
+    </style>
+
+    <style name="RoundedActionBarTabBarDark" parent="android:Widget.Material.ActionBar.TabBar">
+        <item name="android:background">@color/dark_tab_bar_bg</item>
+    </style>
+
+    <style name="RoundedDialogThemeDark" parent="android:Theme.Material.Dialog">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg_dark</item>
+        <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
+    </style>
+
+    <style name="RoundedAlertDialogThemeDark" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_rounded_bg_dark</item>
+        <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
+    </style>
+
+    <!-- Light Theme Variants -->
+    <style name="AppTheme.Blue">
+        <item name="android:colorPrimary">@color/theme_blue_primary</item>
+        <item name="android:colorPrimaryDark">@color/theme_blue_primary_dark</item>
+        <item name="android:colorAccent">@color/theme_blue_accent</item>
+        <item name="appColorAccent">@color/theme_blue_primary</item>
+        <item name="appColorAccentPressed">@color/theme_blue_pressed</item>
+    </style>
+    <style name="AppTheme.Orange">
+        <item name="android:colorPrimary">@color/theme_orange_primary</item>
+        <item name="android:colorPrimaryDark">@color/theme_orange_primary_dark</item>
+        <item name="android:colorAccent">@color/theme_orange_accent</item>
+        <item name="appColorAccent">@color/theme_orange_primary</item>
+        <item name="appColorAccentPressed">@color/theme_orange_pressed</item>
+    </style>
+    <style name="AppTheme.Purple">
+        <item name="android:colorPrimary">@color/theme_purple_primary</item>
+        <item name="android:colorPrimaryDark">@color/theme_purple_primary_dark</item>
+        <item name="android:colorAccent">@color/theme_purple_accent</item>
+        <item name="appColorAccent">@color/theme_purple_primary</item>
+        <item name="appColorAccentPressed">@color/theme_purple_pressed</item>
+    </style>
+    <style name="AppTheme.Green">
+        <item name="android:colorPrimary">@color/theme_green_primary</item>
+        <item name="android:colorPrimaryDark">@color/theme_green_primary_dark</item>
+        <item name="android:colorAccent">@color/theme_green_accent</item>
+        <item name="appColorAccent">@color/theme_green_primary</item>
+        <item name="appColorAccentPressed">@color/theme_green_pressed</item>
+    </style>
+
+    <!-- Dark Theme Variants -->
+    <style name="AppThemeDark.Blue">
+        <item name="android:colorAccent">@color/theme_blue_accent</item>
+        <item name="appColorAccent">@color/theme_blue_accent</item>
+        <item name="appColorAccentPressed">@color/theme_blue_primary_dark</item>
+    </style>
+    <style name="AppThemeDark.Orange">
+        <item name="android:colorAccent">@color/theme_orange_accent</item>
+        <item name="appColorAccent">@color/theme_orange_accent</item>
+        <item name="appColorAccentPressed">@color/theme_orange_primary_dark</item>
+    </style>
+    <style name="AppThemeDark.Purple">
+        <item name="android:colorAccent">@color/theme_purple_accent</item>
+        <item name="appColorAccent">@color/theme_purple_accent</item>
+        <item name="appColorAccentPressed">@color/theme_purple_primary_dark</item>
+    </style>
+    <style name="AppThemeDark.Green">
+        <item name="android:colorAccent">@color/theme_green_accent</item>
+        <item name="appColorAccent">@color/theme_green_accent</item>
+        <item name="appColorAccentPressed">@color/theme_green_primary_dark</item>
+    </style>
+
+</resources>
