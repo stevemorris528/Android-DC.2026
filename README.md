@@ -50,7 +50,7 @@ Android DC++ Plus Plus began as a simple hub-connectivity testing application ba
 - Added persistence of hub names for displaying favourite hubs while offline.
 - Improved favourite-hub indicators and formatting.
 
-### Search and User Navigation Improvements
+### Search and User Navigation Improvements (Search still not functional so hidden at the moment )
 
 - Restored and improved the application search menu action.
 - Added automatic expansion and focusing of the search interface.
