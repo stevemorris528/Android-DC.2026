@@ -332,12 +332,10 @@ public class UploadManager {
     }
     
     public synchronized File resolveSharedFile(String requestPath) {
-        if (requestPath == null) return null;
         String downloadDir = Settings.getDCDownloadsDirectory(service);
         
-        // Optimized file list handling with caching (handles files.xml, files.xml.bz2, MyList.DCLST, etc.)
-        String lower = requestPath.toLowerCase();
-        if (lower.contains("files.xml") || lower.endsWith(".dclst")) {
+        // Optimized file list handling with caching
+        if (requestPath.toLowerCase().contains("files.xml") || requestPath.toLowerCase().endsWith(".dclst")) {
              long now = System.currentTimeMillis();
              if (cachedFileList == null || !cachedFileList.exists() || (now - lastFileListUpdate > FILE_LIST_CACHE_DURATION)) {
                  File fileListDir = new File(downloadDir, "FileLists");
@@ -346,7 +344,7 @@ public class UploadManager {
                  generateFileListXML(new File(downloadDir), cachedFileList);
                  lastFileListUpdate = now;
              }
-             return (cachedFileList != null && cachedFileList.exists()) ? cachedFileList : null;
+             return cachedFileList;
         }
 
         // The user's files are under a virtual "Share" directory in the filelist
@@ -363,16 +361,15 @@ public class UploadManager {
     }
 
     private void generateFileListXML(File rootDir, File outputFile) {
-        if (outputFile == null) return;
-        File tempFile = new File(outputFile.getAbsolutePath() + ".tmp");
-        try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile)) {
+        try {
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(outputFile);
             org.xmlpull.v1.XmlSerializer serializer = android.util.Xml.newSerializer();
             serializer.setOutput(fos, "UTF-8");
             serializer.startDocument(null, true);
             serializer.startTag(null, "FileListing");
             serializer.attribute(null, "Version", "1");
             
-            serializer.attribute(null, "CID", cid != null ? cid : "");
+            serializer.attribute(null, "CID", cid);
             
             serializer.attribute(null, "Base", "/");
             serializer.attribute(null, "Generator", "AnDCpp");
@@ -380,27 +377,15 @@ public class UploadManager {
             serializer.startTag(null, "Directory");
             serializer.attribute(null, "Name", "Share");
             
-            if (rootDir != null && rootDir.exists()) {
-                addFilesToXml(rootDir, serializer);
-            }
+            addFilesToXml(rootDir, serializer);
             
             serializer.endTag(null, "Directory");
             serializer.endTag(null, "FileListing");
             serializer.endDocument();
             serializer.flush();
             fos.close();
-
-            if (tempFile.exists()) {
-                if (outputFile.exists()) {
-                    outputFile.delete();
-                }
-                tempFile.renameTo(outputFile);
-            }
         } catch (Exception e) {
-            Log.e("andcpp", "Failed to generate file list XML", e);
-            if (tempFile.exists()) {
-                tempFile.delete();
-            }
+            e.printStackTrace();
         }
     }
 

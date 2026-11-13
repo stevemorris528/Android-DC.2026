@@ -1,4 +1,4 @@
-#Sat Nov 14 03:38:02 NZDT 2026
+#Sat Nov 14 03:44:37 NZDT 2026
 base.0=D\:\\Downloads\\AnDCpp-Hub-Connection-Test-Gradle\\andcpp-gradle\\app\\build\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
 base.1=D\:\\Downloads\\AnDCpp-Hub-Connection-Test-Gradle\\andcpp-gradle\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
 base.2=D\:\\Downloads\\AnDCpp-Hub-Connection-Test-Gradle\\andcpp-gradle\\app\\build\\intermediates\\dex\\debug\\mergeProjectDexDebug\\10\\classes.dex
