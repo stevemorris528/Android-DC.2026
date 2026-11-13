@@ -100,19 +100,29 @@ public class SearchResultsFragment extends Fragment {
 	 * @param sr
 	 */
 	public void add_search_result(DCMessage sr) {
-		mainActivity.runOnUiThread(() -> {
-			String[] file_parts = sr.file_path.split("\\\\");
-			
-			String name = file_parts[file_parts.length - 1];
-			name = sr.hisinfo.nick + ": " + name;
+		if (sr == null || sr.file_path == null || sr.hisinfo == null) return;
+		Runnable action = () -> {
+			try {
+				String[] file_parts = sr.file_path.split("\\\\");
+				String name = file_parts.length > 0 ? file_parts[file_parts.length - 1] : sr.file_path;
+				name = (sr.hisinfo.nick != null ? sr.hisinfo.nick : "Unknown") + ": " + name;
 
-			DCFileList entry = new DCFileList(name, sr.file_size);
+				DCFileList entry = new DCFileList(name, sr.file_size);
 
-			if (curFiles != null) curFiles.add(entry);
-			if (searchResults != null) searchResults.add(sr);
-			if (is_ready && filesAdapter != null)
-				filesAdapter.notifyDataSetChanged();
-		});
+				if (curFiles != null) curFiles.add(entry);
+				if (searchResults != null) searchResults.add(sr);
+				if (is_ready && filesAdapter != null)
+					filesAdapter.notifyDataSetChanged();
+			} catch (Exception e) {
+				Log.e("andcpp", "Error adding search result", e);
+			}
+		};
+
+		if (mainActivity != null) {
+			mainActivity.runOnUiThread(action);
+		} else if (getActivity() != null) {
+			getActivity().runOnUiThread(action);
+		}
 	}
 
 	/**
@@ -120,12 +130,22 @@ public class SearchResultsFragment extends Fragment {
 	 * Must call on UI thread
 	 */
 	public void clear_search_results() {
-		mainActivity.runOnUiThread(() -> {
-			if (curFiles != null) curFiles.clear();
-			if (searchResults != null) searchResults.clear();
-			if(is_ready && filesAdapter != null)
-				filesAdapter.notifyDataSetChanged();
-		});
+		Runnable action = () -> {
+			try {
+				if (curFiles != null) curFiles.clear();
+				if (searchResults != null) searchResults.clear();
+				if (is_ready && filesAdapter != null)
+					filesAdapter.notifyDataSetChanged();
+			} catch (Exception e) {
+				Log.e("andcpp", "Error clearing search results", e);
+			}
+		};
+
+		if (mainActivity != null) {
+			mainActivity.runOnUiThread(action);
+		} else if (getActivity() != null) {
+			getActivity().runOnUiThread(action);
+		}
 	}
 
 }

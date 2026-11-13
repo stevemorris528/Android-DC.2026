@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-mergeDebugResources-5:\\values-v21\\values-v21.xml",
+            "outputFile": "com.phinmadvader.andcpp.app-mergeDebugResources-5:/values-v21/values-v21.xml",
             "map": [
                 {
                     "source": "C:\\Users\\steve\\.gradle\\caches\\9.6.0\\transforms\\aaf9ab0ca5d699c405c6b8b7ca3952e5\\transformed\\support-media-compat-28.0.0\\res\\values-v21\\values-v21.xml",
@@ -12,65 +12,6 @@
                         "endLines": "4,7,10,13",
                         "endColumns": "12,12,12,12",
                         "endOffsets": "218,381,549,716"
-                    },
-                    "to": {
-                        "startLines": "102,105,109,113",
-                        "startColumns": "4,4,4,4",
-                        "startOffsets": "6105,6273,6562,6858",
-                        "endLines": "104,107,111,115",
-                        "endColumns": "12,12,12,12",
-                        "endOffsets": "6268,6431,6725,7020"
-                    }
-                },
-                {
-                    "source": "C:\\Users\\steve\\.gradle\\caches\\9.6.0\\transforms\\040278a57ef16d430be3f119a4c24c85\\transformed\\support-compat-28.0.0\\res\\values-v21\\values-v21.xml",
-                    "from": {
-                        "startLines": "2,3,4,5,6,7,8,9,10,13",
-                        "startColumns": "4,4,4,4,4,4,4,4,4,4",
-                        "startOffsets": "55,159,223,290,354,470,596,722,850,1022",
-                        "endLines": "2,3,4,5,6,7,8,9,12,17",
-                        "endColumns": "103,63,66,63,115,125,125,127,12,12",
-                        "endOffsets": "154,218,285,349,465,591,717,845,1017,1355"
-                    },
-                    "to": {
-                        "startLines": "2,3,4,5,100,101,108,112,116,119",
-                        "startColumns": "4,4,4,4,4,4,4,4,4,4",
-                        "startOffsets": "55,159,223,290,5863,5979,6436,6730,7025,7197",
-                        "endLines": "2,3,4,5,100,101,108,112,118,123",
-                        "endColumns": "103,63,66,63,115,125,125,127,12,12",
-                        "endOffsets": "154,218,285,349,5974,6100,6557,6853,7192,7530"
-                    }
-                },
-                {
-                    "source": "D:\\Downloads\\AnDCpp-Hub-Connection-Test-Gradle\\andcpp-gradle\\app\\src\\main\\res\\values-v21\\styles.xml",
-                    "from": {
-                        "startLines": "3,28,52,69,99,82,60,90,77,107,73,103",
-                        "startColumns": "4,4,4,4,4,4,4,4,4,4,4,4",
-                        "startOffsets": "62,1459,2804,3782,5358,4374,3314,4887,4151,5727,3969,5542",
-                        "endLines": "25,50,58,71,101,88,67,97,79,109,75,105",
-                        "endColumns": "12,12,12,12,12,12,12,12,12,12,12,12",
-                        "endOffsets": "1409,2796,3306,3961,5534,4879,3774,5350,4336,5915,4143,5719"
-                    },
-                    "to": {
-                        "startLines": "6,29,52,59,62,65,72,80,88,91,94,97",
-                        "startColumns": "4,4,4,4,4,4,4,4,4,4,4,4",
-                        "startOffsets": "354,1608,2842,3343,3525,3704,4208,4666,5127,5315,5506,5683",
-                        "endLines": "28,51,58,61,64,71,79,87,90,93,96,99",
-                        "endColumns": "12,12,12,12,12,12,12,12,12,12,12,12",
-                        "endOffsets": "1603,2837,3338,3520,3699,4203,4661,5122,5310,5501,5678,5858"
-                    }
-                }
-            ]
-        },
-        {
-            "outputFile": "com.phinmadvader.andcpp.app-mergeDebugResources-5:/values-v21/values-v21.xml",
-            "map": [
-                {
-                    "source": "C:\\Users\\steve\\.gradle\\caches\\9.6.0\\transforms\\aaf9ab0ca5d699c405c6b8b7ca3952e5\\transformed\\support-media-compat-28.0.0\\res\\values-v21\\values-v21.xml",
-                    "from": {
-                        "startLines": "-1,-1,-1,-1",
-                        "startColumns": "-1,-1,-1,-1",
-                        "startOffsets": "-1,-1,-1,-1"
                     },
                     "to": {
                         "startLines": "150,153,157,161",
@@ -84,9 +25,12 @@
                 {
                     "source": "C:\\Users\\steve\\.gradle\\caches\\9.6.0\\transforms\\040278a57ef16d430be3f119a4c24c85\\transformed\\support-compat-28.0.0\\res\\values-v21\\values-v21.xml",
                     "from": {
-                        "startLines": "-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "startColumns": "-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "startOffsets": "-1,-1,-1,-1,-1,-1,-1,-1,-1,-1"
+                        "startLines": "2,3,4,5,6,7,8,9,10,13",
+                        "startColumns": "4,4,4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,159,223,290,354,470,596,722,850,1022",
+                        "endLines": "2,3,4,5,6,7,8,9,12,17",
+                        "endColumns": "103,63,66,63,115,125,125,127,12,12",
+                        "endOffsets": "154,218,285,349,465,591,717,845,1017,1355"
                     },
                     "to": {
                         "startLines": "2,3,4,5,148,149,156,160,164,167",
@@ -100,12 +44,12 @@
                 {
                     "source": "D:\\Downloads\\AnDCpp-Hub-Connection-Test-Gradle\\andcpp-gradle\\app\\src\\main\\res\\values-v21\\styles.xml",
                     "from": {
-                        "startLines": "3,28,112,133,119,126,142,157,147,152,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "startColumns": "4,4,4,4,4,4,4,4,4,4,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "startOffsets": "62,1459,5958,7272,6388,6830,7744,8591,8021,8306,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "endLines": "25,50,118,139,125,132,146,161,151,156,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "endColumns": "12,12,12,12,12,12,12,12,12,12,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1",
-                        "endOffsets": "1409,2796,6382,7702,6824,7266,8015,8866,8300,8585,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1"
+                        "startLines": "3,28,112,133,119,126,142,157,147,152,52,69,99,82,60,90,77,107,73,103",
+                        "startColumns": "4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4",
+                        "startOffsets": "62,1459,5958,7272,6388,6830,7744,8591,8021,8306,2804,3782,5358,4374,3314,4887,4151,5727,3969,5542",
+                        "endLines": "25,50,118,139,125,132,146,161,151,156,58,71,101,88,67,97,79,109,75,105",
+                        "endColumns": "12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12,12",
+                        "endOffsets": "1409,2796,6382,7702,6824,7266,8015,8866,8300,8585,3306,3961,5534,4879,3774,5350,4336,5915,4143,5719"
                     },
                     "to": {
                         "startLines": "6,29,52,59,66,73,80,85,90,95,100,107,110,113,120,128,136,139,142,145",

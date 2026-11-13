@@ -91,6 +91,13 @@ public class MainActivity extends FragmentActivity implements
 					userlist_fragment, "Users", false);
 		}
 
+		if (mService != null) {
+			mService.setBoard_message_handler(hubIp, this);
+			mService.setUser_handler(hubIp, this);
+			mService.setBoard_message_handler(null, this);
+			mService.setUser_handler(null, this);
+		}
+
 		tab_page_adapter.notifyDataSetChanged();
 
 		int chatPos = tab_page_adapter.get_tab_position(TabPagerAdapter.TAB_HUBCHAT);
@@ -106,7 +113,26 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	public void openUsersForHub(String hubIp) {
-		openChatForHub(hubIp);
+		if (tab_page_adapter == null) return;
+
+		if (userlist_fragment != null) {
+			userlist_fragment.setHubIp(hubIp);
+			tab_page_adapter.add_tab(TabPagerAdapter.TAB_USERLIST,
+					userlist_fragment, "Users", false);
+		}
+
+		tab_page_adapter.notifyDataSetChanged();
+
+		int userPos = tab_page_adapter.get_tab_position(TabPagerAdapter.TAB_USERLIST);
+		if (userPos != -1 && view_pager != null) {
+			view_pager.post(() -> {
+				view_pager.setCurrentItem(userPos, true);
+				ActionBar ab = getActionBar();
+				if (ab != null && userPos < ab.getTabCount()) {
+					ab.setSelectedNavigationItem(userPos);
+				}
+			});
+		}
 	}
 	public void refreshWelcomeFragment() {
 		if (tab_page_adapter != null) {
@@ -365,7 +391,10 @@ public class MainActivity extends FragmentActivity implements
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item){
 		int id = item.getItemId();
-		if (id == R.id.action_about) {
+		if (id == R.id.action_public_hubs) {
+			showPublicHubsDialog();
+			return true;
+		} else if (id == R.id.action_about) {
 			showAboutDialog();
 			return true;
 		} else if (id == R.id.action_settings) {
@@ -373,7 +402,13 @@ public class MainActivity extends FragmentActivity implements
 			startActivity(settingsIntent);
 			return true;
 		} else if (id == R.id.action_search) {
-			//don't know what this was supposed to do!
+			if (searchmenuitem != null) {
+				searchmenuitem.expandActionView();
+				if (searchview != null) {
+					searchview.setIconified(false);
+					searchview.requestFocus();
+				}
+			}
 			return true;
 		} else if (id == R.id.action_saved_filelists) {
 			showSavedFileListsDialog();
@@ -420,6 +455,47 @@ public class MainActivity extends FragmentActivity implements
 				.setView(scrollView)
 				.setPositiveButton("OK", null)
 				.show();
+	}
+
+	private void showPublicHubsDialog() {
+		new PublicHubsDialog(this).show();
+	}
+
+	public void switchToLoginTab() {
+		if (tab_page_adapter != null && view_pager != null) {
+			int pos = tab_page_adapter.get_tab_position(TabPagerAdapter.TAB_LOGININFO);
+			if (pos != -1) {
+				view_pager.post(() -> {
+					view_pager.setCurrentItem(pos, true);
+					ActionBar ab = getActionBar();
+					if (ab != null && pos < ab.getTabCount()) {
+						ab.setSelectedNavigationItem(pos);
+					}
+				});
+			}
+		}
+	}
+
+	public void switchToHubsTab() {
+		if (tab_page_adapter != null && view_pager != null) {
+			int pos = tab_page_adapter.get_tab_position(TabPagerAdapter.TAB_HUBLIST);
+			if (pos != -1) {
+				view_pager.post(() -> {
+					view_pager.setCurrentItem(pos, true);
+					ActionBar ab = getActionBar();
+					if (ab != null && pos < ab.getTabCount()) {
+						ab.setSelectedNavigationItem(pos);
+					}
+				});
+			}
+		}
+	}
+
+	public void refreshHubList() {
+		if (hublist_fragment != null) {
+			hublist_fragment.refresh();
+		}
+		refreshWelcomeFragment();
 	}
 
 	public void shutdownAppCompletely() {
@@ -522,22 +598,25 @@ public class MainActivity extends FragmentActivity implements
 			searchview.setQuery("", false);
 			searchview.clearFocus();
 		}
+		if (searchmenuitem != null) {
+			searchmenuitem.collapseActionView();
+		}
 
-		if (searchresult_fragment != null) {
+		if (searchresult_fragment != null && tab_page_adapter != null) {
 			searchresult_fragment.clear_search_results();
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_SEARCHLIST,
-					searchresult_fragment, "Search Results");
+					searchresult_fragment, "Search Results", true);
 		}
 		if (mService != null) {
 			// Multi-hub search: send to first session or all? 
 			// For now, let's send to all connected.
 			for (DCPPService.HubSession session : mService.getActiveSessions()) {
-				if (session.status == DCPPService.DCClientStatus.CONNECTED) {
+				if (session != null && session.status == DCPPService.DCClientStatus.CONNECTED && session.hubIp != null) {
 					mService.make_search(session.hubIp, query);
 				}
 			}
 		}
-		return false;
+		return true;
 	}
 
 	public void startBackgroundService(String nick, String ip, String port) {
@@ -658,36 +737,41 @@ public class MainActivity extends FragmentActivity implements
 		if (tab_page_adapter == null) return;
 		
 		if (searchmenuitem != null) {
-			searchmenuitem.setVisible(true);
+			searchmenuitem.setVisible(false);
 		}
 		if (login_fragment != null) {
 			login_fragment.setViewState(true);
 		}
 		
-		// Add tabs if they aren't already visible
+		// Add tabs if they aren't already visible (do not automatically jump/switch to them)
 		if (messageboard_fragment != null) {
 			messageboard_fragment.setHubIp(hubIp);
 		}
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_HUBCHAT,
-				messageboard_fragment, "Chat", !isInitialSync);
+				messageboard_fragment, "Chat", false);
 				
 		if (userlist_fragment != null) {
 			userlist_fragment.setHubIp(hubIp);
 		}
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_USERLIST,
-				userlist_fragment, "Users", !isInitialSync);
+				userlist_fragment, "Users", false);
 		
 		if (downloadlist_fragment != null) {
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
 					downloadlist_fragment, "Downloads", false);
 		}
 		
-		openChatForHub(hubIp);
-		
 		// Refresh saved lists when service connects
 		Fragment savedFrag = tab_page_adapter.get_tab_fragment(TabPagerAdapter.TAB_SAVED_FILELISTS);
 		if (savedFrag instanceof SavedFileListsFragment) {
 			((SavedFileListsFragment) savedFrag).refreshList();
+		}
+		
+		if (messageboard_fragment != null) {
+			messageboard_fragment.refresh();
+		}
+		if (userlist_fragment != null) {
+			userlist_fragment.clearNicklistConstraints();
 		}
 		
 		if (hublist_fragment != null) {
@@ -730,11 +814,6 @@ public class MainActivity extends FragmentActivity implements
 
 	public void open_file_list(final String hubIp, DCUserComparable user) {
 		final String nick = user.nick;
-		if (!user.active) {
-			Toast.makeText(this, "Cannot download from Passive (Red) users.",
-					Toast.LENGTH_SHORT).show();
-			return;
-		}
 		if (mService == null || mService.get_status(hubIp) != DCPPService.DCClientStatus.CONNECTED) {
 			Toast.makeText(this, "Not connected to hub. Checking for cached list...", Toast.LENGTH_SHORT).show();
 			open_cached_file_list(nick);
@@ -875,19 +954,32 @@ public class MainActivity extends FragmentActivity implements
 			Bundle inBun = intent.getExtras();
 			if (inBun != null) {
 				String hubIp = inBun.getString("hubIp");
-				if (inBun.getBoolean("stopServiceFlag", false)) {
-					// Handle specific hub stop if needed
-				}
-				if (inBun.getBoolean("stopProgressDialogFlag"))
+				boolean stopServiceFlag = inBun.getBoolean("stopServiceFlag", false);
+				if (inBun.getBoolean("stopProgressDialogFlag")) {
 					if (myProgressDialog != null && myProgressDialog.isShowing())
 						myProgressDialog.dismiss();
+				}
 				
 				if (hubIp != null && mService != null && mService.get_status(hubIp) == DCPPService.DCClientStatus.CONNECTED) {
 					onConnectUIChanges(hubIp);
+				} else if (stopServiceFlag) {
+					boolean anyConnected = false;
+					if (mService != null) {
+						for (DCPPService.HubSession s : mService.getActiveSessions()) {
+							if (s.status == DCPPService.DCClientStatus.CONNECTED) {
+								anyConnected = true;
+								break;
+							}
+						}
+					}
+					if (!anyConnected) {
+						onDisonnectUIChanges();
+					}
 				}
 				if (hublist_fragment != null) {
 					hublist_fragment.refresh();
 				}
+				refreshWelcomeFragment();
 			}
 		}	
 	}

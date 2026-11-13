@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -82,6 +83,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public DCCommand board_message_handler = null;
 		public DCCommand user_handler = null;
 		public DCCommand search_handler = null;
+		public DCCommand private_message_handler = null;
 		public DCPreferences prefs;
 		public DCUser myuser;
 		public LinkedBlockingQueue<DCMessage> search_results = new LinkedBlockingQueue<>();
@@ -362,7 +364,18 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			DCUser my_user = new DCUser();
 			DCUser his_user = new DCUser();
 			my_user.nick = session.prefs.getNick();
-			my_user.ip = session.prefs.server_ip;
+			String ourIp = null;
+			if (session.client != null && session.client.getSocket() != null && session.client.getSocket().getLocalAddress() != null) {
+				ourIp = session.client.getSocket().getLocalAddress().getHostAddress();
+			}
+			String hubReportedIp = com.phinvader.libjdcpp.DCPreferences.get_self_ip();
+			if (hubReportedIp != null && !hubReportedIp.isEmpty()) {
+				ourIp = hubReportedIp;
+			}
+			if (ourIp == null || ourIp.isEmpty()) {
+				ourIp = session.prefs.server_ip;
+			}
+			my_user.ip = ourIp;
 			his_user.nick = target_nick;
 			// initialize_download_tracking();
 			if (session.prefs.active && uploadManager != null && uploadManager.isListening()) {
@@ -1181,6 +1194,17 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (session != null) session.search_handler = handler;
 	}
 
+	public void setPrivate_message_handler(String hubKey, DCCommand handler) {
+		if (hubKey == null) {
+			for (HubSession session : sessions.values()) {
+				session.private_message_handler = handler;
+			}
+			return;
+		}
+		HubSession session = getSession(hubKey);
+		if (session != null) session.private_message_handler = handler;
+	}
+
 	private class MyUserHandler implements DCCommand {
 		private String hubKey;
 		public MyUserHandler(String hubKey) { this.hubKey = hubKey; }
@@ -1275,6 +1299,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	private class MyPrivateMessageHandler implements DCCommand {
+		private String hubKey;
+		public MyPrivateMessageHandler(String hubKey) { this.hubKey = hubKey; }
+		@Override
+		public void onCommand(DCMessage dcMessage) {
+			HubSession session = getSession(hubKey);
+			if (session != null) {
+				dcMessage.hubname_s = session.hubIp;
+				handleIncomingPrivateMessage(session, dcMessage);
+			}
+		}
+	}
+
 	private class MyHubQuitHandler implements DCCommand {
 		private String hubKey;
 		public MyHubQuitHandler(String hubKey) { this.hubKey = hubKey; }
@@ -1294,6 +1331,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override
 		public void onCommand(DCMessage msg) {
 			Log.d("andcpp", "Received ConnectToMe from " + msg.connect_nick + " at " + msg.host_name + ":" + msg.port_number);
+			HubSession session = getSession(hubKey);
+			if (session != null && session.client != null && session.client.downloadHandler != null) {
+				if (session.client.downloadHandler.hasAnyDownloadEntities()) {
+					Log.d("andcpp", "ConnectToMe received while download is pending; letting MainDownloadHandler handle it.");
+					return;
+				}
+			}
 			// This happens when WE are passive and an ACTIVE peer wants to download from us.
 			// OR when we are active but the hub is proxying.
 			new Thread(() -> {
@@ -1400,10 +1444,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					
 					session.myuser.tag = null; // Force tag regeneration in sendMyInfo
 					
-					// Re-send MyINFO and send $IP, some hubs need this to confirm Active status
+					// Re-send MyINFO to confirm active status with updated IP
 					session.client.sendMyInfo(session.myuser, session.prefs);
-					session.client.sendRaw("$IP " + detectedIp);
-					Log.d("andcpp", "Sent $MyINFO and $IP to hub to confirm Active status");
+					Log.d("andcpp", "Sent updated $MyINFO to hub with detected IP");
 				}
 			}
 		}
@@ -1496,6 +1539,113 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public boolean send_chat_message(String text) {
 		return send_chat_message(null, text);
+	}
+
+	private final Map<String, List<ChatMessage>> privateChatHistory = new ConcurrentHashMap<>();
+
+	private String getPmConversationKey(String hubIp, String targetNick) {
+		String hub = (hubIp != null) ? hubIp.toLowerCase(Locale.US) : "";
+		String nick = (targetNick != null) ? targetNick.toLowerCase(Locale.US) : "";
+		return hub + "#" + nick;
+	}
+
+	public List<ChatMessage> get_private_messages(String hubIp, String targetNick) {
+		String key = getPmConversationKey(hubIp, targetNick);
+		List<ChatMessage> list = privateChatHistory.get(key);
+		if (list == null) {
+			list = Collections.synchronizedList(new ArrayList<>());
+			privateChatHistory.put(key, list);
+		}
+		synchronized (list) {
+			return new ArrayList<>(list);
+		}
+	}
+
+	public boolean send_private_message(String hubIp, String targetNick, String text) {
+		if (text == null || text.trim().isEmpty() || targetNick == null || targetNick.trim().isEmpty()) {
+			return false;
+		}
+		HubSession session = getSession(hubIp);
+		if (session == null && hubIp != null && !hubIp.contains(":")) {
+			for (HubSession s : sessions.values()) {
+				if (s.hubIp.equals(hubIp)) {
+					session = s;
+					break;
+				}
+			}
+		}
+		if (session == null && !sessions.isEmpty()) {
+			session = sessions.values().iterator().next();
+		}
+		if (session != null && session.client != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
+			String myNick = session.myuser.nick;
+			// Escape '|' and '$' in the text body according to NMDC standards
+			String sanitizedText = text.trim().replace("|", "&#124;").replace("$", "&#36;");
+			// Standard DC++ NMDC Private message format:
+			// $To: <targetNick> From: <myNick> $<myNick> <sanitizedText>
+			String rawPm = "$To: " + targetNick + " From: " + myNick + " $<" + myNick + "> " + sanitizedText;
+			final HubSession activeSession = session;
+			new Thread(() -> {
+				try {
+					activeSession.client.sendRaw(rawPm);
+				} catch (Exception e) {
+					Log.e("andcpp", "Failed to send private message: " + e.getMessage(), e);
+				}
+			}).start();
+
+			// Record outgoing message in history
+			String key = getPmConversationKey(session.hubIp, targetNick);
+			List<ChatMessage> list = privateChatHistory.get(key);
+			if (list == null) {
+				list = Collections.synchronizedList(new ArrayList<>());
+				privateChatHistory.put(key, list);
+			}
+			ChatMessage outgoingMsg = new ChatMessage(myNick, text.trim(), false);
+			list.add(outgoingMsg);
+
+			// Broadcast intent to notify open PrivateChatActivity if any
+			Intent intent = new Intent("com.phinmadvader.andcpp.PRIVATE_MESSAGE_RECEIVED");
+			intent.putExtra("hubIp", session.hubIp);
+			intent.putExtra("senderNick", targetNick);
+			sendBroadcast(intent);
+
+			return true;
+		}
+		return false;
+	}
+
+	private void handleIncomingPrivateMessage(HubSession session, DCMessage dcMessage) {
+		String sender = dcMessage.pm_from;
+		String text = dcMessage.pm_text;
+		if (sender == null || sender.isEmpty() || text == null) return;
+
+		String key = getPmConversationKey(session.hubIp, sender);
+		List<ChatMessage> list = privateChatHistory.get(key);
+		if (list == null) {
+			list = Collections.synchronizedList(new ArrayList<>());
+			privateChatHistory.put(key, list);
+		}
+		ChatMessage incomingMsg = new ChatMessage(sender, text, true);
+		list.add(incomingMsg);
+
+		// If a private message handler is registered (e.g. MainActivity or active chat), dispatch to it
+		if (session.private_message_handler != null) {
+			session.private_message_handler.onCommand(dcMessage);
+		} else {
+			// If app is running in background or another activity, launch PrivateChatActivity directly
+			Intent pmIntent = new Intent(this, PrivateChatActivity.class);
+			pmIntent.putExtra(PrivateChatActivity.EXTRA_HUB_IP, session.hubIp);
+			pmIntent.putExtra(PrivateChatActivity.EXTRA_TARGET_NICK, sender);
+			pmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+			startActivity(pmIntent);
+		}
+
+		// Also send broadcast so PrivateChatActivity or other receivers update immediately
+		Intent intent = new Intent("com.phinmadvader.andcpp.PRIVATE_MESSAGE_RECEIVED");
+		intent.putExtra("hubIp", session.hubIp);
+		intent.putExtra("senderNick", sender);
+		intent.putExtra("messageText", text);
+		sendBroadcast(intent);
 	}
 
 	public DCPPService() {
@@ -1758,7 +1908,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		} else {
 			HubSession session = sessions.get(hubKey);
 			Log.d("andcpp", "Session already exists for " + hubKey + ", status: " + (session != null ? session.status : "null"));
-			if (session != null && (session.status == DCClientStatus.DISCONNECTED || session.status == DCClientStatus.RECONNECTING || session.status == DCClientStatus.INVALIDIP)) {
+			if (session != null) {
 				session.reconnectAttempts = 0;
 				connectToHub(hubKey, session);
 			}
@@ -1795,6 +1945,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.client.setCustomRawHandler("HubName", dcMessage -> {
 					if (dcMessage.hubname_s != null) {
 						session.hubName = dcMessage.hubname_s;
+						try {
+							android.content.SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+							p.edit().putString("hub_name_" + session.hubIp, dcMessage.hubname_s).apply();
+							if (session.hubPort != 411) {
+								p.edit().putString("hub_name_" + session.hubIp + ":" + session.hubPort, dcMessage.hubname_s).apply();
+							}
+						} catch (Exception ignored) {}
 						mySendBroadcast(session.hubIp, false, true);
 					}
 				});
@@ -1804,6 +1961,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.client.setCustomRawHandler("ConnectToMe", new MyConnectToMeHandler(hubKey));
 				session.client.setCustomRawHandler("UserIP", new MyUserIPHandler(hubKey));
 				session.client.setCustomRawHandler("MyINFO", new MyUserInfoHandler(hubKey));
+				session.client.setCustomRawHandler("To:", new MyPrivateMessageHandler(hubKey));
 				session.client.InitiateDefaultRouting();
 				
 				session.status = DCClientStatus.CONNECTED;

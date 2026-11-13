@@ -93,6 +93,12 @@ public class LoginFragment extends Fragment {
 		ipText.setEnabled(true);
 	}
 
+	public void setHubAddress(String hubAddress) {
+		if (ipText != null) {
+			ipText.setText(hubAddress);
+		}
+	}
+
 	@Override
 	public void onSaveInstanceState(Bundle outState) {
 		super.onSaveInstanceState(outState);

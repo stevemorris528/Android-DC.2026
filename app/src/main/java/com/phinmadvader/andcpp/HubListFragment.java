@@ -72,10 +72,16 @@ public class HubListFragment extends Fragment {
         Set<String> favorites = prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>());
         boolean isFav = favorites.contains(entry.hubIp);
         boolean isConnected = (entry.session != null && entry.session.status == DCPPService.DCClientStatus.CONNECTED);
+        boolean isConnectingOrReconnecting = (entry.session != null && 
+                (entry.session.status == DCPPService.DCClientStatus.CONNECTING || entry.session.status == DCPPService.DCClientStatus.RECONNECTING));
 
         List<String> optionsList = new ArrayList<>();
         if (isConnected) {
             optionsList.add("Open Hub");
+            optionsList.add("Disconnect");
+            optionsList.add("Delete Hub");
+        } else if (isConnectingOrReconnecting) {
+            optionsList.add("Open Hub Chat");
             optionsList.add("Disconnect");
             optionsList.add("Delete Hub");
         } else {
@@ -97,9 +103,9 @@ public class HubListFragment extends Fragment {
                     String selected = options[which];
                     switch (selected) {
                         case "Open Hub":
-                            if (entry.session != null) {
-                                mainActivity.openChatForHub(entry.session.hubIp);
-                            }
+                        case "Open Hub Chat":
+                            String targetIp = entry.session != null ? entry.session.hubIp : entry.hubIp.split(":")[0];
+                            mainActivity.openChatForHub(targetIp);
                             break;
                         case "Disconnect":
                             if (mainActivity.mService != null && entry.session != null) {
@@ -259,16 +265,19 @@ public class HubListFragment extends Fragment {
             TextView status = (TextView) convertView.findViewById(R.id.hub_status);
             TextView info = (TextView) convertView.findViewById(R.id.hub_info);
 
+            String favIndicator = entry.isFavorite ? " ✓" : "";
+
             if (entry.session != null) {
                 String hubNameStr = entry.session.hubName;
-                String favIndicator = entry.isFavorite ? " ✓" : "";
+                String hubAddressStr = entry.session.hubIp + ":" + entry.session.hubPort;
+                String statusStr = entry.session.status != null ? entry.session.status.toString() : "UNKNOWN";
                 
-                if (hubNameStr != null && !hubNameStr.isEmpty()) {
-                    address.setText(hubNameStr + favIndicator);
-                    status.setText((entry.session.status != null ? entry.session.status.toString() : "UNKNOWN") + " - " + entry.session.hubIp + ":" + entry.session.hubPort);
+                if (hubNameStr != null && !hubNameStr.trim().isEmpty()) {
+                    address.setText(hubNameStr.trim() + favIndicator);
+                    status.setText(hubAddressStr + " (" + statusStr + ")");
                 } else {
-                    address.setText(entry.session.hubIp + ":" + entry.session.hubPort + favIndicator);
-                    status.setText(entry.session.status != null ? entry.session.status.toString() : "UNKNOWN");
+                    address.setText(hubAddressStr + favIndicator);
+                    status.setText(statusStr);
                 }
                 
                 int userCount = 0;
@@ -279,30 +288,28 @@ public class HubListFragment extends Fragment {
                     if (entry.session.myuser != null && entry.session.myuser.tag != null) tag = entry.session.myuser.tag;
                 }
                 info.setText("Users: " + userCount + " | Tag: " + tag);
-                
-                // Color the favorite tick green if it's a favorite
-                if (entry.isFavorite) {
-                    android.text.SpannableString spannable = new android.text.SpannableString(address.getText());
-                    int tickIndex = spannable.toString().lastIndexOf("✓");
-                    if (tickIndex >= 0) {
-                        spannable.setSpan(new android.text.style.ForegroundColorSpan(0xFF4CAF50), tickIndex, tickIndex + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                    address.setText(spannable);
-                }
             } else {
-                address.setText(entry.hubIp + (entry.isFavorite ? " ✓" : ""));
-                
-                if (entry.isFavorite) {
-                    android.text.SpannableString spannable = new android.text.SpannableString(address.getText());
-                    int tickIndex = spannable.toString().lastIndexOf("✓");
-                    if (tickIndex >= 0) {
-                        spannable.setSpan(new android.text.style.ForegroundColorSpan(0xFF4CAF50), tickIndex, tickIndex + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    }
-                    address.setText(spannable);
+                // Try retrieving saved hub name for offline favorite hubs if present
+                SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+                String savedName = prefs.getString("hub_name_" + entry.hubIp, null);
+                if (savedName != null && !savedName.trim().isEmpty()) {
+                    address.setText(savedName.trim() + favIndicator);
+                    status.setText(entry.hubIp + " (OFFLINE)");
+                } else {
+                    address.setText(entry.hubIp + favIndicator);
+                    status.setText("OFFLINE (Favorite)");
                 }
-                
-                status.setText("OFFLINE (Favorite)");
                 info.setText("");
+            }
+
+            // Color the favorite tick green if it's a favorite
+            if (entry.isFavorite) {
+                android.text.SpannableString spannable = new android.text.SpannableString(address.getText());
+                int tickIndex = spannable.toString().lastIndexOf("✓");
+                if (tickIndex >= 0) {
+                    spannable.setSpan(new android.text.style.ForegroundColorSpan(0xFF4CAF50), tickIndex, tickIndex + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+                address.setText(spannable);
             }
 
             return convertView;

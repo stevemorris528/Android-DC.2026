@@ -63,6 +63,14 @@ public class DCDownloader {
 		return ret;
 	}
 
+	public boolean hasAnyDownloadEntities() {
+		if (downloadQ == null) return false;
+		for (ArrayList<DownloadQueueEntity> list : downloadQ.values()) {
+			if (list != null && !list.isEmpty()) return true;
+		}
+		return false;
+	}
+
 
 
 	/**

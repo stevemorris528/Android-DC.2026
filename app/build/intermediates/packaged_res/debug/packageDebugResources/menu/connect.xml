@@ -3,7 +3,8 @@
         android:id="@+id/action_search"
         android:actionViewClass="android.widget.SearchView"
         android:icon="@android:drawable/ic_menu_search"
-        android:showAsAction="always"
+        android:showAsAction="collapseActionView|ifRoom"
+        android:visible="false"
         android:title="Search"/>
 
     <item
@@ -17,6 +18,12 @@
         android:orderInCategory="20"
         android:showAsAction="never"
         android:title="@string/action_shutdown"/>
+
+    <item
+        android:id="@+id/action_public_hubs"
+        android:orderInCategory="80"
+        android:showAsAction="never"
+        android:title="@string/action_public_hubs"/>
 
     <item
         android:id="@+id/action_about"

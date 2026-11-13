@@ -104,6 +104,7 @@ id action_about
 id action_bar_logo
 id action_bar_title
 id action_get_file_list
+id action_public_hubs
 id action_saved_filelists
 id action_search
 id action_settings
@@ -142,6 +143,19 @@ id messageScrollView
 id msg_board
 id pager_file_list
 id pager_root
+id public_hub_address
+id public_hub_description
+id public_hub_name
+id public_hub_shared
+id public_hub_users
+id public_hubs_btn_add_url
+id public_hubs_btn_edit_urls
+id public_hubs_btn_refresh
+id public_hubs_list
+id public_hubs_progress
+id public_hubs_status_text
+id public_hubs_top_bar
+id public_hubs_url_spinner
 id scrollView1
 id separator
 id text11
@@ -171,6 +185,8 @@ layout hub_list_layout
 layout login_layout
 layout main_activity
 layout messageboard_layout
+layout public_hub_list_item
+layout public_hubs_dialog
 layout row_element
 layout settings_list_element_layout
 layout userlist_layout
@@ -178,6 +194,7 @@ layout welcome_layout
 menu connect
 menu pm_chat
 string action_about
+string action_public_hubs
 string action_settings
 string action_shutdown
 string action_sort
@@ -207,3 +224,4 @@ style RoundedAlertDialogThemeDark
 style RoundedDialogTheme
 style RoundedDialogThemeDark
 xml file_paths
+xml network_security_config

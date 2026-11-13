@@ -119,10 +119,8 @@ public class DCClient {
 		ArrayList<String> supported_methods = new ArrayList<String>();
 		supported_methods.add("NoHello");
 		supported_methods.add("NoGetINFO");
-		supported_methods.add("IP");
+		supported_methods.add("UserIP2");
 		supported_methods.add("UserIP");
-		supported_methods.add("SZIP");
-		supported_methods.add("ZOn");
 		supported_methods.add("TTHL");
 		supported_methods.add("TTHF");
 
@@ -233,7 +231,7 @@ public class DCClient {
 				o.getTarget_user(), o.getMy_user(), o.getRemote_filaname(),
 				o.getLocal_filename());
 		downloadE = downloadHandler.addDownloadEntity(o.getTarget_user().nick, downloadE);
-		handler.send_connecttome(o.getMy_user(), o.getMy_user().ip, port);
+		handler.send_connecttome(o.getTarget_user(), o.getMy_user().ip, port);
 		return downloadE;
 	}
 
