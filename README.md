@@ -44,8 +44,7 @@ Original developers:
 
 This project builds upon their original open-source contribution.
 
-Full credit to the original developers for their open-source contribution. This project builds upon their original work.
-
+Full credit to the original developers for their open-source contribution. 
 Original project: AnDCpp
 
 Developed further by the Android DC++ Plus Plus project.
