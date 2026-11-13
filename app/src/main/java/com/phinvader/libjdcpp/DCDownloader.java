@@ -142,9 +142,14 @@ public class DCDownloader {
 			}
 
 			// Download COMPLETE
-			if (handler.get_dumped_bytes() >= handler.get_filesize()) {
+			long dumped = handler.get_dumped_bytes();
+			long expected = handler.get_filesize();
+			if (expected > 0 && dumped >= expected) {
 				entity.status = DownloadStatus.COMPLETED;
 			} else if (Thread.currentThread().isInterrupted()) {
+				entity.status = DownloadStatus.INTERUPTED;
+			} else if (dumped > 0) {
+				// We transferred data but connection ended prematurely: treat as INTERUPTED to allow resume
 				entity.status = DownloadStatus.INTERUPTED;
 			} else {
 				entity.status = DownloadStatus.FAILED;

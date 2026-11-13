@@ -84,8 +84,20 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
         }
 
         if (status == DCConstants.DownloadStatus.DOWNLOADING) {
-            FileSize fs = new FileSize(download.avg_speed());
-            speed.setText(String.format(java.util.Locale.US, "%.2f %s/s", fs.fileSize, fs.unit));
+            double curSpeed = download.avg_speed();
+            FileSize fs = new FileSize(curSpeed);
+            String etaStr = "";
+            if (curSpeed > 0 && total > done) {
+                long remainingSecs = (long) ((total - done) / curSpeed);
+                if (remainingSecs >= 3600) {
+                    etaStr = String.format(java.util.Locale.US, " | %02d:%02d:%02d",
+                            remainingSecs / 3600, (remainingSecs % 3600) / 60, remainingSecs % 60);
+                } else {
+                    etaStr = String.format(java.util.Locale.US, " | %02d:%02d",
+                            remainingSecs / 60, remainingSecs % 60);
+                }
+            }
+            speed.setText(String.format(java.util.Locale.US, "%.2f %s/s%s", fs.fileSize, fs.unit, etaStr));
             speed.setVisibility(View.VISIBLE);
         } else if (status == DCConstants.DownloadStatus.COMPLETED) {
             speed.setText("Done");

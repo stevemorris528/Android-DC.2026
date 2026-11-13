@@ -826,6 +826,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								if (mNotifyManager2 != null && !work.isCancelled)
 									mNotifyManager2.notify(work.currentID, work.mBuilder2.build());
 								break;
+							} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.INTERUPTED) {
+								break;
 							} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.QUEUED) {
 								// In Direct Connect, waiting for a slot in peer's queue can take several minutes or longer.
 								// Periodically re-signal connection every 30 seconds if still queued.
@@ -862,11 +864,22 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							if (work.download_status.status == DCConstants.DownloadStatus.QUEUED) {
 								work.mBuilder2.setContentText("Queued: Waiting for slot...");
 							} else {
+								String etaStr = "";
+								if (work.avg_speed() > 0 && total > done) {
+									long remainingSecs = (long) ((total - done) / work.avg_speed());
+									if (remainingSecs >= 3600) {
+										etaStr = String.format(java.util.Locale.US, " | ETA: %02d:%02d:%02d",
+												remainingSecs / 3600, (remainingSecs % 3600) / 60, remainingSecs % 60);
+									} else {
+										etaStr = String.format(java.util.Locale.US, " | ETA: %02d:%02d",
+												remainingSecs / 60, remainingSecs % 60);
+									}
+								}
 								work.mBuilder2.setContentText(
 										"Speed: "
 												+ String.format(java.util.Locale.US, "%.2f",
 												fs.fileSize) + " "
-												+ fs.unit + "/s" + progressStr);
+												+ fs.unit + "/s" + progressStr + etaStr);
 							}
 							if (!work.isCancelled) {
 								mNotifyManager2.notify(work.currentID,
