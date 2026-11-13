@@ -259,10 +259,10 @@ public class Settings extends Activity{
 		
 		String defaultDir;
 		if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
-			defaultDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + "/AnDCpp";
+			defaultDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath() + "/Android-DC++";
 		} else {
 			defaultDir = c.getExternalFilesDir(null) != null ? 
-					c.getExternalFilesDir(null).getAbsolutePath() + "/DC++" :
+					c.getExternalFilesDir(null).getAbsolutePath() + "/Android-DC++" :
 					Constants.dcDirectory;
 		}
 

@@ -6,7 +6,7 @@ import android.os.Environment;
  * Created by invader on 8/11/13.
  */
 public class Constants {
-    public static String dcDirectory = "/sdcard/DC++"; // Fallback, better to use Context.getExternalFilesDir
+    public static String dcDirectory = "/sdcard/Android-DC++"; // Fallback, better to use Context.getExternalFilesDir
     public static String dcConfDirectory = ".androiddcpp";
     public static String dcFileListDirectory = "filelists";
     public static String PREFS_NAME = "ANDROIDDCPPSETTINGS";
