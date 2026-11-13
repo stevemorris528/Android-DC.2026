@@ -53,7 +53,8 @@ public class LoginFragment extends Fragment {
 
 		// Get preference
 		String ip = mainActivity.getprefs().getString(
-				Constants.SETTINGS_IP_KEY, "");
+				Constants.SETTINGS_IP_KEY, Constants.DEFAULT_FAVORITE_HUB);
+		if (ip.isEmpty()) ip = Constants.DEFAULT_FAVORITE_HUB;
 		String nick = mainActivity.getprefs().getString(
 				Constants.SETTINGS_NICK_KEY, "");
 		boolean active = mainActivity.getprefs().getBoolean(

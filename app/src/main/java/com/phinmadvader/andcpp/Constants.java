@@ -11,6 +11,7 @@ public class Constants {
     public static String dcFileListDirectory = "filelists";
     public static String PREFS_NAME = "ANDROIDDCPPSETTINGS";
     public static String SETTINGS_IP_KEY = "dcipaddr";
+    public static String DEFAULT_FAVORITE_HUB = "bigchill.servemp3.com:1069";
     public static String SETTINGS_NICK_KEY = "dcnick";
     public static String SETTINGS_ACTIVE_KEY = "dcactive";
     public static String SETTINGS_PORT_KEY = "dcport";

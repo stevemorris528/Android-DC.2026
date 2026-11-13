@@ -241,6 +241,7 @@ public class MainActivity extends FragmentActivity implements
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
+		initDefaultPreferences();
 		currentIsDark = ThemeUtils.isDarkMode(this);
 		currentAccent = ThemeUtils.getColorAccent(this);
 		ThemeUtils.applyTheme(this);
@@ -325,7 +326,14 @@ public class MainActivity extends FragmentActivity implements
 
 		tab_page_adapter.notifyDataSetChanged();
 
-		// Ensure we start at the Welcome tab
+		// Check and restore last opened file list
+		String lastFileListNick = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+				.getString("last_open_filelist_nick", null);
+		if (lastFileListNick != null && !lastFileListNick.isEmpty()) {
+			open_cached_file_list(lastFileListNick);
+		}
+
+		// Ensure we start at the Welcome tab unless a file list was reopened
 		view_pager.post(new Runnable() {
 			@Override
 			public void run() {
@@ -559,6 +567,13 @@ public class MainActivity extends FragmentActivity implements
 						null, nick + " (Offline)");
 				tab_page_adapter.move_to_last_page();
 			}
+			try {
+				getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+						.edit()
+						.putString("last_open_filelist_nick", nick)
+						.putBoolean("last_open_filelist_offline", true)
+						.apply();
+			} catch (Exception ignored) {}
 		} else {
 			Toast.makeText(this, "Failed to load saved file list.", Toast.LENGTH_SHORT).show();
 		}
@@ -658,6 +673,22 @@ public class MainActivity extends FragmentActivity implements
 			startForegroundService(serviceIntent);
 		} else {
 			startService(serviceIntent);
+		}
+	}
+
+	private void initDefaultPreferences() {
+		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+		if (!prefs.contains("initialized_default_hubs")) {
+			Set<String> favorites = new HashSet<>(prefs.getStringSet("favorite_hubs", new HashSet<String>()));
+			favorites.add(Constants.DEFAULT_FAVORITE_HUB);
+			SharedPreferences.Editor editor = prefs.edit();
+			editor.putStringSet("favorite_hubs", favorites);
+			String currentIp = prefs.getString(Constants.SETTINGS_IP_KEY, "");
+			if (currentIp.isEmpty()) {
+				editor.putString(Constants.SETTINGS_IP_KEY, Constants.DEFAULT_FAVORITE_HUB);
+			}
+			editor.putBoolean("initialized_default_hubs", true);
+			editor.apply();
 		}
 	}
 
@@ -800,8 +831,6 @@ public class MainActivity extends FragmentActivity implements
 		}
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_HUBCHAT);
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_USERLIST);
-		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_DOWNLOADS);
-		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_FILELIST);
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_SEARCHLIST);
 	}
 
@@ -866,6 +895,13 @@ public class MainActivity extends FragmentActivity implements
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_FILELIST,
 					null, title);
 		}
+		try {
+			getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+					.edit()
+					.putString("last_open_filelist_nick", nick)
+					.putBoolean("last_open_filelist_offline", offline)
+					.apply();
+		} catch (Exception ignored) {}
 	}
 	
 	@Override

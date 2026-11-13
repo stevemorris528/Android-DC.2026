@@ -110,7 +110,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	public HubSession getSession(String hubKey) {
-		if (hubKey == null) return null;
+		if (hubKey == null) {
+			if (!sessions.isEmpty()) {
+				for (HubSession s : sessions.values()) {
+					if (s.status == DCClientStatus.CONNECTED) return s;
+				}
+				return sessions.values().iterator().next();
+			}
+			return null;
+		}
 		HubSession session = sessions.get(hubKey);
 		if (session == null && !hubKey.contains(":")) {
 			// Fallback search by IP if key doesn't have port
@@ -119,6 +127,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					return entry.getValue();
 				}
 			}
+		}
+		if (session == null && !sessions.isEmpty()) {
+			for (HubSession s : sessions.values()) {
+				if (s.status == DCClientStatus.CONNECTED) return s;
+			}
+			return sessions.values().iterator().next();
 		}
 		return session;
 	}
@@ -242,6 +256,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							.setOngoing(false);
 					mNotifyManager2.notify(currentID, mBuilder2.build());
 				}
+				saveDownloadsState();
 			} catch (Exception e) {
 				Log.e("andcpp", "Error in pause_download", e);
 			}
@@ -260,6 +275,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 					try {
 						normal_queue.put(this);
+						if (normal_worker == null || !normal_worker.isAlive()) {
+							normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
+							normal_worker.start();
+						}
+						saveDownloadsState();
 					} catch (InterruptedException e) {
 						Log.e("andcpp", "Failed to re-queue download", e);
 					}
@@ -299,6 +319,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (nm != null) {
 				nm.cancel(currentID);
 			}
+			saveDownloadsState();
 		}
 
 		public boolean delete_download() {
@@ -394,10 +415,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (download_status == null)
 				set_start_download_time();
 
+			if (activeRc == null && myrc == null) {
+				initialize_download_connection();
+			}
+
 			HubSession session = getSession(hubIp);
 			if (session == null || session.client == null) {
-				isCancelled = true;
-				return;
+				Log.w("andcpp", "Hub session not ready for " + (hubIp != null ? hubIp : "any hub") + ". Retrying download.");
+				// Re-initialize connection attempt on any connected session
+				if (hubIp == null && !sessions.isEmpty()) {
+					initialize_download_connection();
+					session = getSession(this.hubIp);
+				}
+				if (session == null || session.client == null) {
+					return;
+				}
 			}
 
 			DCDownloader.DownloadQueueEntity entity;
@@ -405,9 +437,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				int port = uploadManager != null ? uploadManager.getPort() : session.prefs.upload_port;
 				entity = session.client.startActiveDownload(activeRc,
 						(int) Constants.DOWNLOAD_TIMEOUT_MILLIS, port);
-			} else {
+			} else if (myrc != null) {
 				entity = session.client.startPassiveDownload(myrc,
 						(int) Constants.DOWNLOAD_TIMEOUT_MILLIS);
+			} else {
+				return;
 			}
 
 			if (entity.status == null || entity.status == DCConstants.DownloadStatus.UNDEFINED) {
@@ -776,7 +810,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								break;
 							} else if (work.download_status != null && work.download_status.status != DCConstants.DownloadStatus.DOWNLOADING) {
 								if (work.millis_elapsed() > Constants.DOWNLOAD_TIMEOUT_MILLIS) {
-									work.cancel_download();
+									// Mark as failed/timed out without wiping/disappearing from download list
+									work.download_status.status = DCConstants.DownloadStatus.FAILED;
+									break;
 								}
 							}
 							
@@ -850,13 +886,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 									work.mBuilder2.build());
 
 							updateFolderProgress(work);
-
-							// Auto-retry logic for file lists or specific files if desired
-							// For now, just ensure it doesn't stay in a broken state
-							if (work.remote_file.equalsIgnoreCase("files.xml")) {
-								// We could re-queue it here if we wanted
-							}
 						}
+						saveDownloadsState();
 					}
 				} catch (InterruptedException e) {
 					return;
@@ -893,11 +924,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		downloadEnqueueExecutor.execute(() -> {
 			HubSession session = getSession(hubIp);
-			if (session == null || session.client == null || session.prefs == null) {
-				Log.e("andcpp", "Session not fully initialized for hub " + hubIp + ", cannot start download");
-				return;
+			String targetHubIp = hubIp;
+			if (session != null) {
+				targetHubIp = session.hubIp;
 			}
-			final DownloadObject obj = new DownloadObject(hubIp, nick, local_file,
+			final DownloadObject obj = new DownloadObject(targetHubIp, nick, local_file,
 					remote_file, this, groupLabel, groupName);
 			obj.set_total_bytes(file_size);
 			synchronized (initiated_downloads) {
@@ -907,6 +938,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				if (normal_queue != null)
 					normal_queue.put(obj);
+				if (normal_worker == null || !normal_worker.isAlive()) {
+					normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
+					normal_worker.start();
+				}
+				saveDownloadsState();
 			} catch (InterruptedException e) {
 				Log.e("andcpp", "Interrupted while adding to queue", e);
 			}
@@ -976,6 +1012,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 			initiated_downloads.removeAll(to_remove);
 		}
+		saveDownloadsState();
 	}
 
 	private File getFileListDir() {
@@ -2372,6 +2409,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								try {
 									if (normal_queue != null)
 										normal_queue.put(obj);
+									if (normal_worker == null || !normal_worker.isAlive()) {
+										normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
+										normal_worker.start();
+									}
 								} catch (InterruptedException e) {
 									Log.e("andcpp", "Interrupted while adding restored download to queue", e);
 								}
@@ -2380,8 +2421,6 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				}
 			}
-			// Clear prefs after restore so we don't duplicate on subsequent restarts unless saved again
-			prefs.edit().clear().apply();
 		} catch (Exception e) {
 			Log.e("andcpp", "Error restoring downloads state", e);
 		}
