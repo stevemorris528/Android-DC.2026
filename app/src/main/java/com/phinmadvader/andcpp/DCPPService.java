@@ -808,9 +808,17 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								if (mNotifyManager2 != null && !work.isCancelled)
 									mNotifyManager2.notify(work.currentID, work.mBuilder2.build());
 								break;
+							} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.QUEUED) {
+								// In Direct Connect, waiting for a slot in peer's queue can take several minutes or longer.
+								// Periodically re-signal connection every 30 seconds if still queued.
+								if (work.millis_elapsed() > 0 && work.millis_elapsed() % 30000 < Constants.DOWNLOAD_UPDATE_INTERVAL_MILLIS) {
+									try {
+										work.start_download();
+									} catch (Exception ignored) {}
+								}
+								// Do NOT fail while legitimately waiting for peer slot
 							} else if (work.download_status != null && work.download_status.status != DCConstants.DownloadStatus.DOWNLOADING) {
-								if (work.millis_elapsed() > Constants.DOWNLOAD_TIMEOUT_MILLIS) {
-									// Mark as failed/timed out without wiping/disappearing from download list
+								if (work.millis_elapsed() > 300000) { // 5 minute safety timeout for unresponsive connections
 									work.download_status.status = DCConstants.DownloadStatus.FAILED;
 									break;
 								}
@@ -928,6 +936,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (session != null) {
 				targetHubIp = session.hubIp;
 			}
+			synchronized (initiated_downloads) {
+				for (DownloadObject existing : initiated_downloads) {
+					if (existing.local_file.equals(local_file) && !existing.is_finished()) {
+						Log.d("andcpp", "Download already in progress/queued: " + local_file);
+						return;
+					}
+				}
+			}
 			final DownloadObject obj = new DownloadObject(targetHubIp, nick, local_file,
 					remote_file, this, groupLabel, groupName);
 			obj.set_total_bytes(file_size);
@@ -970,15 +986,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 * @return
 	 */
 	public List<DownloadItem> get_download_queue() {
-		List<DownloadObject> all = new ArrayList<DownloadObject>();
-		if (normal_queue != null) {
-			for (DownloadObject o : normal_queue)
-				all.add(o);
-		}
+		java.util.LinkedHashSet<DownloadObject> all = new java.util.LinkedHashSet<DownloadObject>();
 		if (initiated_downloads != null) {
 			synchronized (initiated_downloads) {
 				all.addAll(initiated_downloads);
 			}
+		}
+		if (normal_queue != null) {
+			for (DownloadObject o : normal_queue)
+				all.add(o);
 		}
 
 		Map<String, FolderDownloadItem> folders = new HashMap<>();
@@ -2394,6 +2410,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								Log.e("andcpp", "Session not fully initialized for restored download hub " + targetHubIp);
 								return;
 							}
+							synchronized (initiated_downloads) {
+								for (DownloadObject existing : initiated_downloads) {
+									if (existing.local_file.equals(localFile) && !existing.is_finished()) {
+										return;
+									}
+								}
+							}
 							final DownloadObject obj = new DownloadObject(targetHubIp, nick, localFile,
 									remoteFile, this, groupLabel, groupName);
 							obj.set_total_bytes(fileSize);
@@ -2421,6 +2444,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				}
 			}
+			// Clear prefs after restore so we don't re-restore on top
+			prefs.edit().clear().apply();
 		} catch (Exception e) {
 			Log.e("andcpp", "Error restoring downloads state", e);
 		}
