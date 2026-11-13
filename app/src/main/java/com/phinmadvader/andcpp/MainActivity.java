@@ -326,12 +326,12 @@ public class MainActivity extends FragmentActivity implements
 
 		tab_page_adapter.notifyDataSetChanged();
 
-		// Check and restore last opened file list
-		String lastFileListNick = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
-				.getString("last_open_filelist_nick", null);
-		if (lastFileListNick != null && !lastFileListNick.isEmpty()) {
-			open_cached_file_list(lastFileListNick);
-		}
+		// Check and restore last opened file list (do not auto-restore on restart to prevent crash if file list is invalid or removed)
+		// String lastFileListNick = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+		// 		.getString("last_open_filelist_nick", null);
+		// if (lastFileListNick != null && !lastFileListNick.isEmpty()) {
+		// 	open_cached_file_list(lastFileListNick);
+		// }
 
 		// Ensure we start at the Welcome tab unless a file list was reopened
 		view_pager.post(new Runnable() {
