@@ -53,6 +53,7 @@
 28        android:requestLegacyExternalStorage="true"
 28-->D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:20:9-52
 29        android:testOnly="true"
+29-->INJECTED
 30        android:theme="@style/AppThemeDark"
 30-->D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:16:9-44
 31        android:usesCleartextTraffic="true" >

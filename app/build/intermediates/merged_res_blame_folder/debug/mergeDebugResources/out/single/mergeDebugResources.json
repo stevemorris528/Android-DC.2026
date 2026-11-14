@@ -80,6 +80,10 @@
         "source": "com.phinmadvader.andcpp.app-main-9:/drawable-ldpi/ic_launcher.png"
     },
     {
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_linuxdcpp_normal.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/linuxdcpp_normal.png"
+    },
+    {
         "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-hdpi_ic_launcher.png.flat",
         "source": "com.phinmadvader.andcpp.app-main-9:/drawable-hdpi/ic_launcher.png"
     },
@@ -234,6 +238,10 @@
     {
         "merged": "com.phinmadvader.andcpp.app-debug-7:/menu_connect.xml.flat",
         "source": "com.phinmadvader.andcpp.app-main-9:/menu/connect.xml"
+    },
+    {
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_linuxdcpp_normal_fw.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/linuxdcpp_normal_fw.png"
     },
     {
         "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_bubble_outgoing.xml.flat",

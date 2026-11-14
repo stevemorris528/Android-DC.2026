@@ -57,9 +57,9 @@ public class UserListAdapter extends ArrayAdapter<DCUserComparable> {
 		support.setText("Share: "
 				+ String.format("%.4g %s", fs.fileSize, fs.unit)  + "  " + (user.email != null ? user.email : ""));
 		if (user.active)
-			image.setImageResource(R.drawable.green_user);
+			image.setImageResource(R.drawable.linuxdcpp_normal);
 		else
-			image.setImageResource(R.drawable.red_user);
+			image.setImageResource(R.drawable.linuxdcpp_normal_fw);
 
 		View overflowMenu = convertView.findViewById(R.id.user_overflow_menu);
 		if (overflowMenu != null) {

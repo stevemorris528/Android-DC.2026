@@ -85,6 +85,8 @@ drawable ic_launcher
 drawable image
 drawable internet
 drawable iso
+drawable linuxdcpp_normal
+drawable linuxdcpp_normal_fw
 drawable music
 drawable office
 drawable other

@@ -433,21 +433,26 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (download_status == null)
 				set_start_download_time();
 
+			HubSession session = getSession(hubIp);
+			if (session == null || session.client == null) {
+				Log.w("andcpp", "Hub session not ready for " + (hubIp != null ? hubIp : "any hub") + ". Retrying download.");
+				if (!sessions.isEmpty()) {
+					session = getSession(null);
+					if (session != null) {
+						this.hubIp = session.hubIp;
+					}
+				}
+			}
+
 			if (activeRc == null && myrc == null) {
 				initialize_download_connection();
 			}
 
-			HubSession session = getSession(hubIp);
+			if (session == null) {
+				session = getSession(hubIp);
+			}
 			if (session == null || session.client == null) {
-				Log.w("andcpp", "Hub session not ready for " + (hubIp != null ? hubIp : "any hub") + ". Retrying download.");
-				// Re-initialize connection attempt on any connected session
-				if (hubIp == null && !sessions.isEmpty()) {
-					initialize_download_connection();
-					session = getSession(this.hubIp);
-				}
-				if (session == null || session.client == null) {
-					return;
-				}
+				return;
 			}
 
 			DCDownloader.DownloadQueueEntity entity;
@@ -459,10 +464,20 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				entity = session.client.startPassiveDownload(myrc,
 						(int) Constants.DOWNLOAD_TIMEOUT_MILLIS);
 			} else {
-				return;
+				initialize_download_connection();
+				if (activeRc != null) {
+					int port = uploadManager != null ? uploadManager.getPort() : session.prefs.upload_port;
+					entity = session.client.startActiveDownload(activeRc,
+							(int) Constants.DOWNLOAD_TIMEOUT_MILLIS, port);
+				} else if (myrc != null) {
+					entity = session.client.startPassiveDownload(myrc,
+							(int) Constants.DOWNLOAD_TIMEOUT_MILLIS);
+				} else {
+					return;
+				}
 			}
 
-			if (entity.status == null || entity.status == DCConstants.DownloadStatus.UNDEFINED) {
+			if (entity != null && (entity.status == null || entity.status == DCConstants.DownloadStatus.UNDEFINED)) {
 				entity.status = DCConstants.DownloadStatus.QUEUED;
 			}
 
@@ -900,31 +915,66 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							Log.i("andcpp", "Download " + work.getFileName() + " cancelled.");
 							updateFolderProgress(work);
 						} else if (work.download_status.status == DCConstants.DownloadStatus.COMPLETED) {
-							// Do something here.
-							Log.i("andcpp",
-									"Download " + work.getFileName()
-											+ " completed.");
-							updateFolderProgress(work);
+							// Verify if expected file length was reached; if not, treat as interrupted/failed
+							File downloadedFile = new File(work.local_file);
+							long expectedSize = work.total_bytes();
+							if (expectedSize > 0 && downloadedFile.exists() && downloadedFile.length() < expectedSize) {
+								Log.w("andcpp", "Download ended prematurely (" + downloadedFile.length() + "/" + expectedSize + "), marking INTERUPTED for auto-resume.");
+								work.download_status.status = DCConstants.DownloadStatus.INTERUPTED;
+								work.pendingStartOffset = downloadedFile.length();
+								work.mBuilder2.setProgress(0, 0, false);
+								work.mBuilder2.setContentText("Connection lost, re-queuing...");
+								mNotifyManager2.notify(work.currentID, work.mBuilder2.build());
+								try {
+									Thread.sleep(1500);
+									work.resume_download();
+								} catch (Exception ignored) {}
+							} else {
+								Log.i("andcpp", "Download " + work.getFileName() + " completed.");
+								updateFolderProgress(work);
+							}
 
 						} else if (work.download_status.status == DCConstants.DownloadStatus.INTERUPTED) {
-							// Stay in queue, handled by resume
-						} else {
-							// Do Something here.
-							Log.e("andcpp",
-									"Download " + work.getFileName()
-											+ " Failed!.");
-
+							File downloadedFile = new File(work.local_file);
+							if (downloadedFile.exists()) {
+								work.pendingStartOffset = downloadedFile.length();
+							}
 							work.mBuilder2.setProgress(0, 0, false);
-							work.mBuilder2.setContentText(
-									"Failed: No slot or Timeout on " + work.target_nick)
-									.setTicker(
-											"Download Failed: "
-													+ work.file_name);
+							work.mBuilder2.setContentText("Connection interrupted, auto-resuming...");
+							mNotifyManager2.notify(work.currentID, work.mBuilder2.build());
+							try {
+								Thread.sleep(2000);
+								work.resume_download();
+							} catch (Exception ignored) {}
+						} else {
+							// Failed download: check if partially downloaded to auto-resume instead of failing permanently
+							File downloadedFile = new File(work.local_file);
+							long expectedSize = work.total_bytes();
+							if (downloadedFile.exists() && downloadedFile.length() > 0 && (expectedSize <= 0 || downloadedFile.length() < expectedSize)) {
+								Log.w("andcpp", "Download interrupted, scheduling retry from offset " + downloadedFile.length());
+								work.pendingStartOffset = downloadedFile.length();
+								work.download_status.status = DCConstants.DownloadStatus.INTERUPTED;
+								try {
+									Thread.sleep(3000);
+									work.resume_download();
+								} catch (Exception ignored) {}
+							} else {
+								Log.e("andcpp",
+										"Download " + work.getFileName()
+												+ " Failed!.");
 
-							mNotifyManager2.notify(work.currentID,
-									work.mBuilder2.build());
+								work.mBuilder2.setProgress(0, 0, false);
+								work.mBuilder2.setContentText(
+										"Failed: No slot or Timeout on " + work.target_nick)
+										.setTicker(
+												"Download Failed: "
+														+ work.file_name);
 
-							updateFolderProgress(work);
+								mNotifyManager2.notify(work.currentID,
+										work.mBuilder2.build());
+
+								updateFolderProgress(work);
+							}
 						}
 						saveDownloadsState();
 					}
@@ -1415,17 +1465,22 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override
 		public void onCommand(DCMessage msg) {
 			Log.d("andcpp", "Received ConnectToMe from " + msg.connect_nick + " at " + msg.host_name + ":" + msg.port_number);
-			// Check if any session has a pending download from this peer
+			// Check if any session has a pending download from this peer (case-insensitive check)
 			com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity pendingDownload = null;
 			com.phinvader.libjdcpp.DCClient matchClient = null;
 			for (HubSession s : getActiveSessions()) {
 				if (s.client != null && s.client.downloadHandler != null && s.client.downloadHandler.downloadQ != null) {
-					List<com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity> list = s.client.downloadHandler.downloadQ.get(msg.connect_nick);
-					if (list != null && !list.isEmpty()) {
-						pendingDownload = list.get(0);
-						matchClient = s.client;
-						break;
+					for (Map.Entry<String, ArrayList<com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity>> entry : s.client.downloadHandler.downloadQ.entrySet()) {
+						if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(msg.connect_nick)) {
+							List<com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity> list = entry.getValue();
+							if (list != null && !list.isEmpty()) {
+								pendingDownload = list.get(0);
+								matchClient = s.client;
+								break;
+							}
+						}
 					}
+					if (pendingDownload != null) break;
 				}
 			}
 			if (pendingDownload != null && matchClient != null && matchClient.mainDownloader != null) {
@@ -1803,6 +1858,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					if (activeNetwork != null && activeNetwork.isConnected()) {
 						Log.d("andcpp", "Network connected, triggering reconnection logic");
 						triggerReconnections();
+						// When network transitions (WiFi -> GSM or vice versa), auto-resume interrupted/failed downloads
+						new Handler(Looper.getMainLooper()).postDelayed(() -> {
+							synchronized (initiated_downloads) {
+								for (DownloadObject obj : new ArrayList<>(initiated_downloads)) {
+									if (!obj.isCancelled && !obj.isPaused) {
+										DCConstants.DownloadStatus st = obj.get_status();
+										if (st == DCConstants.DownloadStatus.INTERUPTED || st == DCConstants.DownloadStatus.FAILED) {
+											obj.resume_download();
+										}
+									}
+								}
+							}
+						}, 3000);
 					}
 				}
 			}
