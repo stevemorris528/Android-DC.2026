@@ -246,13 +246,17 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					download_status.status = DCConstants.DownloadStatus.INTERUPTED;
 					HubSession session = getSession(hubIp);
 					if (session != null && session.client != null) {
-						new Thread(() -> {
+						Thread stopThread = new Thread(() -> {
 							try {
 								session.client.stopDownloadHandler(download_status);
 							} catch (Exception e) {
 								Log.e("andcpp", "Error stopping download", e);
 							}
-						}).start();
+						});
+						stopThread.start();
+						try {
+							stopThread.join(3000);
+						} catch (InterruptedException ignored) {}
 					}
 				}
 				if (mNotifyManager2 != null && mBuilder2 != null) {
@@ -2441,7 +2445,6 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
-		saveDownloadsState();
 		
 		PIAPortForwardingManager.getInstance(this).stopPortForwarding();
 		
@@ -2465,6 +2468,77 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (uploadManager != null) {
 			uploadManager.stopListening();
 		}
+
+		// 1. Iterate through all active/running downloads and call pause_download() on each of them
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (!obj.is_finished() && !obj.isPaused) {
+					try {
+						obj.pause_download();
+					} catch (Exception e) {
+						Log.e("andcpp", "Error pausing download during onDestroy", e);
+					}
+				}
+			}
+		}
+
+		// 2. Explicitly close connection streams / sockets and wait for normal_worker and any download threads with bounded safe timeouts (e.g., 2000ms / 3000ms)
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (obj.download_status != null) {
+					if (obj.download_status.connectionHandler != null) {
+						try {
+							obj.download_status.connectionHandler.close();
+						} catch (Exception e) {
+							Log.e("andcpp", "Error closing download connection handler", e);
+						}
+					}
+					if (obj.download_status.thread != null) {
+						try {
+							obj.download_status.thread.interrupt();
+						} catch (Exception ignored) {}
+					}
+				}
+			}
+		}
+
+		if (normal_worker != null) {
+			normal_worker.interrupt();
+			try {
+				normal_worker.join(2000);
+			} catch (InterruptedException e) {
+				Log.e("andcpp", "Interrupted waiting for normal_worker", e);
+			}
+		}
+
+		// Also check/wait for any specific thread associated with active downloads with bounded timeout (2000ms)
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (obj.download_status != null && obj.download_status.thread != null) {
+					try {
+						obj.download_status.thread.join(2000);
+					} catch (Exception ignored) {}
+				}
+			}
+		}
+
+		// 3. Save download state and actual partial file length (File.length()) synchronously using editor.commit() within the bounded timeout window.
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (!obj.is_finished()) {
+					File f = new File(obj.local_file);
+					if (f.exists()) {
+						obj.pendingStartOffset = f.length();
+						if (obj.download_status != null) {
+							obj.download_status.downloadedSize = f.length();
+							obj.download_status.startOffset = f.length();
+						}
+					}
+				}
+			}
+		}
+		saveDownloadsState();
+
 		shutdown();
 		Log.d("andcpp", "destroyed!");
 	}
@@ -2511,8 +2585,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 			}
 			editor.putInt("download_count", count);
-			editor.apply();
-			Log.d("andcpp", "Saved " + count + " active/queued/incomplete downloads state.");
+			editor.commit();
+			Log.d("andcpp", "Saved " + count + " active/queued/incomplete downloads state synchronously.");
 		} catch (Exception e) {
 			Log.e("andcpp", "Error saving downloads state", e);
 		}
@@ -2567,7 +2641,6 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				String groupLabel = prefs.getString("group_label_" + i, null);
 				String groupName = prefs.getString("group_name_" + i, null);
 				long bytesDone = prefs.getLong("bytes_done_" + i, 0);
-				boolean isPaused = prefs.getBoolean("is_paused_" + i, false);
 
 				if (localFile != null && remoteFile != null && nick != null) {
 					File f = new File(localFile);
@@ -2588,32 +2661,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 									remoteFile, DCPPService.this, groupLabel, groupName);
 							obj.set_total_bytes(fileSize);
 							obj.pendingStartOffset = existingLength;
-							if (isPaused) {
-								obj.isPaused = true;
-								if (obj.mBuilder2 != null) {
-									obj.mBuilder2.setContentText("Download Paused").setOngoing(false);
-								}
-							} else {
-								DCUser targetUser = new DCUser();
-								targetUser.nick = nick;
-								DCUser myUser = new DCUser();
-								obj.download_status = new com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity(
-										targetUser, myUser, remoteFile, localFile);
-								obj.download_status.status = DCConstants.DownloadStatus.QUEUED;
-								obj.download_status.downloadedSize = existingLength;
-								obj.download_status.startOffset = existingLength;
-								obj.download_status.expectedDownloadSize = fileSize;
-								if (obj.mBuilder2 != null) {
-									obj.mBuilder2.setContentText("Queued: Waiting for slot...").setOngoing(true);
-								}
+							// 5. On startup (restoreDownloadsState), restore downloads in paused mode (or queued waiting for startup delay),
+							// wait 10 seconds, then resume using the normal manual unpause implementation (resume_download()).
+							obj.isPaused = true;
+							if (obj.mBuilder2 != null) {
+								obj.mBuilder2.setContentText("Download Paused").setOngoing(false);
 							}
+							
 							initiated_downloads.add(obj);
 							manageWakeLock();
-							if (!isPaused) {
-								if (normal_queue != null && !normal_queue.contains(obj)) {
-									normal_queue.put(obj);
-								}
-							}
 						}
 					}
 				}
@@ -2627,7 +2683,17 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			prefs.edit().clear().apply();
 		}
 
-		retryPendingDownloads();
+		// Wait 10 seconds, then resume using normal manual unpause implementation (resume_download())
+		new Handler(Looper.getMainLooper()).postDelayed(() -> {
+			synchronized (initiated_downloads) {
+				for (DownloadObject obj : initiated_downloads) {
+					if (obj.isPaused && !obj.is_finished()) {
+						obj.resume_download();
+					}
+				}
+			}
+			retryPendingDownloads();
+		}, 10000);
 	}
 
 	

@@ -516,15 +516,16 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	public void shutdownAppCompletely() {
-		// Stop service completely
+		// 4. Ensure MainActivity.java shutdownAppCompletely() does not call System.exit(0), stop the service, or finish until the service shutdown and download pausing/saving process completely finishes.
+		if (mService != null) {
+			mService.onDestroy();
+		}
 		stopBackgroundService();
-		// Finish affinity / exit
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
 			finishAffinity();
 		} else {
 			finish();
 		}
-		System.exit(0);
 	}
 
 	private void showSavedFileListsDialog() {

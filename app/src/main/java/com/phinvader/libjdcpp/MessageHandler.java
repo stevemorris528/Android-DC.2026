@@ -115,6 +115,7 @@ public class MessageHandler {
 							if (s == -1)
 								break;
 							output_file.write(write_buffer, 0, s);
+							output_file.flush(); // Ensure writes are flushed immediately to persistent storage
 							dump_bytes += s;
 							if (downloadEntity != null) {
 								downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
@@ -123,6 +124,7 @@ public class MessageHandler {
 							if (dump_bytes >= dump_bytes_limit || Thread.currentThread().isInterrupted())
 								break;
 						}
+						output_file.getFD().sync(); // Force sync file descriptor
 						output_file.close();
 					}
 					bin.close();
