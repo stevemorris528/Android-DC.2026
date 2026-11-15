@@ -38,6 +38,7 @@ import com.phinvader.libjdcpp.DCCommand;
 import com.phinvader.libjdcpp.DCFileList;
 import com.phinvader.libjdcpp.DCMessage;
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -58,6 +59,7 @@ public class MainActivity extends FragmentActivity implements
 	private Intent serviceIntent;
 	private AlertDialog myProgressDialog;
 	private boolean hasAutoReconnected = false;
+	private myBroadcastReceiver myBR = null;
 	/**
 	 * TODO: make tab_page_adapter private? or leave as it is...
 	 * tab_page_adapters is public so that filelistmanager can update its pages
@@ -374,6 +376,12 @@ public class MainActivity extends FragmentActivity implements
 		if (view_pager != null) {
 			view_pager.removeAllViews();
 		}
+		if (myBR != null) {
+			try {
+				unregisterReceiver(myBR);
+			} catch (Exception ignored) {}
+			myBR = null;
+		}
 		if (mBound) {
 			unbindService(mConnection);
 			mBound = false;
@@ -439,8 +447,9 @@ public class MainActivity extends FragmentActivity implements
 				+ "&#8226; Madhavan Malolan</p>"
 				+ "<p>Full credit to the original developers for their open-source contribution. This project builds upon their original work.</p>"
 				+ "<p>Original project: AnDCpp</p>"
-				+ "<p>Developed further by the Android DC++ Plus Plus project.</p>"
-				+ "<p>GitHub Source Code: <a href=\"https://github.com/stevemorris528/Android-DC.2026/blob/master/README.md\">&#x2B07;&#xFE0F;</a></p>";
+				+ "<p>Developed further by the Android DC++ project.</p>"
+				+ "<p>GitHub Source Code: <a href=\"https://github.com/stevemorris528/Android-DC.2026/blob/master/README.md\">&#x2B07;&#xFE0F;</a></p>"
+				+ "<p>Beta 16.11.2026</p>";
 
 		TextView textView = new TextView(this);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -459,7 +468,7 @@ public class MainActivity extends FragmentActivity implements
 
 		new AlertDialog.Builder(this)
 				.setIcon(R.drawable.ic_launcher)
-				.setTitle("About Android DC++")
+				.setTitle("About Android DC++ 2026")
 				.setView(scrollView)
 				.setPositiveButton("OK", null)
 				.show();
@@ -639,13 +648,15 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	public void startBackgroundService(String nick, String ip, String port, boolean showDialog) {
-		myBroadcastReceiver myBR = new myBroadcastReceiver();
-		IntentFilter intFil = new IntentFilter("ACTION_DO_SOMETHING");
-		intFil.addCategory(Intent.CATEGORY_DEFAULT);
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-			registerReceiver(myBR, intFil, Context.RECEIVER_NOT_EXPORTED);
-		} else {
-			registerReceiver(myBR, intFil);
+		if (myBR == null) {
+			myBR = new myBroadcastReceiver();
+			IntentFilter intFil = new IntentFilter("ACTION_DO_SOMETHING");
+			intFil.addCategory(Intent.CATEGORY_DEFAULT);
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+				registerReceiver(myBR, intFil, Context.RECEIVER_NOT_EXPORTED);
+			} else {
+				registerReceiver(myBR, intFil);
+			}
 		}
 		
 		if (showDialog) {
@@ -705,7 +716,8 @@ public class MainActivity extends FragmentActivity implements
 		Set<String> favorites = prefs.getStringSet("favorite_hubs", new HashSet<String>());
 		if (favorites == null || favorites.isEmpty()) return;
 
-		for (String hubStr : favorites) {
+		List<String> favoritesList = new ArrayList<>(favorites);
+		for (String hubStr : favoritesList) {
 			String ip = hubStr;
 			String port = "411";
 			String[] parts = hubStr.split(":");

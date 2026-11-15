@@ -26,7 +26,7 @@ public class ThemeUtils {
 
     public static String getColorAccent(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(Constants.PREFS_NAME, 0);
-        return prefs.getString(PREF_COLOR_ACCENT, COLOR_TEAL);
+        return prefs.getString(PREF_COLOR_ACCENT, COLOR_GREEN);
     }
 
     public static void setColorAccent(Context context, String color) {

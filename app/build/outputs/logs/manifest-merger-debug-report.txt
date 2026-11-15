@@ -68,7 +68,6 @@ ADDED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\
 application
 ADDED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:12:5-60:19
 INJECTED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:12:5-60:19
-INJECTED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:12:5-60:19
 MERGED from [com.android.support:support-compat:28.0.0] C:\Users\steve\.gradle\caches\9.6.0\transforms\040278a57ef16d430be3f119a4c24c85\transformed\support-compat-28.0.0\AndroidManifest.xml:22:5-94
 MERGED from [com.android.support:support-compat:28.0.0] C:\Users\steve\.gradle\caches\9.6.0\transforms\040278a57ef16d430be3f119a4c24c85\transformed\support-compat-28.0.0\AndroidManifest.xml:22:5-94
 MERGED from [com.android.support:versionedparcelable:28.0.0] C:\Users\steve\.gradle\caches\9.6.0\transforms\2d14264f03a4c0be593356f5c3943a9e\transformed\versionedparcelable-28.0.0\AndroidManifest.xml:22:5-23:19
@@ -81,8 +80,6 @@ MERGED from [com.android.support:versionedparcelable:28.0.0] C:\Users\steve\.gra
 		ADDED from [com.android.support:support-compat:28.0.0] C:\Users\steve\.gradle\caches\9.6.0\transforms\040278a57ef16d430be3f119a4c24c85\transformed\support-compat-28.0.0\AndroidManifest.xml:22:18-91
 	android:label
 		ADDED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:15:9-41
-	android:testOnly
-		INJECTED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml
 	android:icon
 		ADDED from D:\Downloads\AnDCpp-Hub-Connection-Test-Gradle\andcpp-gradle\app\src\main\AndroidManifest.xml:14:9-45
 	android:allowBackup

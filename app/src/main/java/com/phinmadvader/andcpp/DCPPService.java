@@ -238,6 +238,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public void pause_download() {
 			isPaused = true;
 			try {
+				File downloadedFile = new File(local_file);
+				if (downloadedFile.exists()) {
+					this.pendingStartOffset = downloadedFile.length();
+				}
 				if (download_status != null && !is_finished_internal()) {
 					download_status.status = DCConstants.DownloadStatus.INTERUPTED;
 					HubSession session = getSession(hubIp);
@@ -251,7 +255,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						}).start();
 					}
 				}
-				if (mNotifyManager2 != null) {
+				if (mNotifyManager2 != null && mBuilder2 != null) {
 					mBuilder2.setContentText("Download Paused")
 							.setOngoing(false);
 					mNotifyManager2.notify(currentID, mBuilder2.build());
@@ -266,18 +270,29 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				if (isPaused || (download_status != null && (download_status.status == DCConstants.DownloadStatus.INTERUPTED || download_status.status == DCConstants.DownloadStatus.FAILED))) {
 					isPaused = false;
-					if (download_status != null) {
+					File downloadedFile = new File(local_file);
+					if (downloadedFile.exists()) {
+						this.pendingStartOffset = downloadedFile.length();
+					} else if (download_status != null) {
 						this.pendingStartOffset = download_status.downloadedSize;
+					}
+					if (download_status != null) {
 						download_status.status = DCConstants.DownloadStatus.QUEUED;
 					}
 					synchronized (initiated_downloads) {
-						initiated_downloads.remove(this);
+						if (!initiated_downloads.contains(this)) {
+							initiated_downloads.add(this);
+						}
 					}
 					try {
-						normal_queue.put(this);
-						if (normal_worker == null || !normal_worker.isAlive()) {
-							normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
-							normal_worker.start();
+						if (normal_queue != null && !normal_queue.contains(this)) {
+							normal_queue.put(this);
+						}
+						synchronized (DCPPService.this) {
+							if (normal_worker == null || !normal_worker.isAlive()) {
+								normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
+								normal_worker.start();
+							}
 						}
 						saveDownloadsState();
 					} catch (InterruptedException e) {
@@ -914,7 +929,24 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						if (work.isCancelled) {
 							Log.i("andcpp", "Download " + work.getFileName() + " cancelled.");
 							updateFolderProgress(work);
-						} else if (work.download_status.status == DCConstants.DownloadStatus.COMPLETED) {
+						} else if (work.isPaused) {
+							Log.i("andcpp", "Download " + work.getFileName() + " paused by user.");
+							File downloadedFile = new File(work.local_file);
+							if (downloadedFile.exists()) {
+								work.pendingStartOffset = downloadedFile.length();
+							}
+							if (work.download_status != null) {
+								work.download_status.status = DCConstants.DownloadStatus.INTERUPTED;
+							}
+							if (work.mBuilder2 != null) {
+								work.mBuilder2.setProgress(0, 0, false);
+								work.mBuilder2.setContentText("Download Paused")
+										.setOngoing(false);
+								if (mNotifyManager2 != null) {
+									mNotifyManager2.notify(work.currentID, work.mBuilder2.build());
+								}
+							}
+						} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.COMPLETED) {
 							// Verify if expected file length was reached; if not, treat as interrupted/failed
 							File downloadedFile = new File(work.local_file);
 							long expectedSize = work.total_bytes();
@@ -934,7 +966,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								updateFolderProgress(work);
 							}
 
-						} else if (work.download_status.status == DCConstants.DownloadStatus.INTERUPTED) {
+						} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.INTERUPTED) {
 							File downloadedFile = new File(work.local_file);
 							if (downloadedFile.exists()) {
 								work.pendingStartOffset = downloadedFile.length();
@@ -1033,11 +1065,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				manageWakeLock();
 			}
 			try {
-				if (normal_queue != null)
+				if (normal_queue != null && !normal_queue.contains(obj))
 					normal_queue.put(obj);
-				if (normal_worker == null || !normal_worker.isAlive()) {
-					normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
-					normal_worker.start();
+				synchronized (DCPPService.this) {
+					if (normal_worker == null || !normal_worker.isAlive()) {
+						normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
+						normal_worker.start();
+					}
 				}
 				saveDownloadsState();
 			} catch (InterruptedException e) {
@@ -1891,6 +1925,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				connectToHub(entry.getKey(), session);
 			}
 		}
+		retryPendingDownloads();
 	}
 
 	private void handlePIAPortBound(String portStr) {
@@ -2133,11 +2168,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				mySendBroadcast(session.hubIp, false, true);
 				manageWakeLock();
 
-				if (normal_worker == null || !normal_worker.isAlive()) {
-					normal_worker = new Thread(generate_worker(normal_queue,
-							initiated_downloads));
-					normal_worker.start();
-				}
+				retryPendingDownloads();
 			} catch (Exception e) {
 				Log.e("andcpp", "Connection failed for " + session.hubIp + ":" + session.hubPort, e);
 				handleConnectionFailure(hubKey, session, e.getMessage() != null ? e.getMessage() : e.toString());
@@ -2146,9 +2177,18 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 	
 	private void handleConnectionFailure(final String hubKey, final HubSession session, String message) {
-		session.reconnectAttempts++;
-		
+		if (session.client != null) {
+			try {
+				session.client.close();
+			} catch (Exception ignored) {}
+			session.client = null;
+		}
+
+		if (session.status == DCClientStatus.RECONNECTING) {
+			return;
+		}
 		session.status = DCClientStatus.RECONNECTING;
+		session.reconnectAttempts++;
 		manageWakeLock();
 		
 		// Exponential backoff: 5s, 10s, 20s, 40s, max 60s
@@ -2478,12 +2518,45 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
-	private void restoreDownloadsState() {
-		try {
-			SharedPreferences prefs = getSharedPreferences("dcpp_downloads_state", Context.MODE_PRIVATE);
-			int count = prefs.getInt("download_count", 0);
-			if (count <= 0) return;
+	public void retryPendingDownloads() {
+		if (initiated_downloads == null) return;
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (obj.isCancelled || obj.isPaused || obj.is_finished()) {
+					continue;
+				}
+				DCConstants.DownloadStatus status = obj.get_status();
+				if (status == DCConstants.DownloadStatus.QUEUED || status == DCConstants.DownloadStatus.INTERUPTED || obj.download_status == null) {
+					HubSession s = getSession(obj.hubIp);
+					if (s != null && s.status == DCClientStatus.CONNECTED) {
+						try {
+							if (normal_queue != null && !normal_queue.contains(obj)) {
+								normal_queue.put(obj);
+							}
+						} catch (InterruptedException e) {
+							Log.e("andcpp", "Interrupted while re-queueing pending download", e);
+						}
+					}
+				}
+			}
+		}
+		if (normal_queue != null && !normal_queue.isEmpty()) {
+			synchronized (this) {
+				if (normal_worker == null || !normal_worker.isAlive()) {
+					normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
+					normal_worker.start();
+				}
+			}
+		}
+	}
 
+	private void restoreDownloadsState() {
+		SharedPreferences prefs = getSharedPreferences("dcpp_downloads_state", Context.MODE_PRIVATE);
+		int count = prefs.getInt("download_count", 0);
+		if (count <= 0) return;
+
+		boolean restoreSuccessful = false;
+		try {
 			Log.d("andcpp", "Restoring " + count + " downloads state...");
 			for (int i = 0; i < count; i++) {
 				String hubIp = prefs.getString("hubIp_" + i, null);
@@ -2497,68 +2570,64 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				boolean isPaused = prefs.getBoolean("is_paused_" + i, false);
 
 				if (localFile != null && remoteFile != null && nick != null) {
-					// Check if file exists or can be resumed
 					File f = new File(localFile);
-					long existingLength = f.exists() ? f.length() : bytesDone;
+					long existingLength = f.exists() ? Math.max(f.length(), bytesDone) : bytesDone;
 
-					// If we have hubIp == null or not in sessions, use first available or default
-					final String targetHubIp;
-					if (hubIp == null || getSession(hubIp) == null) {
-						if (!sessions.isEmpty()) {
-							targetHubIp = sessions.keySet().iterator().next();
-						} else {
-							targetHubIp = hubIp;
+					final String targetHubIp = (hubIp != null) ? hubIp : (!sessions.isEmpty() ? sessions.keySet().iterator().next() : null);
+
+					synchronized (initiated_downloads) {
+						boolean exists = false;
+						for (DownloadObject existing : initiated_downloads) {
+							if (existing.local_file.equals(localFile) && !existing.is_finished()) {
+								exists = true;
+								break;
+							}
 						}
-					} else {
-						targetHubIp = hubIp;
-					}
-
-					if (targetHubIp != null) {
-						downloadEnqueueExecutor.execute(() -> {
-							HubSession session = getSession(targetHubIp);
-							if (session == null || session.client == null || session.prefs == null) {
-								Log.e("andcpp", "Session not fully initialized for restored download hub " + targetHubIp);
-								return;
-							}
-							synchronized (initiated_downloads) {
-								for (DownloadObject existing : initiated_downloads) {
-									if (existing.local_file.equals(localFile) && !existing.is_finished()) {
-										return;
-									}
-								}
-							}
+						if (!exists) {
 							final DownloadObject obj = new DownloadObject(targetHubIp, nick, localFile,
-									remoteFile, this, groupLabel, groupName);
+									remoteFile, DCPPService.this, groupLabel, groupName);
 							obj.set_total_bytes(fileSize);
 							obj.pendingStartOffset = existingLength;
 							if (isPaused) {
 								obj.isPaused = true;
-							}
-							synchronized (initiated_downloads) {
-								initiated_downloads.add(obj);
-								manageWakeLock();
-							}
-							if (!isPaused) {
-								try {
-									if (normal_queue != null)
-										normal_queue.put(obj);
-									if (normal_worker == null || !normal_worker.isAlive()) {
-										normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
-										normal_worker.start();
-									}
-								} catch (InterruptedException e) {
-									Log.e("andcpp", "Interrupted while adding restored download to queue", e);
+								if (obj.mBuilder2 != null) {
+									obj.mBuilder2.setContentText("Download Paused").setOngoing(false);
+								}
+							} else {
+								DCUser targetUser = new DCUser();
+								targetUser.nick = nick;
+								DCUser myUser = new DCUser();
+								obj.download_status = new com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity(
+										targetUser, myUser, remoteFile, localFile);
+								obj.download_status.status = DCConstants.DownloadStatus.QUEUED;
+								obj.download_status.downloadedSize = existingLength;
+								obj.download_status.startOffset = existingLength;
+								obj.download_status.expectedDownloadSize = fileSize;
+								if (obj.mBuilder2 != null) {
+									obj.mBuilder2.setContentText("Queued: Waiting for slot...").setOngoing(true);
 								}
 							}
-						});
+							initiated_downloads.add(obj);
+							manageWakeLock();
+							if (!isPaused) {
+								if (normal_queue != null && !normal_queue.contains(obj)) {
+									normal_queue.put(obj);
+								}
+							}
+						}
 					}
 				}
 			}
-			// Clear prefs after restore so we don't re-restore on top
-			prefs.edit().clear().apply();
+			restoreSuccessful = true;
 		} catch (Exception e) {
 			Log.e("andcpp", "Error restoring downloads state", e);
 		}
+
+		if (restoreSuccessful) {
+			prefs.edit().clear().apply();
+		}
+
+		retryPendingDownloads();
 	}
 
 	

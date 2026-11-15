@@ -266,7 +266,10 @@ public class UploadManager {
         try {
             long now = System.currentTimeMillis();
             for (PeerConnectionHandler h : activeUploads.values()) {
-                if (h.isFinished()) continue;
+                if (h.isFinished()) {
+                    activeUploads.values().remove(h);
+                    continue;
+                }
 
                 long elapsed = now - h.getConnectionStartTime();
                 
@@ -275,9 +278,6 @@ public class UploadManager {
                     Log.d("andcpp", "Closing zombie handshaking connection from " + h.getHisNick());
                     h.close();
                 }
-                
-                // Stalled uploads (no progress for 2 minutes) could also be cleaned up here
-                // but PeerConnectionHandler.run() has a socket timeout.
             }
         } catch (Exception e) {
             Log.e("andcpp", "Exception in cleanupZombieConnections", e);

@@ -114,9 +114,7 @@ public class MessageRouter implements Runnable {
 
 			List<DCCommand> listOfCustomSubscriptions = customSubscriptions
 					.get(msg.command);
-			if (listOfCustomSubscriptions == null) {
-				continue;
-			} else {
+			if (listOfCustomSubscriptions != null) {
 				for (DCCommand dcCallback : listOfCustomSubscriptions) {
 					DCCommand handle = dcCallback;
 					if (handle != null) {
@@ -126,6 +124,9 @@ public class MessageRouter implements Runnable {
 				}
 			}
 
+			if ("HubQuit".equals(msg.command) || "Quit".equals(msg.command)) {
+				break;
+			}
 		}
 
 	}
