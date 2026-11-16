@@ -16,6 +16,7 @@ An Android DC++ client based on the original open-source AnDCpp project.
 - Preserved and extended the original AnDCpp networking library.
 
 ### Credits
+stevemorris528 (PuffingMad) 2026
 
 Based on the original AnDCpp project by Anish Shankar, Lakshminarayanan Srinivasan, and Madhavan Malolan.
 
