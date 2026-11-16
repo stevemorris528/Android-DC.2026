@@ -1,286 +1,282 @@
 [
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_file_list_view_pager.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\file_list_view_pager.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-xxhdpi_green_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-xxhdpi/green_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_public_hub_list_item.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\public_hub_list_item.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_folder.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/folder.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_green_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\green_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_settings_list_element_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/settings_list_element_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xxhdpi_ic_launcher.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xxhdpi\\ic_launcher.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-xhdpi_green_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-xhdpi/green_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_ic_launcher.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\ic_launcher.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_dialog_rounded_bg.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/dialog_rounded_bg.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-nodpi_dcpp_logo.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-nodpi\\dcpp_logo.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_video.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/video.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_public_hubs_dialog.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\public_hubs_dialog.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_pressed_rounded.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_pressed_rounded.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_chat_item_outgoing.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\chat_item_outgoing.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_bubble_incoming.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/bubble_incoming.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_exe.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\exe.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-nodpi_dcpp_logo.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-nodpi/dcpp_logo.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_selected_rounded_dark.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_selected_rounded_dark.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_login_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/login_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\xml_file_paths.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\xml\\file_paths.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_hub_list_item.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/hub_list_item.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\menu_pm_chat.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\menu\\pm_chat.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/color_tab_text_color_selector_dark.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/color/tab_text_color_selector_dark.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_file_list.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\file_list.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_public_hub_list_item.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/public_hub_list_item.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_music.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\music.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_action_bar_title.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/action_bar_title.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_indicator_rounded_dark.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_indicator_rounded_dark.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_main_activity.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/main_activity.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-hdpi_ic_launcher.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-hdpi\\ic_launcher.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-ldpi_red_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-ldpi/red_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_hub_list_item.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\hub_list_item.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_green_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/green_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_internet.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\internet.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_internet.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/internet.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\menu_connect.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\menu\\connect.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/color_tab_text_color_selector.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/color/tab_text_color_selector.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_row_element.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\row_element.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-ldpi_ic_launcher.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-ldpi/ic_launcher.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_pressed_rounded.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_pressed_rounded.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_linuxdcpp_normal.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/linuxdcpp_normal.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-ldpi_green_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-ldpi\\green_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-hdpi_ic_launcher.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-hdpi/ic_launcher.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xxhdpi_green_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xxhdpi\\green_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/menu_pm_chat.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/menu/pm_chat.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-hdpi_red_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-hdpi\\red_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-hdpi_red_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-hdpi/red_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_chat_item_incoming.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\chat_item_incoming.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-ldpi_green_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-ldpi/green_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_hub_list_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\hub_list_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_selected_rounded_dark.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_selected_rounded_dark.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_login_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\login_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_chat_item_incoming.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/chat_item_incoming.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_zip.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\zip.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_userlist_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/userlist_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_unselected_rounded.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_unselected_rounded.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_iso.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/iso.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_messageboard_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\messageboard_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_activity_private_chat.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/activity_private_chat.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_txt.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\txt.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_file_list_view_pager.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/file_list_view_pager.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_main_activity.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\main_activity.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_office.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/office.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xhdpi_green_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xhdpi\\green_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-xhdpi_red_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-xhdpi/red_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_userlist_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\userlist_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_download_list_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/download_list_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_bubble_outgoing.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\bubble_outgoing.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_indicator_rounded_dark.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_indicator_rounded_dark.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_iso.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\iso.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_public_hubs_dialog.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/public_hubs_dialog.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_btn_green_rounded.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\btn_green_rounded.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_zip.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/zip.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_settings_list_element_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\settings_list_element_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_ic_launcher.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/ic_launcher.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_image.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\image.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_download_row_element.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/download_row_element.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_dialog_rounded_bg_dark.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\dialog_rounded_bg_dark.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_dialog_rounded_bg_dark.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/dialog_rounded_bg_dark.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_office.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\office.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_chat_input_bg.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/chat_input_bg.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\color_tab_text_color_selector_dark.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\color\\tab_text_color_selector_dark.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_chat_item_outgoing.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/chat_item_outgoing.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xhdpi_red_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xhdpi\\red_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_music.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/music.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_download_row_element.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\download_row_element.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_messageboard_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/messageboard_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-ldpi_ic_launcher.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-ldpi\\ic_launcher.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/xml_file_paths.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/xml/file_paths.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_pdf.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\pdf.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/xml_network_security_config.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/xml/network_security_config.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_other.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\other.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_pdf.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/pdf.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xxhdpi_red_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xxhdpi\\red_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_red_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/red_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_linuxdcpp_normal.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\linuxdcpp_normal.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_btn_green_rounded.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/btn_green_rounded.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_linuxdcpp_normal_fw.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\linuxdcpp_normal_fw.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_download_dialog.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/download_dialog.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_activity_private_chat.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\activity_private_chat.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_hub_list_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/hub_list_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\color_tab_text_color_selector.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\color\\tab_text_color_selector.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_file_list.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/file_list.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_indicator_rounded.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_indicator_rounded.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_unselected_rounded_dark.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_unselected_rounded_dark.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_bubble_incoming.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\bubble_incoming.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-xxhdpi_red_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-xxhdpi/red_user.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_download_list_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\download_list_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_exe.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/exe.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_selected_rounded.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_selected_rounded.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_other.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/other.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_video.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\video.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_image.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/image.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_red_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\red_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_row_element.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/row_element.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-hdpi_green_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-hdpi\\green_user.png"
-    },
-    {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_download_dialog.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\download_dialog.xml"
-    },
-    {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\xml_network_security_config.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\xml\\network_security_config.xml"
-    },
-    {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_unselected_rounded_dark.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_unselected_rounded_dark.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-hdpi_green_user.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-hdpi/green_user.png"
     },
     {
         "merged": "com.phinmadvader.andcpp.app-debug-7:/menu_connect.xml.flat",
         "source": "com.phinmadvader.andcpp.app-main-9:/menu/connect.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xhdpi_ic_launcher.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xhdpi\\ic_launcher.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_linuxdcpp_normal_fw.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/linuxdcpp_normal_fw.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_folder.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\folder.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_bubble_outgoing.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/bubble_outgoing.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_dialog_rounded_bg.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\dialog_rounded_bg.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-xxhdpi_ic_launcher.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-xxhdpi/ic_launcher.png"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-ldpi_red_user.png.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-ldpi\\red_user.png"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_indicator_rounded.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_indicator_rounded.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_welcome_layout.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\welcome_layout.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_welcome_layout.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/welcome_layout.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_action_bar_title.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\action_bar_title.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_unselected_rounded.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_unselected_rounded.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_chat_input_bg.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\chat_input_bg.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_btn_blue_rounded.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/btn_blue_rounded.xml"
     },
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_btn_blue_rounded.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\btn_blue_rounded.xml"
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-mdpi_txt.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-mdpi/txt.png"
+    },
+    {
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable_tab_selected_rounded.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable/tab_selected_rounded.xml"
+    },
+    {
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/drawable-xhdpi_ic_launcher.png.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/drawable-xhdpi/ic_launcher.png"
     }
 ]

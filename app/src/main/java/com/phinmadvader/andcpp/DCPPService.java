@@ -2002,7 +2002,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	private void startKeepAliveTimer() {
 		if (keepAliveTimer != null) keepAliveTimer.cancel();
-		// A Handler on the main looper or AlarmManager is better than Timer, but we hold a PARTIAL_WAKE_LOCK.
+		// Use Handler with Alarm/Repeating check or Timer to ping more frequently during sleep (e.g., every 30 seconds)
 		keepAliveTimer = new Timer();
 		keepAliveTimer.schedule(new TimerTask() {
 			@Override
@@ -2011,7 +2011,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					for (HubSession session : sessions.values()) {
 						if (session.status == DCClientStatus.CONNECTED && session.client != null) {
 							try {
-								// Send a keep-alive (empty command ending in |) to prevent socket timeouts
+								// Send a keep-alive ping (empty command ending in |) to prevent NAT/router timeouts during deep sleep
 								session.client.sendRaw("");
 							} catch (Exception e) {
 								Log.e("andcpp", "Failed to send keep-alive to " + session.hubIp);
@@ -2025,7 +2025,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					Log.e("andcpp", "Exception in keepAliveTimer task", e);
 				}
 			}
-		}, 60000, 60000); // Every 60 seconds
+		}, 30000, 30000); // Every 30 seconds (down from 60s) to keep NAT pinhole active during deep sleep
 	}
 
 	public class LocalBinder extends Binder {

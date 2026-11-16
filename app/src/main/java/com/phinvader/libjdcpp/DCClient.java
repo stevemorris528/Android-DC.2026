@@ -105,7 +105,8 @@ public class DCClient {
 		DCConnectionSocket.connect(new java.net.InetSocketAddress(ip, port), 15000); // 15s connection timeout
 		DCConnectionSocket.setKeepAlive(true);
 		DCConnectionSocket.setTcpNoDelay(true);
-		DCConnectionSocket.setSoTimeout(120000); // 2 minutes timeout for reads
+		// Disable read timeout (0 = infinite) so TCP connection does not time out during long deep sleep idle periods
+		DCConnectionSocket.setSoTimeout(0);
 		
 		// Removed automatic self_ip assignment from local address as it may be a private IP.
 		// DCPPService will handle external IP discovery and hub-reported IP ($UserIP).
