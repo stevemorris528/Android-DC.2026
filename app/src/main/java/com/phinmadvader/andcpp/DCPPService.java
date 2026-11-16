@@ -456,7 +456,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (session == null || session.client == null) {
 				Log.w("andcpp", "Hub session not ready for " + (hubIp != null ? hubIp : "any hub") + ". Retrying download.");
 				if (!sessions.isEmpty()) {
-					session = getSession(null);
+					// Fallback to first available session
+					session = sessions.values().iterator().next();
 					if (session != null) {
 						this.hubIp = session.hubIp;
 					}
@@ -862,17 +863,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								break;
 							} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.INTERUPTED) {
 								break;
-							} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.QUEUED) {
-								// In Direct Connect, waiting for a slot in peer's queue can take several minutes or longer.
-								// Periodically re-signal connection every 30 seconds if still queued.
+							} else if (work.download_status != null && (work.download_status.status == DCConstants.DownloadStatus.QUEUED || work.download_status.status == DCConstants.DownloadStatus.INITIATED || work.download_status.status == DCConstants.DownloadStatus.STARTED)) {
+								// In Direct Connect, waiting for a slot in peer's queue or handshake can take several minutes or longer.
+								// Periodically re-signal connection every 30 seconds if still queued/waiting.
 								if (work.millis_elapsed() > 0 && work.millis_elapsed() % 30000 < Constants.DOWNLOAD_UPDATE_INTERVAL_MILLIS) {
 									try {
+										Log.d("andcpp", "Re-signaling queued/waiting download connection for: " + work.file_name + " [status=" + work.download_status.status + ", elapsed=" + work.millis_elapsed() + "ms]");
 										work.start_download();
-									} catch (Exception ignored) {}
+									} catch (Exception e) {
+										Log.e("andcpp", "Failed to re-signal download: " + work.file_name, e);
+									}
 								}
-								// Do NOT fail while legitimately waiting for peer slot
+								// Do NOT fail while legitimately waiting for peer slot or handshake
 							} else if (work.download_status != null && work.download_status.status != DCConstants.DownloadStatus.DOWNLOADING) {
 								if (work.millis_elapsed() > 300000) { // 5 minute safety timeout for unresponsive connections
+									Log.e("andcpp", "Download timed out after 5 minutes in status: " + work.download_status.status + " for file: " + work.file_name);
 									work.download_status.status = DCConstants.DownloadStatus.FAILED;
 									break;
 								}

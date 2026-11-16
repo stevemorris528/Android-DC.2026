@@ -97,7 +97,7 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
                             remainingSecs / 60, remainingSecs % 60);
                 }
             }
-            speed.setText(String.format(java.util.Locale.US, "%.2f %s/s%s", fs.fileSize, fs.unit, etaStr));
+            speed.setText(String.format(java.util.Locale.US, "%.2f %s/s%s ⬇", fs.fileSize, fs.unit, etaStr));
             speed.setVisibility(View.VISIBLE);
         } else if (status == DCConstants.DownloadStatus.COMPLETED) {
             speed.setText("Done");

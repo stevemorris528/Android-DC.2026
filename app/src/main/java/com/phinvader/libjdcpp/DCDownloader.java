@@ -56,12 +56,14 @@ public class DCDownloader {
 	public DownloadQueueEntity getDownloadEntity(String nick) {
 		if(downloadQ == null)
 			return null;
-		if(downloadQ.get(nick)==null)
+		ArrayList<DownloadQueueEntity> list = downloadQ.get(nick);
+		if(list == null || list.isEmpty())
 			return null;
-		DownloadQueueEntity ret = downloadQ.get(nick).get(0);
-		downloadQ.get(nick).remove(ret);
+		DownloadQueueEntity ret = list.get(0);
+		list.remove(ret);
 		return ret;
 	}
+
 
 	public boolean hasAnyDownloadEntities() {
 		if (downloadQ == null) return false;

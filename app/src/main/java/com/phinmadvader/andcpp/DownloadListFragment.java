@@ -102,7 +102,7 @@ public class DownloadListFragment extends Fragment {
             uploadStatsLayout.setVisibility(View.VISIBLE);
             
             FileSize speedFs = new FileSize(stats.currentSpeed);
-            txtUploadSpeed.setText(String.format(java.util.Locale.US, "Upload Speed: %.2f %s/s", speedFs.fileSize, speedFs.unit));
+            txtUploadSpeed.setText(String.format(java.util.Locale.US, "Upload Speed: %.2f %s/s ⬆", speedFs.fileSize, speedFs.unit));
             
             FileSize totalFs = new FileSize(stats.totalBytes);
             txtUploadStats.setText(String.format(java.util.Locale.US, "Active: %d | Queued: %d | Total Uploaded: %.2f %s | Success: %d | Failed: %d", 
