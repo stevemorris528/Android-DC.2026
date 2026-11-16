@@ -19,4 +19,4 @@ An Android DC++ client based on the original open-source AnDCpp project.
 
 Based on the original AnDCpp project by Anish Shankar, Lakshminarayanan Srinivasan, and Madhavan Malolan.
 
-- **License:** GNU GPL v3.0 — https://github.com/stevemorris528/Android-DC.2026/blob/master/andcpp-gradle/LICENSE
+- **License:** GNU GPL v3.0 — [https://github.com/stevemorris528/Android-DC.2026/blob/master/andcpp-gradle/LICENSE](https://github.com/stevemorris528/Android-DC.2026/blob/master/LICENSE)
