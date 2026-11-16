@@ -175,6 +175,7 @@ id action_container
 id action_divider
 id action_get_file_list
 id action_image
+id action_license
 id action_public_hubs
 id action_saved_filelists
 id action_search
@@ -325,6 +326,7 @@ layout welcome_layout
 menu connect
 menu pm_chat
 string action_about
+string action_license
 string action_public_hubs
 string action_settings
 string action_shutdown

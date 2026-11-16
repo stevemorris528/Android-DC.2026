@@ -1,11 +1,11 @@
 [
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_public_hub_list_item.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\public_hub_list_item.xml"
-    },
-    {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_file_list_view_pager.xml.flat",
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\file_list_view_pager.xml"
+    },
+    {
+        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_public_hub_list_item.xml.flat",
+        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\public_hub_list_item.xml"
     },
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_green_user.png.flat",
@@ -128,10 +128,6 @@
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\main_activity.xml"
     },
     {
-        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_public_hubs_dialog.xml.flat",
-        "source": "com.phinmadvader.andcpp.app-main-9:/layout/public_hubs_dialog.xml"
-    },
-    {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xhdpi_green_user.png.flat",
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xhdpi\\green_user.png"
     },
@@ -250,6 +246,10 @@
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable_tab_unselected_rounded_dark.xml.flat",
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable\\tab_unselected_rounded_dark.xml"
+    },
+    {
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/menu_connect.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/menu/connect.xml"
     },
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xhdpi_ic_launcher.png.flat",

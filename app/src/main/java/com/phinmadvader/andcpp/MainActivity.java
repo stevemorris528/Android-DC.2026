@@ -417,6 +417,9 @@ public class MainActivity extends FragmentActivity implements
 			Intent settingsIntent = new Intent(this, Settings.class);
 			startActivity(settingsIntent);
 			return true;
+		} else if (id == R.id.action_license) {
+			showLicenseDialog();
+			return true;
 		} else if (id == R.id.action_search) {
 			if (searchmenuitem != null) {
 				searchmenuitem.expandActionView();
@@ -469,6 +472,39 @@ public class MainActivity extends FragmentActivity implements
 		new AlertDialog.Builder(this)
 				.setIcon(R.drawable.ic_launcher)
 				.setTitle("About Android DC++ 2026")
+				.setView(scrollView)
+				.setPositiveButton("OK", null)
+				.show();
+	}
+
+	private void showLicenseDialog() {
+		String licenseText = "GNU GENERAL PUBLIC LICENSE\n" +
+				"Version 3, 29 June 2007\n\n" +
+				"Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>\n" +
+				"Everyone is permitted to copy and distribute verbatim copies\n" +
+				"of this license document, but changing it is not allowed.\n\n" +
+				"Preamble\n\n" +
+				"The GNU General Public License is a free, copyleft license for\n" +
+				"software and other kinds of works.\n\n" +
+				"This application is licensed under the GNU GPLv3.\n" +
+				"You can redistribute it and/or modify it under the terms of the\n" +
+				"GNU General Public License as published by the Free Software Foundation,\n" +
+				"either version 3 of the License, or (at your option) any later version.\n\n" +
+				"For details, visit: https://www.gnu.org/licenses/gpl-3.0.html";
+
+		TextView textView = new TextView(this);
+		textView.setText(licenseText);
+		int padding = (int) (18 * getResources().getDisplayMetrics().density);
+		textView.setPadding(padding, padding / 2, padding, padding / 2);
+		textView.setTextSize(13);
+		textView.setLineSpacing(0, 1.2f);
+
+		ScrollView scrollView = new ScrollView(this);
+		scrollView.addView(textView);
+
+		new AlertDialog.Builder(this)
+				.setIcon(R.drawable.ic_launcher)
+				.setTitle("GNU GPLv3 License")
 				.setView(scrollView)
 				.setPositiveButton("OK", null)
 				.show();
