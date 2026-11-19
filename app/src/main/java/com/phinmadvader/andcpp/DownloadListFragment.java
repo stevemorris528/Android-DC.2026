@@ -159,10 +159,19 @@ public class DownloadListFragment extends Fragment {
         DCConstants.DownloadStatus status = download.get_status();
         String title = download.getFileName() + (download.isFolder() ? " (Folder)" : "");
         
-        FileSize doneFs = new FileSize(download.bytes_done());
-        FileSize totalFs = new FileSize(download.total_bytes());
-        String progressInfo = String.format(java.util.Locale.US, "\nProgress: %.2f %s / %.2f %s",
-                doneFs.fileSize, doneFs.unit, totalFs.fileSize, totalFs.unit);
+        long total = download.total_bytes();
+        long done = download.bytes_done();
+        FileSize doneFs = new FileSize(done);
+        FileSize totalFs = new FileSize(total);
+        String progressInfo;
+        if (total > 0) {
+            double percent = ((double) done / total) * 100.0;
+            progressInfo = String.format(java.util.Locale.US, "\nProgress: %.1f%% (%.2f %s / %.2f %s)",
+                    percent, doneFs.fileSize, doneFs.unit, totalFs.fileSize, totalFs.unit);
+        } else {
+            progressInfo = String.format(java.util.Locale.US, "\nProgress: %.2f %s done",
+                    doneFs.fileSize, doneFs.unit);
+        }
 
         String statusName = status.name();
         if (status == DCConstants.DownloadStatus.INTERUPTED) statusName = "Paused";

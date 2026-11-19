@@ -93,7 +93,7 @@ public class HubListFragment extends Fragment {
         } else {
             optionsList.add("Add to Favorite Hubs");
         }
-        optionsList.add("Save Password");
+        optionsList.add("Edit Nick & Password");
 
         final String[] options = optionsList.toArray(new String[0]);
 
@@ -138,8 +138,75 @@ public class HubListFragment extends Fragment {
                         case "Save Password":
                             showPasswordDialog(entry.hubIp);
                             break;
+                        case "Edit Nick & Password":
+                            showEditNickPasswordDialog(entry.hubIp);
+                            break;
                     }
                 })
+                .show();
+    }
+
+    private void showEditNickPasswordDialog(final String hubIp) {
+        final android.widget.LinearLayout layout = new android.widget.LinearLayout(getActivity());
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        layout.setPadding(32, 32, 32, 32);
+
+        final android.widget.EditText nickInput = new android.widget.EditText(getActivity());
+        nickInput.setHint("Enter nickname for this hub");
+        SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+        String savedNick = prefs.getString("favorite_nicks_" + hubIp, "");
+        if (savedNick.isEmpty() && hubIp.contains(":")) {
+            savedNick = prefs.getString("favorite_nicks_" + hubIp.split(":")[0], "");
+        }
+        if (savedNick.isEmpty()) {
+            savedNick = prefs.getString(Constants.SETTINGS_NICK_KEY, "");
+        }
+        nickInput.setText(savedNick);
+        layout.addView(nickInput);
+
+        final android.widget.EditText passInput = new android.widget.EditText(getActivity());
+        passInput.setHint("Enter hub password");
+        passInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        String savedPass = prefs.getString("favorite_passwords_" + hubIp, "");
+        if (savedPass.isEmpty() && hubIp.contains(":")) {
+            savedPass = prefs.getString("favorite_passwords_" + hubIp.split(":")[0], "");
+        }
+        passInput.setText(savedPass);
+        layout.addView(passInput);
+
+        new AlertDialog.Builder(getActivity())
+                .setTitle("Edit Nick & Password for " + hubIp)
+                .setView(layout)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    String nick = nickInput.getText().toString();
+                    String pass = passInput.getText().toString();
+                    SharedPreferences.Editor editor = prefs.edit();
+                    
+                    editor.putString("favorite_nicks_" + hubIp, nick);
+                    if (hubIp.contains(":")) {
+                        editor.putString("favorite_nicks_" + hubIp.split(":")[0], nick);
+                    }
+
+                    editor.putString("favorite_passwords_" + hubIp, pass);
+                    if (hubIp.contains(":")) {
+                        editor.putString("favorite_passwords_" + hubIp.split(":")[0], pass);
+                    }
+                    editor.apply();
+
+                    if (mainActivity.mService != null) {
+                        DCPPService.HubSession session = mainActivity.mService.getSession(hubIp);
+                        if (session != null) {
+                            if (session.prefs != null) {
+                                session.prefs.password = pass;
+                            }
+                            if (session.myuser != null && !nick.isEmpty()) {
+                                session.myuser.nick = nick;
+                            }
+                        }
+                    }
+                    Toast.makeText(getActivity(), "Saved details for " + hubIp, Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
                 .show();
     }
 

@@ -50,8 +50,9 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
         
         String progressStr;
         if (total > 0) {
-            progressStr = String.format(java.util.Locale.US, "%.2f %s / %.2f %s",
-                    doneFs.fileSize, doneFs.unit, totalFs.fileSize, totalFs.unit);
+            double percent = ((double) done / total) * 100.0;
+            progressStr = String.format(java.util.Locale.US, "%.1f%% (%.2f %s / %.2f %s)",
+                    percent, doneFs.fileSize, doneFs.unit, totalFs.fileSize, totalFs.unit);
         } else {
             progressStr = String.format(java.util.Locale.US, "%.2f %s done",
                     doneFs.fileSize, doneFs.unit);
@@ -97,7 +98,7 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
                             remainingSecs / 60, remainingSecs % 60);
                 }
             }
-            speed.setText(String.format(java.util.Locale.US, "%.2f %s/s%s ⬇", fs.fileSize, fs.unit, etaStr));
+            speed.setText(String.format(java.util.Locale.US, "⬇ %.2f %s/s%s", fs.fileSize, fs.unit, etaStr));
             speed.setVisibility(View.VISIBLE);
         } else if (status == DCConstants.DownloadStatus.COMPLETED) {
             speed.setText("Done");
