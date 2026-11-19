@@ -2830,6 +2830,71 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}, 10000);
 	}
 
+	public void resetAllDownloads() {
+		// 1. Pause all active/running downloads
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (!obj.is_finished() && !obj.isPaused) {
+					try {
+						obj.pause_download();
+					} catch (Exception e) {
+						Log.e("andcpp", "Error pausing download during resetAllDownloads", e);
+					}
+				}
+			}
+		}
+
+		// 2. Close connection streams / sockets and threads
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (obj.download_status != null) {
+					if (obj.download_status.connectionHandler != null) {
+						try {
+							obj.download_status.connectionHandler.close();
+						} catch (Exception e) {
+							Log.e("andcpp", "Error closing download connection handler during resetAllDownloads", e);
+						}
+					}
+					if (obj.download_status.thread != null) {
+						try {
+							obj.download_status.thread.interrupt();
+						} catch (Exception ignored) {}
+					}
+				}
+			}
+		}
+
+		if (normal_worker != null) {
+			normal_worker.interrupt();
+		}
+
+		// 3. Save download state with actual file lengths synchronously
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (!obj.is_finished()) {
+					File f = new File(obj.local_file);
+					if (f.exists()) {
+						obj.pendingStartOffset = f.length();
+						if (obj.download_status != null) {
+							obj.download_status.downloadedSize = f.length();
+							obj.download_status.startOffset = f.length();
+						}
+					}
+				}
+			}
+		}
+		saveDownloadsState();
+
+		// 4. Clear current initiated downloads list
+		synchronized (initiated_downloads) {
+			initiated_downloads.clear();
+		}
+
+		// 5. Restore downloads state and re-queue/resume them (same as app restart sequence)
+		restoreDownloadsState();
+		Log.d("andcpp", "resetAllDownloads executed successfully.");
+	}
+
 	
 	
 	

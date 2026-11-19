@@ -188,6 +188,7 @@ id async
 id blocking
 id bottom
 id btnClearFinished
+id btnResetAllDownloads
 id btn_connect_now
 id btn_go_to_hubs
 id bubble_outgoing_layout

@@ -65,6 +65,15 @@ public class DownloadListFragment extends Fragment {
             }
         });
 
+        Button btnResetAll = (Button) root.findViewById(R.id.btnResetAllDownloads);
+        btnResetAll.setOnClickListener(v -> {
+            if (mainActivity.mService != null) {
+                mainActivity.mService.resetAllDownloads();
+                Toast.makeText(getActivity(), "Resetting all downloads...", Toast.LENGTH_SHORT).show();
+                updateList();
+            }
+        });
+
         downloadListView.setOnItemClickListener((parent, view, position, id) -> {
             DownloadItem download = downloadList.get(position);
             DCConstants.DownloadStatus status = download.get_status();
