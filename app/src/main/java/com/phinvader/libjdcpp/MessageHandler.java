@@ -99,33 +99,39 @@ public class MessageHandler {
 					}
 					if (buf_read_sz != -1 && dump_stream_file != null) {
 						dump_bytes = 0;
-						FileOutputStream output_file = new FileOutputStream(
-								dump_stream_file, dump_append);
+						FileOutputStream output_file = null;
+						try {
+							output_file = new FileOutputStream(
+									dump_stream_file, dump_append);
 
-						byte[] initial = messageBuffer.toByteArray();
-						if (initial.length > 0) {
-							output_file.write(initial);
-							dump_bytes += initial.length;
-							messageBuffer.reset();
-						}
-
-						byte[] write_buffer = new byte[DCConstants.io_buffer_size];
-						while (true) {
-							int s = bin.read(write_buffer);
-							if (s == -1)
-								break;
-							output_file.write(write_buffer, 0, s);
-							output_file.flush(); // Ensure writes are flushed immediately to persistent storage
-							dump_bytes += s;
-							if (downloadEntity != null) {
-								downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
+							byte[] initial = messageBuffer.toByteArray();
+							if (initial.length > 0) {
+								output_file.write(initial);
+								dump_bytes += initial.length;
+								messageBuffer.reset();
 							}
 
-							if (dump_bytes >= dump_bytes_limit || Thread.currentThread().isInterrupted())
-								break;
+							byte[] write_buffer = new byte[DCConstants.io_buffer_size];
+							while (true) {
+								int s = bin.read(write_buffer);
+								if (s == -1)
+									break;
+								output_file.write(write_buffer, 0, s);
+								output_file.flush(); // Ensure writes are flushed immediately to persistent storage
+								dump_bytes += s;
+								if (downloadEntity != null) {
+									downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
+								}
+
+								if (dump_bytes >= dump_bytes_limit || Thread.currentThread().isInterrupted())
+									break;
+							}
+							output_file.getFD().sync(); // Force sync file descriptor
+						} finally {
+							if (output_file != null) {
+								try { output_file.close(); } catch (IOException ignored) {}
+							}
 						}
-						output_file.getFD().sync(); // Force sync file descriptor
-						output_file.close();
 					}
 					bin.close();
 					addMessage(DCMessage.parse_message("$HubQuit".getBytes()));

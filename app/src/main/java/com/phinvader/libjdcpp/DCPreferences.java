@@ -8,7 +8,7 @@ public class DCPreferences {
 	public String password = null; // Password for registered nick if required
 	public int upload_port = 4111;
 	public boolean active = true;
-	public static String self_ip;
+	public String self_ip;
 	public static boolean nat_mapped = false;
 	public static String external_ip_detected = null;
 
@@ -54,8 +54,12 @@ public class DCPreferences {
 		// TODO auto-generated block
 	}
 
-	public static String get_self_ip() {
+	public String get_self_ip() {
 		return self_ip;
+	}
+
+	public void set_self_ip(String self_ip) {
+		this.self_ip = self_ip;
 	}
 
 	// Following are the Getters and Setters for the params in this class

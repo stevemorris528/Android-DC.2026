@@ -19,8 +19,11 @@ public class Constants {
     public static String SETTINGS_AUTO_RECONNECT_HUBS_KEY = "dcautoreconnecthubs";
     public static int DEFAULT_PORT = 4111;
     public static int DEFAULT_UPLOAD_SLOTS = 3;
+    public static int DEFAULT_DOWNLOAD_WORKERS = 3;
+    public static String SETTINGS_DOWNLOAD_WORKERS_KEY = "dc_download_workers";
     public static int MAX_DOWNLOAD_Q = 1024;
     public static int DOWNLOAD_TIMEOUT_MILLIS = 60000;
+    public static int DOWNLOAD_CONNECT_DEADLINE_MILLIS = 90000; // 90 seconds connect deadline
     public static int DOWNLOAD_UPDATE_INTERVAL_MILLIS = 1000; // Updates all download activities every 1s
     public static int POLLING_CLASS_TIME_IN_MILLIS = 5000; // Interval frequency for poll updates
 }

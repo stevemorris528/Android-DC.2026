@@ -20,6 +20,7 @@ public class DCMessage {
 	public DCUser myinfo;
 	public DCUser hisinfo;
 	public String quit_s;
+	public String error_s;
 	public String host_name; // ConnectToMe
 	public int port_number; // ConnectToMe
 	public String connect_nick; // ConnectToMe
@@ -276,6 +277,14 @@ public class DCMessage {
 					} else {
 						quit_s = "";
 					}
+				} else if (command.equals("MaxedOut")) {
+					parse_success = true;
+				} else if (command.equals("Error")) {
+					if (input.length - beg - 1 > 0)
+						error_s = new String(input, beg + 1, input.length - beg - 1);
+					else
+						error_s = "";
+					parse_success = true;
 				} else if (command.equals("Get")) {
 					String getStr = new String(input, beg, input.length - beg).trim();
 					if (getStr.contains("|")) {

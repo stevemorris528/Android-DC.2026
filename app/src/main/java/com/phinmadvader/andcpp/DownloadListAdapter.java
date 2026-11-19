@@ -61,8 +61,11 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
         String statusName = status.name();
         if (status == DCConstants.DownloadStatus.DOWNLOADING) statusName = "Downloading";
         else if (status == DCConstants.DownloadStatus.QUEUED) statusName = "Queued";
-        else if (status == DCConstants.DownloadStatus.INITIATED) statusName = "Initiating";
-        else if (status == DCConstants.DownloadStatus.STARTED) statusName = "Started";
+        else if (status == DCConstants.DownloadStatus.INITIATED || status == DCConstants.DownloadStatus.STARTED) statusName = "Connecting";
+        else if (status == DCConstants.DownloadStatus.WAITING_FOR_PEER) {
+            String reason = download.getWaitReason();
+            statusName = "Waiting for peer" + (reason != null && !reason.isEmpty() ? " (" + reason + ")" : "");
+        }
         else if (status == DCConstants.DownloadStatus.COMPLETED) statusName = "Completed";
         else if (status == DCConstants.DownloadStatus.INTERUPTED) statusName = "Paused";
         else if (status == DCConstants.DownloadStatus.FAILED) statusName = "Failed";

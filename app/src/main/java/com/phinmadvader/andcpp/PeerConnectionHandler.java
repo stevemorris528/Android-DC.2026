@@ -210,8 +210,8 @@ public class PeerConnectionHandler implements Runnable {
             }
             if (pendingDownload != null) {
                 Log.d("andcpp", "Intercepted incoming connection as pending active download for " + hisNick);
-                handler.send_lock();
                 handler.send_mynick(correctMyUser);
+                handler.send_lock();
                 
                 DCMessage rlockMsg = new DCMessage();
                 rlockMsg.lock_s = hisLock;
@@ -222,7 +222,7 @@ public class PeerConnectionHandler implements Runnable {
         }
         
         if (isServer) {
-            handler.send_lock();
+            handler.send_mynick(myUser);
         }
         
         // Handshake Phase 2: Key and Direction Exchange
@@ -231,7 +231,7 @@ public class PeerConnectionHandler implements Runnable {
         Log.d("andcpp", "Sent $Key for lock: " + hisLock);
         
         if (isServer) {
-            handler.send_mynick(myUser);
+            handler.send_lock();
         }
 
         // NMDC Protocol roles: One peer sends Direction Upload, the other sends Direction Download.
