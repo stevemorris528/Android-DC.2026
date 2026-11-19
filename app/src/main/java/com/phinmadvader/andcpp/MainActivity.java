@@ -66,13 +66,10 @@ public class MainActivity extends FragmentActivity implements
 	 */
 	public TabPagerAdapter tab_page_adapter;
 	private ViewPager view_pager;
+	public FileListManager filelist_manager;
+	public PrivateChatManager privatechat_manager;
 	private LoginFragment login_fragment;
 	private HubListFragment hublist_fragment;
-
-	private boolean isInitialSync = true;
-	public MessageBoardFragment get_messageboard_fragment() {
-		return messageboard_fragment;
-	}
 
 	public HubListFragment get_hublist_fragment() {
 		return hublist_fragment;
@@ -152,7 +149,6 @@ public class MainActivity extends FragmentActivity implements
 	private MessageBoardFragment messageboard_fragment;
 	private UserListFragment userlist_fragment;
 	private DownloadListFragment downloadlist_fragment;
-	private FileListManager filelist_manager;
 	private SearchResultsFragment searchresult_fragment;
 
 	boolean exitFlag = false;
@@ -166,6 +162,10 @@ public class MainActivity extends FragmentActivity implements
 
 	public FileListManager get_filelist_manager() {
 		return filelist_manager;
+	}
+
+	public PrivateChatManager get_privatechat_manager() {
+		return privatechat_manager;
 	}
 
 	private final ServiceConnection mConnection = new ServiceConnection() {
@@ -287,8 +287,9 @@ public class MainActivity extends FragmentActivity implements
 		// which is problematic
 
 		filelist_manager = new FileListManager(this);
+		privatechat_manager = new PrivateChatManager(this);
 		tab_page_adapter = new TabPagerAdapter(getSupportFragmentManager(),
-				getActionBar(), view_pager, filelist_manager); // attaches and
+				getActionBar(), view_pager, filelist_manager, privatechat_manager); // attaches and
 																// manages
 																// view_pager
 
@@ -349,7 +350,6 @@ public class MainActivity extends FragmentActivity implements
 						}
 					}
 				}
-				isInitialSync = false;
 			}
 		});
 
@@ -884,10 +884,12 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	public void open_private_chat(String hubIp, String targetNick) {
-		Intent intent = new Intent(this, PrivateChatActivity.class);
-		intent.putExtra(PrivateChatActivity.EXTRA_HUB_IP, hubIp);
-		intent.putExtra(PrivateChatActivity.EXTRA_TARGET_NICK, targetNick);
-		startActivity(intent);
+		if (privatechat_manager != null && tab_page_adapter != null) {
+			privatechat_manager.openChat(hubIp, targetNick);
+			tab_page_adapter.add_tab(TabPagerAdapter.TAB_PRIVATECHAT,
+					null, "PM: " + targetNick);
+			tab_page_adapter.move_to_last_page();
+		}
 	}
 
 	public void open_file_list(final String hubIp, DCUserComparable user) {

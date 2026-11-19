@@ -23,7 +23,8 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 	public final static int TAB_DOWNLOADS = 6;
 	public final static int TAB_SAVED_FILELISTS = 7;
 	public final static int TAB_FILELIST = 8;
-	private final static int TOTAL_TABS = 9;
+	public final static int TAB_PRIVATECHAT = 9;
+	private final static int TOTAL_TABS = 10;
 
 	private boolean[] tab_is_visible;
 	private int active_tab_count = 0;
@@ -35,13 +36,15 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 	private ViewPager viewpager;
 
 	private FileListManager filelist_manager;
+	private PrivateChatManager privatechat_manager;
 
 	public TabPagerAdapter(FragmentManager fm, ActionBar actionbar,
-			ViewPager viewpager, FileListManager flist_manager) {
+			ViewPager viewpager, FileListManager flist_manager, PrivateChatManager pc_manager) {
 		super(fm);
 		this.actionbar = actionbar;
 		this.viewpager = viewpager;
 		this.filelist_manager = flist_manager;
+		this.privatechat_manager = pc_manager;
 		tab_is_visible = new boolean[TOTAL_TABS];
 		tab_fragment = new Fragment[TOTAL_TABS];
 		tab_list = new Tab[TOTAL_TABS];
@@ -126,6 +129,8 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 				tab_count++;
 		if (tab_is_visible[TAB_FILELIST] && filelist_manager != null && filelist_manager.filelist_stack != null)
 			tab_count += filelist_manager.getStackSize() - 1;
+		if (tab_is_visible[TAB_PRIVATECHAT] && privatechat_manager != null)
+			tab_count += privatechat_manager.getStackSize() - 1;
 		// ^ -1 for 1 added in for loop because tab is visible
 		return tab_count;
 	}
@@ -137,6 +142,13 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 					int stackSize = (filelist_manager != null) ? filelist_manager.getStackSize() : 0;
 					if (position < stackSize) {
 						return TAB_FILELIST;
+					} else {
+						position -= stackSize;
+					}
+				} else if (i == TAB_PRIVATECHAT) {
+					int stackSize = (privatechat_manager != null) ? privatechat_manager.getStackSize() : 0;
+					if (position < stackSize) {
+						return TAB_PRIVATECHAT;
 					} else {
 						position -= stackSize;
 					}
@@ -160,6 +172,12 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 					int stackSize = (filelist_manager != null) ? filelist_manager.getStackSize() : 0;
 					if (position >= currentPos && position < currentPos + stackSize) {
 						return DirectoryViewFragment.newInstance(position - currentPos);
+					}
+					currentPos += stackSize;
+				} else if (i == TAB_PRIVATECHAT) {
+					int stackSize = (privatechat_manager != null) ? privatechat_manager.getStackSize() : 0;
+					if (position >= currentPos && position < currentPos + stackSize) {
+						return PrivateChatViewFragment.newInstance(position - currentPos);
 					}
 					currentPos += stackSize;
 				} else {

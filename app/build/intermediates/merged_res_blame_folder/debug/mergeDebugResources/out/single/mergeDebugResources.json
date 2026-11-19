@@ -1,11 +1,11 @@
 [
     {
-        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_public_hub_list_item.xml.flat",
-        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\public_hub_list_item.xml"
-    },
-    {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_file_list_view_pager.xml.flat",
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\file_list_view_pager.xml"
+    },
+    {
+        "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_public_hub_list_item.xml.flat",
+        "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\layout\\public_hub_list_item.xml"
     },
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_green_user.png.flat",
@@ -14,6 +14,10 @@
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-xxhdpi_ic_launcher.png.flat",
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-xxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_fragment_private_chat.xml.flat",
+        "source": "com.phinmadvader.andcpp.app-main-9:/layout/fragment_private_chat.xml"
     },
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_ic_launcher.png.flat",
@@ -122,10 +126,6 @@
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\drawable-mdpi_txt.png.flat",
         "source": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-main-9:\\drawable-mdpi\\txt.png"
-    },
-    {
-        "merged": "com.phinmadvader.andcpp.app-debug-7:/layout_download_list_layout.xml.flat",
-        "source": "com.phinmadvader.andcpp.app-main-9:/layout/download_list_layout.xml"
     },
     {
         "merged": "C:\\Users\\steve\\.gradle\\daemon\\9.6.0\\com.phinmadvader.andcpp.app-debug-7:\\layout_main_activity.xml.flat",

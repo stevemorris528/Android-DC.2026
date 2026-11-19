@@ -1837,7 +1837,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			ChatMessage outgoingMsg = new ChatMessage(myNick, text.trim(), false);
 			list.add(outgoingMsg);
 
-			// Broadcast intent to notify open PrivateChatActivity if any
+			// Broadcast intent to notify open PrivateChatActivity or MainActivity if any
 			Intent intent = new Intent("com.phinmadvader.andcpp.PRIVATE_MESSAGE_RECEIVED");
 			intent.putExtra("hubIp", session.hubIp);
 			intent.putExtra("senderNick", targetNick);
@@ -1874,7 +1874,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			startActivity(pmIntent);
 		}
 
-		// Also send broadcast so PrivateChatActivity or other receivers update immediately
+		// Also send broadcast so PrivateChatActivity or MainActivity / tab list update immediately
 		Intent intent = new Intent("com.phinmadvader.andcpp.PRIVATE_MESSAGE_RECEIVED");
 		intent.putExtra("hubIp", session.hubIp);
 		intent.putExtra("senderNick", sender);

@@ -118,6 +118,7 @@ id btn_connect_now
 id btn_go_to_hubs
 id bubble_outgoing_layout
 id button
+id chat_get_file_list_button
 id chat_input_bar
 id chat_input_text
 id chat_message_sender
@@ -125,6 +126,7 @@ id chat_message_text
 id chat_message_time
 id chat_messages_list
 id chat_send_button
+id chat_subtitle_text
 id checkBoxActive
 id checkbox_auto_reconnect
 id downloadListView
@@ -184,6 +186,7 @@ layout download_list_layout
 layout download_row_element
 layout file_list
 layout file_list_view_pager
+layout fragment_private_chat
 layout hub_list_item
 layout hub_list_layout
 layout login_layout
