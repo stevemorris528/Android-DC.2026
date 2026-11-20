@@ -3180,6 +3180,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return uploadManager.getUploadStats();
 	}
 
+	/** Upload connections that are still open (for the Uploads list). */
+	public List<PeerConnectionHandler> getActiveUploads() {
+		List<PeerConnectionHandler> list = new ArrayList<>();
+		if (uploadManager == null) return list;
+		for (PeerConnectionHandler h : uploadManager.getActiveUploads()) {
+			if (!h.isFinished()) list.add(h);
+		}
+		return list;
+	}
+
 	private void updateUploadNotification(PeerConnectionHandler handler) {
 		Integer id = uploadNotificationIds.get(handler);
 		if (id == null) {

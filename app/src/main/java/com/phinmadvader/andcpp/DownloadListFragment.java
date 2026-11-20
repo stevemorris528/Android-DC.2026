@@ -39,8 +39,9 @@ public class DownloadListFragment extends Fragment {
     private View uploadStatsLayout;
     private android.widget.TextView txtUploadSpeed;
     private android.widget.TextView txtUploadStats;
-    private android.widget.TextView txtUploadPeers;
-    private android.widget.TextView txtUploadErrors;
+    private android.widget.LinearLayout uploadRowsContainer;
+    /** Reused row views (download_row_element), one per open upload connection. */
+    private final List<View> uploadRows = new ArrayList<>();
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
@@ -54,8 +55,7 @@ public class DownloadListFragment extends Fragment {
         uploadStatsLayout = root.findViewById(R.id.uploadStatsLayout);
         txtUploadSpeed = (android.widget.TextView) root.findViewById(R.id.txtUploadSpeed);
         txtUploadStats = (android.widget.TextView) root.findViewById(R.id.txtUploadStats);
-        txtUploadPeers = (android.widget.TextView) root.findViewById(R.id.txtUploadPeers);
-        txtUploadErrors = (android.widget.TextView) root.findViewById(R.id.txtUploadErrors);
+        uploadRowsContainer = (android.widget.LinearLayout) root.findViewById(R.id.uploadRowsContainer);
 
         Button btnClear = (Button) root.findViewById(R.id.btnClearFinished);
         btnClear.setOnClickListener(v -> {
@@ -107,32 +107,124 @@ public class DownloadListFragment extends Fragment {
 
     private void updateUploadStats() {
         UploadManager.UploadStats stats = mainActivity.mService.getUploadStats();
-        if (stats.activeCount > 0 || stats.queueLength > 0 || stats.currentSpeed > 0 || stats.completedCount > 0) {
-            uploadStatsLayout.setVisibility(View.VISIBLE);
-            
-            FileSize speedFs = new FileSize(stats.currentSpeed);
-            txtUploadSpeed.setText(String.format(java.util.Locale.US, "Upload Speed: %.2f %s/s ⬆", speedFs.fileSize, speedFs.unit));
-            
-            FileSize totalFs = new FileSize(stats.totalBytes);
-            txtUploadStats.setText(String.format(java.util.Locale.US, "Active: %d | Queued: %d | Total Uploaded: %.2f %s | Success: %d | Failed: %d", 
-                stats.activeCount, stats.queueLength, totalFs.fileSize, totalFs.unit, stats.completedCount, stats.failedCount));
-            
-            if (stats.connectedPeers.isEmpty()) {
-                txtUploadPeers.setText("Peers: None");
-            } else {
-                StringBuilder sb = new StringBuilder("Peers: ");
-                for (int i = 0; i < stats.connectedPeers.size(); i++) {
-                    sb.append(stats.connectedPeers.get(i));
-                    if (i < stats.connectedPeers.size() - 1) sb.append(", ");
-                }
-                txtUploadPeers.setText(sb.toString());
-            }
-
-            txtUploadErrors.setText(String.format(java.util.Locale.US, "Handshake Failures: %d | Connection Errors: %d", 
-                stats.handshakeFailures, stats.connectionErrors));
-        } else {
+        List<PeerConnectionHandler> uploads = mainActivity.mService.getActiveUploads();
+        if (uploads.isEmpty() && stats.queueLength == 0 && stats.currentSpeed <= 0 && stats.completedCount == 0) {
             uploadStatsLayout.setVisibility(View.GONE);
+            return;
         }
+        uploadStatsLayout.setVisibility(View.VISIBLE);
+
+        // Header: total speed, like a download row's speed text.
+        FileSize speedFs = new FileSize(stats.currentSpeed);
+        txtUploadSpeed.setText(String.format(java.util.Locale.US, "⬆ %.2f %s/s", speedFs.fileSize, speedFs.unit));
+
+        FileSize totalFs = new FileSize(stats.totalBytes);
+        String summary = String.format(java.util.Locale.US, "Active: %d | Queued: %d | Total: %.2f %s | Done: %d | Failed: %d",
+                stats.activeCount, stats.queueLength, totalFs.fileSize, totalFs.unit, stats.completedCount, stats.failedCount);
+        int errors = stats.handshakeFailures + stats.connectionErrors;
+        if (errors > 0) {
+            summary += " | Errors: " + errors;
+        }
+        txtUploadStats.setText(summary);
+
+        // One row per open upload connection, reusing views so the list doesn't flicker every second.
+        LayoutInflater inflater = LayoutInflater.from(mainActivity);
+        while (uploadRows.size() < uploads.size()) {
+            View row = inflater.inflate(R.layout.download_row_element, uploadRowsContainer, false);
+            if (!uploadRows.isEmpty()) {
+                View divider = new View(mainActivity);
+                divider.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, Math.round(getResources().getDisplayMetrics().density))));
+                divider.setBackgroundColor(themeColor(R.attr.appDividerColor));
+                uploadRowsContainer.addView(divider);
+            }
+            uploadRowsContainer.addView(row);
+            uploadRows.add(row);
+        }
+        while (uploadRows.size() > uploads.size()) {
+            View row = uploadRows.remove(uploadRows.size() - 1);
+            int idx = uploadRowsContainer.indexOfChild(row);
+            uploadRowsContainer.removeView(row);
+            if (idx > 0) uploadRowsContainer.removeViewAt(idx - 1); // its divider
+        }
+        for (int i = 0; i < uploads.size(); i++) {
+            bindUploadRow(uploadRows.get(i), uploads.get(i));
+        }
+    }
+
+    private int themeColor(int attr) {
+        android.util.TypedValue tv = new android.util.TypedValue();
+        if (mainActivity.getTheme().resolveAttribute(attr, tv, true)) {
+            return tv.resourceId != 0 ? getResources().getColor(tv.resourceId) : tv.data;
+        }
+        return 0x22888888;
+    }
+
+    /** Fills a download_row_element row with one upload, in the same format as a download row. */
+    private void bindUploadRow(View row, PeerConnectionHandler up) {
+        android.widget.TextView filename = (android.widget.TextView) row.findViewById(R.id.download_filename);
+        android.widget.TextView statusText = (android.widget.TextView) row.findViewById(R.id.download_status_text);
+        android.widget.ProgressBar progress = (android.widget.ProgressBar) row.findViewById(R.id.download_progress);
+        android.widget.TextView speed = (android.widget.TextView) row.findViewById(R.id.download_speed);
+
+        PeerConnectionHandler.ConnectionState state = up.getState();
+        String statusName;
+        switch (state) {
+            case HANDSHAKING: statusName = "Connecting"; break;
+            case CONNECTED:
+            case REQUESTING: statusName = "Waiting for request"; break;
+            case QUEUED: statusName = "Queued"; break;
+            case UPLOADING: statusName = "Uploading"; break;
+            case COMPLETED: statusName = "Completed"; break;
+            case FAILED: statusName = "Failed"; break;
+            default: statusName = state.name(); break;
+        }
+
+        String name = up.getFileName();
+        boolean hasFile = name != null && !name.equals("None");
+        filename.setText(hasFile ? name : "Connection from " + up.getHisNick());
+
+        long total = up.getTotalSize();
+        long done = up.getBytesSent();
+        String progressStr = "";
+        if (hasFile && total > 0) {
+            FileSize doneFs = new FileSize(done);
+            FileSize totalFs = new FileSize(total);
+            progressStr = String.format(java.util.Locale.US, " | %.1f%% (%.2f %s / %.2f %s)",
+                    (double) done / total * 100.0, doneFs.fileSize, doneFs.unit, totalFs.fileSize, totalFs.unit);
+        }
+        statusText.setText("To: " + up.getHisNick() + " | " + statusName + progressStr);
+
+        if (state == PeerConnectionHandler.ConnectionState.UPLOADING && total > 0) {
+            progress.setIndeterminate(false);
+            progress.setMax(1000);
+            progress.setProgress((int) ((double) done / total * 1000));
+        } else if (state == PeerConnectionHandler.ConnectionState.HANDSHAKING) {
+            progress.setIndeterminate(true);
+        } else {
+            progress.setIndeterminate(false);
+            progress.setMax(1000);
+            progress.setProgress(hasFile && total > 0 ? (int) ((double) done / total * 1000) : 0);
+        }
+
+        if (state == PeerConnectionHandler.ConnectionState.UPLOADING) {
+            double curSpeed = up.getSpeed();
+            FileSize fs = new FileSize(curSpeed);
+            String etaStr = "";
+            if (curSpeed > 0 && total > done) {
+                long remainingSecs = (long) ((total - done) / curSpeed);
+                if (remainingSecs >= 3600) {
+                    etaStr = String.format(java.util.Locale.US, " | %02d:%02d:%02d",
+                            remainingSecs / 3600, (remainingSecs % 3600) / 60, remainingSecs % 60);
+                } else {
+                    etaStr = String.format(java.util.Locale.US, " | %02d:%02d", remainingSecs / 60, remainingSecs % 60);
+                }
+            }
+            speed.setText(String.format(java.util.Locale.US, "⬆ %.2f %s/s%s", fs.fileSize, fs.unit, etaStr));
+        } else {
+            speed.setText(statusName);
+        }
+        speed.setVisibility(View.VISIBLE);
     }
 
     @Override
