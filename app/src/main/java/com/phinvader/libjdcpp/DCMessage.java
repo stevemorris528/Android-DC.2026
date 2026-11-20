@@ -39,6 +39,44 @@ public class DCMessage {
 	public String search_term; // Search
 	public String search_ip_port; // Search
 	public boolean is_tthl; // ADCGET tthl
+	public String adc_type; // "file", "tthl", "list"; null for $Get
+	public boolean adc_recursive; // ADCGET list with RE1 flag: whole subtree, not just one level
+
+	/**
+	 * Splits an $ADCGET argument string on spaces that are not escaped with a backslash.
+	 * "\x" yields x, except "\s" which yields a space.
+	 */
+	static String[] splitAdcEscaped(String s) {
+		java.util.List<String> parts = new java.util.ArrayList<String>();
+		StringBuilder cur = new StringBuilder();
+		for (int i = 0; i < s.length(); i++) {
+			char ch = s.charAt(i);
+			if (ch == '\\' && i + 1 < s.length()) {
+				char next = s.charAt(++i);
+				cur.append(next == 's' ? ' ' : next);
+			} else if (ch == ' ') {
+				parts.add(cur.toString());
+				cur.setLength(0);
+			} else {
+				cur.append(ch);
+			}
+		}
+		parts.add(cur.toString());
+		return parts.toArray(new String[0]);
+	}
+
+	/** NMDC ("old" ADC) escaping: a backslash before every backslash, space and newline. */
+	public static String escapeAdc(String s) {
+		StringBuilder sb = new StringBuilder(s.length() + 8);
+		for (int i = 0; i < s.length(); i++) {
+			char ch = s.charAt(i);
+			if (ch == '\\' || ch == ' ' || ch == '\n') {
+				sb.append('\\');
+			}
+			sb.append(ch);
+		}
+		return sb.toString();
+	}
 	public String to_user; // $To: PM recipient
 	public String pm_from; // $To: PM sender nick
 	public String pm_text; // $To: PM message body
@@ -306,7 +344,10 @@ public class DCMessage {
 					parse_success = true;
 				} else if (command.equals("ADCGET")) {
 					String val = new String(input, beg, input.length - beg).trim();
-					String[] parts = val.split(" ");
+					String[] parts = splitAdcEscaped(val);
+					if (parts.length >= 1) {
+						adc_type = parts[0];
+					}
 					if (parts.length >= 4) {
 						if (parts[0].equals("file")) {
 							get_filename = parts[1];
@@ -323,6 +364,20 @@ public class DCMessage {
 								startOffset = Long.parseLong(parts[2]);
 								bytesToTransfer = Long.parseLong(parts[3]);
 								is_tthl = true;
+								parse_success = true;
+							} catch (NumberFormatException e) {
+								parse_success = false;
+							}
+						} else if (parts[0].equals("list")) {
+							// Partial file list of one directory, e.g. "list /Share/Folder/ 0 -1 RE1"
+							// (used to download a folder from search results / a not yet expanded folder).
+							get_filename = parts[1];
+							try {
+								startOffset = Long.parseLong(parts[2]) + 1;
+								bytesToTransfer = Long.parseLong(parts[3]);
+								for (int i = 4; i < parts.length; i++) {
+									if (parts[i].equals("RE1")) adc_recursive = true;
+								}
 								parse_success = true;
 							} catch (NumberFormatException e) {
 								parse_success = false;

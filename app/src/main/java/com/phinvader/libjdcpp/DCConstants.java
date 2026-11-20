@@ -9,7 +9,8 @@ package com.phinvader.libjdcpp;
 public class DCConstants {
 	public static String version = "libjdcpp v1.0";
 	public static String version_short = "1.0";
-	public static String default_lock = "LIBJDCPPDOESNOTKNOWWHATLOCKTOGIVEU";
+	// Modern clients only use $Supports/$ADCGET with peers whose lock starts with EXTENDEDPROTOCOL.
+	public static String default_lock = "EXTENDEDPROTOCOLLIBJDCPPANDCPPLOCK";
 	public static String default_pk = "libjdcppv1.0----";
 	public static enum DownloadStatus {
 		UNDEFINED, QUEUED, INITIATED, STARTED, WAITING_FOR_PEER, INTERUPTED, SHUTDOWN, FAILED, DOWNLOADING, COMPLETED

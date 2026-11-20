@@ -54,6 +54,8 @@ public class UploadManager {
     private final Map<String, String> tthCache = new ConcurrentHashMap<>();
     /** TTH -> file, for "TTH/<hash>" requests. Replaced wholesale after each refresh. */
     private volatile Map<String, File> fileByTth = new ConcurrentHashMap<>();
+    /** In-memory share tree of the last published list, for partial ($ADCGET list) requests. */
+    private volatile ShareDir shareTree = null;
     private java.util.concurrent.ScheduledExecutorService fileListScheduler;
     private final java.util.concurrent.atomic.AtomicBoolean quickRefreshPending =
             new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -395,6 +397,11 @@ public class UploadManager {
             return (f != null && f.isFile()) ? f : null;
         }
 
+        // $ADCGET paths are absolute, e.g. "/Share/Music/a.mp3".
+        while (requestPath.startsWith("/")) {
+            requestPath = requestPath.substring(1);
+        }
+
         // The user's files are under a virtual "Share" directory in the file list.
         if (requestPath.startsWith("Share\\") || requestPath.startsWith("Share/")) {
             requestPath = requestPath.substring(6);
@@ -624,6 +631,85 @@ public class UploadManager {
         for (ShareDir d : dir.dirs) collectTths(d, out);
     }
 
+    /**
+     * Partial file list for "$ADCGET list <path>": the contents of one shared directory as uncompressed XML.
+     * Non-recursive: files plus sub-directories marked Incomplete="1". Recursive (RE1): the whole subtree.
+     * Returns null if the directory is not shared or no list has been built yet.
+     */
+    public byte[] buildPartialFileList(String adcPath, boolean recursive) throws IOException {
+        ShareDir root = shareTree;
+        if (root == null) return null;
+
+        List<String> segs = new ArrayList<>();
+        for (String s : (adcPath == null ? "/" : adcPath).replace('\\', '/').split("/")) {
+            if (!s.isEmpty()) segs.add(s);
+        }
+
+        ShareDir dir = null;
+        if (!segs.isEmpty()) {
+            if (!segs.get(0).equalsIgnoreCase(root.name)) return null;
+            dir = root;
+            for (int i = 1; i < segs.size(); i++) {
+                ShareDir next = null;
+                for (ShareDir d : dir.dirs) {
+                    if (d.name.equals(segs.get(i))) { next = d; break; }
+                }
+                if (next == null) {
+                    for (ShareDir d : dir.dirs) {
+                        if (d.name.equalsIgnoreCase(segs.get(i))) { next = d; break; }
+                    }
+                }
+                if (next == null) return null;
+                dir = next;
+            }
+        }
+
+        StringBuilder base = new StringBuilder("/");
+        for (String s : segs) base.append(s).append('/');
+
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        org.xmlpull.v1.XmlSerializer s = android.util.Xml.newSerializer();
+        s.setOutput(bos, "UTF-8");
+        s.startDocument("UTF-8", true);
+        s.startTag(null, "FileListing");
+        s.attribute(null, "Version", "1");
+        s.attribute(null, "CID", cid);
+        s.attribute(null, "Base", base.toString());
+        s.attribute(null, "Generator", "AnDCpp");
+        if (dir == null) {
+            writePartialDir(s, root, recursive); // "/": the virtual root holds the "Share" directory
+        } else {
+            writePartialContents(s, dir, recursive);
+        }
+        s.endTag(null, "FileListing");
+        s.endDocument();
+        s.flush();
+        return bos.toByteArray();
+    }
+
+    private void writePartialDir(org.xmlpull.v1.XmlSerializer s, ShareDir dir, boolean recursive) throws IOException {
+        s.startTag(null, "Directory");
+        s.attribute(null, "Name", dir.name);
+        if (recursive) {
+            writePartialContents(s, dir, true);
+        } else {
+            s.attribute(null, "Incomplete", "1");
+        }
+        s.endTag(null, "Directory");
+    }
+
+    private void writePartialContents(org.xmlpull.v1.XmlSerializer s, ShareDir dir, boolean recursive) throws IOException {
+        for (ShareDir d : dir.dirs) writePartialDir(s, d, recursive);
+        for (ShareFile f : dir.files) {
+            if (f.tth == null) continue;
+            s.startTag(null, "File");
+            s.attribute(null, "Name", f.name);
+            s.attribute(null, "Size", String.valueOf(f.size));
+            s.attribute(null, "TTH", f.tth);
+            s.endTag(null, "File");
+        }
+    }
+
     /** Writes the XML and the .bz2 to temp files, then swaps them in so peers never get a half-written list. */
     private void writeFileList(ShareDir tree, File xmlOut, File bz2Out) throws Exception {
         File xmlTmp = new File(xmlOut.getPath() + ".tmp");
@@ -653,6 +739,7 @@ public class UploadManager {
 
         if (!xmlTmp.renameTo(xmlOut)) throw new IOException("Could not replace " + xmlOut);
         if (!bz2Tmp.renameTo(bz2Out)) throw new IOException("Could not replace " + bz2Out);
+        shareTree = tree; // partial lists always match the published full list
     }
 
     private void writeDir(org.xmlpull.v1.XmlSerializer s, ShareDir dir) throws IOException {
