@@ -331,6 +331,16 @@ public class Settings extends Activity{
 		prefs.edit().putBoolean(Constants.SETTINGS_AUTO_RECONNECT_HUBS_KEY, autoReconnect).apply();
 	}
 
+	public static boolean getWifiOnlyDownloads(Context c) {
+		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
+		return prefs.getBoolean(Constants.SETTINGS_WIFI_ONLY_DOWNLOADS_KEY, false);
+	}
+
+	public static void putWifiOnlyDownloads(boolean wifiOnly, Context c) {
+		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
+		prefs.edit().putBoolean(Constants.SETTINGS_WIFI_ONLY_DOWNLOADS_KEY, wifiOnly).apply();
+	}
+
 	public static int getDownloadWorkers(Context c) {
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
 		return prefs.getInt(Constants.SETTINGS_DOWNLOAD_WORKERS_KEY, Constants.DEFAULT_DOWNLOAD_WORKERS);

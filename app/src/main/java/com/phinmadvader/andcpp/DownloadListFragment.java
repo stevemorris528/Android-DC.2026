@@ -184,7 +184,8 @@ public class DownloadListFragment extends Fragment {
 
         String statusName = status.name();
         if (status == DCConstants.DownloadStatus.INTERUPTED) statusName = "Paused";
-        
+        else if (DCPPService.WAIT_REASON_WIFI.equals(download.getWaitReason())) statusName = "Waiting for Wi-Fi";
+
         // Combine progress and status into the title since setMessage and setItems are mutually exclusive
         String fullTitle = title + " (" + statusName + ")" + progressInfo;
         

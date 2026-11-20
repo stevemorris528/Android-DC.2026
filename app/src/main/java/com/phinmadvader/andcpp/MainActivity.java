@@ -403,7 +403,16 @@ public class MainActivity extends FragmentActivity implements
 		}
 		return true;
 	}
-	
+
+	@Override
+	public boolean onPrepareOptionsMenu(Menu menu) {
+		MenuItem wifiOnly = menu.findItem(R.id.action_wifi_only);
+		if (wifiOnly != null) {
+			wifiOnly.setChecked(Settings.getWifiOnlyDownloads(this));
+		}
+		return super.onPrepareOptionsMenu(menu);
+	}
+
 	@Override
 	public boolean onOptionsItemSelected(MenuItem item){
 		int id = item.getItemId();
@@ -412,6 +421,14 @@ public class MainActivity extends FragmentActivity implements
 			return true;
 		} else if (id == R.id.action_about) {
 			showAboutDialog();
+			return true;
+		} else if (id == R.id.action_wifi_only) {
+			boolean wifiOnly = !item.isChecked();
+			item.setChecked(wifiOnly);
+			Settings.putWifiOnlyDownloads(wifiOnly, this); // the service reacts via its preference listener
+			Toast.makeText(this,
+					wifiOnly ? "Downloads will wait for Wi-Fi" : "Downloads allowed on Wi-Fi and mobile data",
+					Toast.LENGTH_SHORT).show();
 			return true;
 		} else if (id == R.id.action_settings) {
 			Intent settingsIntent = new Intent(this, Settings.class);
@@ -740,6 +757,22 @@ public class MainActivity extends FragmentActivity implements
 		}
 	}
 
+	/**
+	 * Nick to use for a saved hub: the one saved with "Edit Nick & Password" for that hub,
+	 * otherwise the Login tab nick. Returns "" if neither is set.
+	 */
+	public String resolveNickForHub(String hubEntry, String ip, String port) {
+		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+		String[] keys = {hubEntry, ip + ":" + port, ip};
+		for (String k : keys) {
+			if (k == null) continue;
+			String n = prefs.getString("favorite_nicks_" + k, "");
+			if (n != null && !n.trim().isEmpty()) return n.trim();
+		}
+		String global = prefs.getString(Constants.SETTINGS_NICK_KEY, "");
+		return global != null ? global.trim() : "";
+	}
+
 	private void checkAutoReconnectSavedHubs() {
 		if (hasAutoReconnected) return;
 		hasAutoReconnected = true;
@@ -747,8 +780,6 @@ public class MainActivity extends FragmentActivity implements
 		if (!Settings.getAutoReconnectHubs(this)) return;
 
 		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-		String nick = prefs.getString(Constants.SETTINGS_NICK_KEY, "");
-		if (nick.isEmpty()) return;
 
 		Set<String> favorites = prefs.getStringSet("favorite_hubs", new HashSet<String>());
 		if (favorites == null || favorites.isEmpty()) return;
@@ -769,6 +800,9 @@ public class MainActivity extends FragmentActivity implements
 			if (mService != null && mService.getSession(hubKey) != null) {
 				continue;
 			}
+
+			String nick = resolveNickForHub(hubStr, ip, port);
+			if (nick.isEmpty()) continue; // no nick saved for this hub or on the Login tab
 
 			startBackgroundService(nick, ip, port, false);
 		}

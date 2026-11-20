@@ -64,7 +64,11 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
         else if (status == DCConstants.DownloadStatus.INITIATED || status == DCConstants.DownloadStatus.STARTED) statusName = "Connecting";
         else if (status == DCConstants.DownloadStatus.WAITING_FOR_PEER) {
             String reason = download.getWaitReason();
-            statusName = "Waiting for peer" + (reason != null && !reason.isEmpty() ? " (" + reason + ")" : "");
+            if (DCPPService.WAIT_REASON_WIFI.equals(reason)) {
+                statusName = "Waiting for Wi-Fi";
+            } else {
+                statusName = "Waiting for peer" + (reason != null && !reason.isEmpty() ? " (" + reason + ")" : "");
+            }
         }
         else if (status == DCConstants.DownloadStatus.COMPLETED) statusName = "Completed";
         else if (status == DCConstants.DownloadStatus.INTERUPTED) statusName = "Paused";

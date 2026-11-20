@@ -32,6 +32,14 @@
         android:title="@string/action_about"/>
 
     <item
+        android:id="@+id/action_wifi_only"
+        android:orderInCategory="95"
+        android:showAsAction="never"
+        android:checkable="true"
+        android:checked="false"
+        android:title="Download Only Over Wi-Fi"/>
+
+    <item
         android:id="@+id/action_settings"
         android:orderInCategory="100"
         android:showAsAction="never"

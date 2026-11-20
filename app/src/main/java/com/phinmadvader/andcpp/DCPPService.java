@@ -79,6 +79,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private boolean networkLostSinceLastConnect = false;
 	private long lastNetworkRestartAt = 0L;
 
+	// "Download only over Wi-Fi": cached result, refreshed on network/setting changes.
+	static final String WAIT_REASON_WIFI = "waiting for Wi-Fi";
+	private volatile boolean downloadsBlockedByNetwork = false;
+	private SharedPreferences.OnSharedPreferenceChangeListener wifiOnlyPrefListener;
+
 	public static enum DCClientStatus {
 		DISCONNECTED, INVALIDIP, CONNECTED, CONNECTING, RECONNECTING
 	}
@@ -434,6 +439,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			postWaitNotification("Waiting for peer (" + reason + ")");
 		}
 
+		/** Parks this download until Wi-Fi is back ("Download only over Wi-Fi" is on and we're on mobile data). */
+		void markWaitingForWifi() {
+			waitReason = WAIT_REASON_WIFI;
+			nextRetryAt = System.currentTimeMillis() + 60000L; // re-checked every minute; a Wi-Fi connect retries at once
+			Log.i("andcpp", "[DLTRACE] " + file_name + " -> waiting for Wi-Fi (Wi-Fi only downloads enabled)");
+			updateFolderStatus(this, DCConstants.DownloadStatus.WAITING_FOR_PEER);
+			postWaitNotification("Waiting for Wi-Fi");
+		}
+
 		/** Drops the pending request/connection of the current attempt so a later attempt starts clean. */
 		private void abandonCurrentAttempt() {
 			DCDownloader.DownloadQueueEntity e = download_status;
@@ -533,6 +547,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 
 			if (waitReason != null) {
+				return;
+			}
+
+			if (refreshDownloadsBlockedByNetwork()) {
+				markWaitingForWifi();
 				return;
 			}
 
@@ -731,6 +750,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		@Override
 		public String getWaitReason() {
+			// Surface a Wi-Fi wait on the folder row so it reads "Waiting for Wi-Fi", not "Waiting for peer".
+			for (DownloadObject o : downloads) {
+				if (WAIT_REASON_WIFI.equals(o.waitReason)) return WAIT_REASON_WIFI;
+			}
 			return null;
 		}
 
@@ -786,6 +809,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (allFinished) return DCConstants.DownloadStatus.COMPLETED;
 			if (anyDownloading) return DCConstants.DownloadStatus.DOWNLOADING;
 			if (anyPaused) return DCConstants.DownloadStatus.INTERUPTED;
+			if (getWaitReason() != null) return DCConstants.DownloadStatus.WAITING_FOR_PEER; // held for Wi-Fi
 			if (anyFailed) return DCConstants.DownloadStatus.FAILED;
 			return DCConstants.DownloadStatus.QUEUED;
 		}
@@ -940,6 +964,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						while (true) {
 							if (work.isCancelled || work.isPaused) break;
 							if (work.waitReason != null) break; // parked: pre-flight failure, timeout or $MaxedOut
+							if (downloadsBlockedByNetwork) { // switched to mobile data with Wi-Fi only on
+								work.markWaitingForWifi();
+								break;
+							}
 							updateFolderStatus(work, work.get_status());
 							if (work.download_status.status == DCConstants.DownloadStatus.COMPLETED) {
 								
@@ -1845,6 +1873,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					fp.builder.setContentTitle("Downloading Folder: " + fp.folderName);
 				} else if (status == DCConstants.DownloadStatus.QUEUED) {
 					// Don't change title for queued if already downloading something else
+				} else if (status == DCConstants.DownloadStatus.WAITING_FOR_PEER
+						&& WAIT_REASON_WIFI.equals(work.waitReason) && fp.builder != null) {
+					fp.builder.setContentTitle("Waiting for Wi-Fi: " + fp.folderName).setOngoing(false);
+					if (mNotifyManager2 != null) {
+						mNotifyManager2.notify(fp.notificationId, fp.builder.build());
+					}
 				}
 				// We don't notify here to avoid flooding, updateFolderProgress handles it on completion
 			}
@@ -2354,6 +2388,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			@Override
 			public void onReceive(Context context, Intent intent) {
 				if (ConnectivityManager.CONNECTIVITY_ACTION.equals(intent.getAction())) {
+					onWifiOnlyConditionChanged();
 					ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
 					NetworkInfo activeNetwork = cm != null ? cm.getActiveNetworkInfo() : null;
 					if (activeNetwork != null && activeNetwork.isConnected()) {
@@ -2387,6 +2422,85 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			lastNetworkKey = networkKeyOf(initialNetwork);
 		}
 		registerReceiver(networkReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+
+		refreshDownloadsBlockedByNetwork();
+		wifiOnlyPrefListener = (sp, key) -> {
+			if (Constants.SETTINGS_WIFI_ONLY_DOWNLOADS_KEY.equals(key)) {
+				new Handler(Looper.getMainLooper()).post(this::onWifiOnlyConditionChanged);
+			}
+		};
+		getSharedPreferences(Constants.PREFS_NAME, 0)
+				.registerOnSharedPreferenceChangeListener(wifiOnlyPrefListener);
+	}
+
+	/**
+	 * Recomputes whether downloads must wait: true only when "Download only over Wi-Fi" is on
+	 * and the active network is not Wi-Fi/Ethernet. With no network at all we don't block
+	 * (nothing can download anyway, and the reconnect logic takes over).
+	 */
+	boolean refreshDownloadsBlockedByNetwork() {
+		boolean blocked = false;
+		if (Settings.getWifiOnlyDownloads(this)) {
+			ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+			NetworkInfo active = cm != null ? cm.getActiveNetworkInfo() : null;
+			if (active != null && active.isConnected()) {
+				blocked = !isUnmeteredLink(cm, active);
+			}
+		}
+		downloadsBlockedByNetwork = blocked;
+		return blocked;
+	}
+
+	private static boolean isUnmeteredLink(ConnectivityManager cm, NetworkInfo active) {
+		int type = active.getType();
+		if (type == ConnectivityManager.TYPE_WIFI || type == ConnectivityManager.TYPE_ETHERNET) {
+			return true;
+		}
+		// Behind a VPN (e.g. PIA) the active network may be the VPN itself: look at what it runs over.
+		if (android.os.Build.VERSION.SDK_INT >= 23) {
+			android.net.Network net = cm.getActiveNetwork();
+			android.net.NetworkCapabilities caps = net != null ? cm.getNetworkCapabilities(net) : null;
+			if (caps != null) {
+				if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+						|| caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) {
+					return true;
+				}
+				if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) {
+					return false;
+				}
+			}
+		}
+		if (type == ConnectivityManager.TYPE_VPN && android.os.Build.VERSION.SDK_INT >= 21) {
+			for (android.net.Network n : cm.getAllNetworks()) {
+				NetworkInfo ni = cm.getNetworkInfo(n);
+				if (ni != null && ni.isConnected()
+						&& (ni.getType() == ConnectivityManager.TYPE_WIFI
+						|| ni.getType() == ConnectivityManager.TYPE_ETHERNET)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** Called on network changes and when the Wi-Fi only setting is toggled. */
+	private void onWifiOnlyConditionChanged() {
+		boolean wasBlocked = downloadsBlockedByNetwork;
+		boolean blocked = refreshDownloadsBlockedByNetwork();
+		if (wasBlocked && !blocked && initiated_downloads != null) {
+			// Wi-Fi is back (or the setting was turned off): release Wi-Fi waits right away.
+			synchronized (initiated_downloads) {
+				for (DownloadObject obj : initiated_downloads) {
+					if (WAIT_REASON_WIFI.equals(obj.waitReason)) {
+						obj.waitReason = null;
+						obj.nextRetryAt = 0L;
+					}
+				}
+			}
+			Log.i("andcpp", "Downloads allowed on current network; resuming Wi-Fi waits");
+			retryPendingDownloads();
+		}
+		// When it becomes blocked, running downloads park themselves in the worker loop.
 	}
 
 	private static String networkKeyOf(NetworkInfo info) {
@@ -3115,7 +3229,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public void onDestroy() {
 		super.onDestroy();
 		saveDownloadsStateNow();
-		
+
+		if (wifiOnlyPrefListener != null) {
+			getSharedPreferences(Constants.PREFS_NAME, 0)
+					.unregisterOnSharedPreferenceChangeListener(wifiOnlyPrefListener);
+			wifiOnlyPrefListener = null;
+		}
+
 		PIAPortForwardingManager.getInstance(this).stopPortForwarding();
 		
 		cancelTick();
