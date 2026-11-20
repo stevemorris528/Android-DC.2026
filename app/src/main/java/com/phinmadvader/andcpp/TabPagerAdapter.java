@@ -73,13 +73,19 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 			tab_is_visible[tabid] = false;
 			tab_fragment[tabid] = null;
 			active_tab_count--;
+			boolean notified = false;
 			if (tab_list[tabid] != null) {
 				if (actionbar != null) {
+					// Removing a tab makes the action bar select another one, which moves the pager.
+					// The pager must already know the new page count, or it throws
+					// "PagerAdapter changed the adapter's contents without calling notifyDataSetChanged".
+					notifyDataSetChanged();
+					notified = true;
 					actionbar.removeTab(tab_list[tabid]);
 				}
 				tab_list[tabid] = null;
 			}
-			if (notify) notifyDataSetChanged();
+			if (notify && !notified) notifyDataSetChanged();
 		}
 	}
 
@@ -243,7 +249,18 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 	@Override
 	public void onTabSelected(Tab tab, FragmentTransaction ft) {
 		if (viewpager != null) {
-			viewpager.setCurrentItem(tab.getPosition());
+			try {
+				viewpager.setCurrentItem(tab.getPosition());
+			} catch (IllegalStateException e) {
+				// Page count changed without the pager being told yet: tell it, then retry once.
+				Log.w("andcpp", "Pager out of sync on tab select; refreshing", e);
+				notifyDataSetChanged();
+				try {
+					viewpager.setCurrentItem(tab.getPosition());
+				} catch (IllegalStateException e2) {
+					Log.e("andcpp", "Could not switch tab after refresh", e2);
+				}
+			}
 		} else {
 			Log.d("andcpp", "ViewPAGER NULL :-/ cannot switch tab on page");
 		}

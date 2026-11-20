@@ -2,7 +2,28 @@ plugins {
     id 'com.android.application'
 }
 
+// ---- Build number: +1 on every real build (assemble / install / bundle / Run), shown in About ----
+// Starts from an estimate of ~220 earlier builds (63 commits, Nov 11-20 2026, several test builds each).
+def buildNumberFile = file('build-number.properties')
+def buildNumberProps = new Properties()
+if (buildNumberFile.exists()) {
+    buildNumberFile.withInputStream { buildNumberProps.load(it) }
+}
+int buildNumber = (buildNumberProps.getProperty('BUILD_NUMBER') ?: '220') as int
+// Count only actual builds, not Android Studio project syncs.
+boolean isRealBuild = gradle.startParameter.taskNames.any { it =~ /(?i)(assemble|install|bundle)/ }
+if (isRealBuild) {
+    buildNumber++
+    buildNumberProps.setProperty('BUILD_NUMBER', buildNumber.toString())
+    buildNumberFile.withOutputStream { buildNumberProps.store(it, 'Auto-incremented on every build. Do not edit by hand.') }
+}
+def buildDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern('dd.MM.yyyy'))
+
 android {
+    buildFeatures {
+        buildConfig true
+    }
+
     namespace 'com.phinmadvader.andcpp'
     compileSdk 35
 
@@ -12,6 +33,9 @@ android {
         targetSdk 28
         versionCode 6
         versionName '1.0.5'
+
+        buildConfigField 'int', 'BUILD_NUMBER', "${buildNumber}"
+        buildConfigField 'String', 'BUILD_DATE', "\"${buildDate}\""
     }
 
     useLibrary 'org.apache.http.legacy'

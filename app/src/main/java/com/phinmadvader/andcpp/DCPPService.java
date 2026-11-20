@@ -2753,7 +2753,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public static final String ACTION_TICK = "com.phinmadvader.andcpp.ACTION_TICK";
 	private static final long ALARM_INTERVAL_MILLIS = 60000L;
 	private static final long HUB_PROBE_AFTER_MILLIS = 40000L;
-	private static final long HUB_SILENT_DEAD_MILLIS = 120000L;
+	/**
+	 * A quiet hub (e.g. an empty test hub) can send nothing for minutes; only a hub that stays silent even though
+	 * we keep probing it (every tick after HUB_PROBE_AFTER_MILLIS) is treated as dead. A broken socket is caught
+	 * sooner anyway: the failed write ends the connection and triggers a reconnect.
+	 */
+	private static final long HUB_SILENT_DEAD_MILLIS = 300000L;
 	private final Object tickLock = new Object();
 	private volatile long lastTickAt = 0L;
 	private final ExecutorService tickExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -2784,9 +2789,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						continue;
 					}
 					try {
-						// Silent hub: ask it about ourselves, so a live hub must answer and a dead link shows up.
-						if (silent > HUB_PROBE_AFTER_MILLIS && session.myuser != null && session.myuser.nick != null) {
-							session.client.sendRaw("$GetINFO " + session.myuser.nick + " " + session.myuser.nick);
+						// Silent hub: ask for the nick list. Every NMDC hub answers it (the list contains at least us),
+						// even an empty one, so a live hub always replies. ($GetINFO about ourselves is ignored by many
+						// hubs, especially since we announce NoGetINFO, which made idle hubs look dead.)
+						if (silent > HUB_PROBE_AFTER_MILLIS) {
+							session.client.sendRaw("$GetNickList");
 						} else {
 							session.client.sendRaw("");
 						}

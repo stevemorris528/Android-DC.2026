@@ -496,7 +496,8 @@ public class MainActivity extends FragmentActivity implements
 				+ "<p>Original project: AnDCpp</p>"
 				+ "<p>Developed further by the Android DC++ project.</p>"
 				+ "<p>GitHub Source Code: <a href=\"https://github.com/stevemorris528/Android-DC.2026/blob/master/README.md\">&#x2B07;&#xFE0F;</a></p>"
-				+ "<p>Beta 16.11.2026</p>";
+				// Filled in by Gradle on every build (see app/build.gradle)
+				+ "<p>Build " + BuildConfig.BUILD_NUMBER + " &middot; " + BuildConfig.BUILD_DATE + "</p>";
 
 		TextView textView = new TextView(this);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
