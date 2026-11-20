@@ -21,22 +21,19 @@
             android:textAppearance="?android:attr/textAppearanceMedium"
             android:textColor="?attr/appTextColorSecondary" />
 
+        <!-- Transparent outlined button in indigo blue, styled like the open tab -->
         <Button
             android:id="@+id/btnClearFinished"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="32dp"
+            android:background="@drawable/btn_indigo_outline_rounded"
             android:text="Clear Finished"
+            android:textColor="#3F51B5"
+            android:textStyle="bold"
             android:textSize="12sp"
-            android:visibility="visible" />
-
-        <Button
-            android:id="@+id/btnResetAllDownloads"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="Reset All"
-            android:textSize="12sp"
-            android:visibility="visible" />
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:stateListAnimator="@null" />
     </LinearLayout>
 
     <!-- Uploads: same look as the Downloads header and rows -->

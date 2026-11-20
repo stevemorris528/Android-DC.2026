@@ -373,6 +373,28 @@ public class UploadManager {
         return port;
     }
     
+    /** Leftovers from older builds in FileLists (our own list is now "My File List.xml"). Never shown in Saved. */
+    private static final String[] LEGACY_FILE_LIST_NAMES = {"my_files", "my_files_temp"};
+
+    /** True for saved-list names that are leftovers of older builds and must not be listed. */
+    public static boolean isLegacyFileListName(String nameWithoutExtension) {
+        for (String n : LEGACY_FILE_LIST_NAMES) {
+            if (n.equalsIgnoreCase(nameWithoutExtension)) return true;
+        }
+        return false;
+    }
+
+    /** Deletes the leftover list files of older builds from FileLists. */
+    static void removeLegacyFileLists(android.content.Context c) {
+        File dir = new File(Settings.getDCDownloadsDirectory(c), "FileLists");
+        for (String n : LEGACY_FILE_LIST_NAMES) {
+            File f = new File(dir, n + ".xml");
+            if (f.exists() && f.delete()) {
+                Log.i("andcpp", "Removed leftover file list " + f.getName());
+            }
+        }
+    }
+
     /** True for requests of our own file list (files.xml / files.xml.bz2 / legacy MyList.DcLst). */
     public static boolean isFileListRequest(String requestPath) {
         if (requestPath == null) return false;
@@ -486,6 +508,13 @@ public class UploadManager {
         });
         // Right away: serve TTH requests from the saved hash cache, so other clients can resume
         // their downloads from us immediately after a restart (before the first refresh finishes).
+        fileListScheduler.execute(() -> {
+            try {
+                removeLegacyFileLists(service); // before the Saved tab lists anything
+            } catch (Exception e) {
+                Log.w("andcpp", "Could not remove leftover file lists", e);
+            }
+        });
         fileListScheduler.execute(this::warmIndexFromCache);
         // First build shortly after start (after interrupted downloads are restored), then every 15 minutes.
         fileListScheduler.scheduleWithFixedDelay(this::refreshFileListSafe,
@@ -589,8 +618,7 @@ public class UploadManager {
 
             String downloadDir = Settings.getDCDownloadsDirectory(service);
             File root = new File(downloadDir);
-            // Older builds wrote our list as "my_files.xml"; it's now "My File List.xml".
-            new File(new File(downloadDir, "FileLists"), "my_files.xml").delete();
+            removeLegacyFileLists(service);
             Set<String> incomplete = service.getIncompleteDownloadPaths();
             Set<String> seenKeys = new java.util.HashSet<>();
             List<ShareFile> needHash = new ArrayList<>();
