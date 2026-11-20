@@ -17,7 +17,9 @@ public class Constants {
     public static String SETTINGS_PORT_KEY = "dcport";
     public static String SETTINGS_UPLOAD_SLOTS_KEY = "dcuploadslots";
     public static String SETTINGS_AUTO_RECONNECT_HUBS_KEY = "dcautoreconnecthubs";
-    public static String SETTINGS_WIFI_ONLY_DOWNLOADS_KEY = "dcwifionlydownloads";    public static int DEFAULT_PORT = 4111;
+    public static String SETTINGS_WIFI_ONLY_DOWNLOADS_KEY = "dcwifionlydownloads";
+    /** Port the VPN provider forwards to us (0 = none). Used for active mode while a VPN is on. */
+    public static String SETTINGS_VPN_PORT_KEY = "dcvpnforwardedport";    public static int DEFAULT_PORT = 4111;
     public static int DEFAULT_UPLOAD_SLOTS = 2;
     public static int DEFAULT_DOWNLOAD_WORKERS = 3;
     public static String SETTINGS_DOWNLOAD_WORKERS_KEY = "dc_download_workers";

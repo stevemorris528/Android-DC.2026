@@ -43,6 +43,7 @@ public class DownloadListFragment extends Fragment {
     private android.widget.TextView txtDlTotals;
     private android.widget.TextView txtUlTotals;
     private android.widget.TextView txtNoUploads;
+    private android.widget.TextView txtConnectionMode;
     private android.widget.LinearLayout uploadRowsContainer;
     /** Reused row views (download_row_element), one per open upload connection. */
     private final List<View> uploadRows = new ArrayList<>();
@@ -67,6 +68,7 @@ public class DownloadListFragment extends Fragment {
         txtDlTotals = (android.widget.TextView) root.findViewById(R.id.txtDlTotals);
         txtUlTotals = (android.widget.TextView) root.findViewById(R.id.txtUlTotals);
         txtNoUploads = (android.widget.TextView) root.findViewById(R.id.txtNoUploads);
+        txtConnectionMode = (android.widget.TextView) root.findViewById(R.id.txtConnectionMode);
 
         // DL totals and speed use the same colour as the download progress bars (theme accent).
         int dlColor = ThemeUtils.getAccentColor(mainActivity);
@@ -144,6 +146,9 @@ public class DownloadListFragment extends Fragment {
         // Totals: this session, then all time in brackets (colours come from the layout: DL teal, UL warm yellow).
         txtDlTotals.setText("DL: " + formatSize(totalDownloaded) + "  (" + formatSize(allTime[0]) + ")");
         txtUlTotals.setText("UL: " + formatSize(stats.totalBytes) + "  (" + formatSize(allTime[1]) + ")");
+        if (txtConnectionMode != null) {
+            txtConnectionMode.setText("Mode: " + mainActivity.mService.getConnectionModeDescription());
+        }
 
         FileSize totalFs = new FileSize(stats.totalBytes);
         String summary = String.format(java.util.Locale.US, "Active: %d | Queued: %d | Total: %.2f %s | Done: %d | Failed: %d",

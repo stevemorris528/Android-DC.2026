@@ -88,6 +88,14 @@ public class PeerConnectionHandler implements Runnable {
     }
 
     public String getHisNick() { return hisNick; }
+
+    /** Set when the connection never identified itself (no $MyNick): not counted or reported as an error. */
+    private volatile boolean unidentified = false;
+
+    /** True once the peer told us its nick ($MyNick), i.e. it is a real DC client. */
+    public boolean isIdentified() {
+        return hisNick != null && !hisNick.isEmpty() && !"Unknown".equals(hisNick);
+    }
     public String getFileName() { return fileName; }
     public long getBytesSent() { return bytesSent.get(); }
     public long getTotalSize() { return totalSize; }
@@ -141,7 +149,12 @@ public class PeerConnectionHandler implements Runnable {
                     return;
                 }
             } catch (Exception e) {
-                uploadManager.incrementHandshakeFailures();
+                if (isIdentified()) {
+                    uploadManager.incrementHandshakeFailures(); // a real DC user's handshake went wrong
+                } else {
+                    // Never sent $MyNick: an internet scanner / probe hitting our public port, not a DC user.
+                    unidentified = true;
+                }
                 throw e;
             }
             
@@ -166,8 +179,13 @@ public class PeerConnectionHandler implements Runnable {
 
             state = ConnectionState.FAILED;
             lastError = e.getMessage() != null ? e.getMessage() : e.toString();
-            Log.e("andcpp", "PeerConnection Error: " + lastError);
-            if (listener != null) listener.onUploadError(this, lastError);
+            if (unidentified) {
+                Log.d("andcpp", "Ignored unidentified connection from " + peerSocket.getRemoteSocketAddress()
+                        + " (no DC handshake): " + lastError);
+            } else {
+                Log.e("andcpp", "PeerConnection Error: " + lastError);
+                if (listener != null) listener.onUploadError(this, lastError);
+            }
         } finally {
             isFinished = true;
             if (!intercepted) {

@@ -112,6 +112,17 @@
                     android:textAppearance="?android:attr/textAppearanceSmall"
                     android:textColor="#F9A825" />
             </LinearLayout>
+
+            <!-- Connection mode (auto-detected), e.g. "Mode: Passive (no UPnP router found)" -->
+            <TextView
+                android:id="@+id/txtConnectionMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textAppearance="?android:attr/textAppearanceSmall"
+                android:textColor="?attr/appTextColorSecondary"
+                android:maxLines="2"
+                android:ellipsize="end" />
         </LinearLayout>
 
         <TextView

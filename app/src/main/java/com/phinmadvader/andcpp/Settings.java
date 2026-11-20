@@ -35,7 +35,10 @@ public class Settings extends Activity{
 				"Accent Color",
 				"Change Downloads Directory",
 				"Change Upload Slots",
-				"Auto-Reconnect Saved Hubs on Startup"
+				"Auto-Reconnect Saved Hubs on Startup",
+				"VPN Forwarded Port (active mode on a VPN)",
+				"PIA Port Forwarding (automatic)",
+				"PIA Login (for port forwarding)"
 		};
 		
 		ArrayAdapter<String> myArrayAdapter = new ArrayAdapter<String>(this,
@@ -63,6 +66,15 @@ public class Settings extends Activity{
 					return;
 				case 4:
 					changeAutoReconnectHubs();
+					return;
+				case 5:
+					changeVpnForwardedPort();
+					return;
+				case 6:
+					changePiaPortForwarding();
+					return;
+				case 7:
+					changePiaLogin();
 					return;
 				default:
 					Log.d("andcpp", "this is unimplemented");
@@ -145,6 +157,99 @@ public class Settings extends Activity{
 				Toast.makeText(Settings.this, "Invalid number of slots", Toast.LENGTH_SHORT).show();
 			}
 		}, "Cancel", null, input);
+	}
+
+	/** Automatic PIA port forwarding on/off (needs the PIA login below). */
+	public void changePiaPortForwarding() {
+		final com.phinmadvader.andcpp.pia.PIAPortForwardingManager pia =
+				com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this);
+		final String[] options = {"Off", "On"};
+		new AlertDialog.Builder(this)
+				.setTitle("PIA Port Forwarding")
+				.setSingleChoiceItems(options, pia.isEnabled() ? 1 : 0, (dialog, which) -> {
+					boolean on = which == 1;
+					pia.setEnabled(on);
+					dialog.dismiss();
+					if (on && !pia.hasCredentials()) {
+						Toast.makeText(Settings.this, "Now enter your PIA login", Toast.LENGTH_LONG).show();
+						changePiaLogin();
+					} else {
+						Toast.makeText(Settings.this, on
+								? "PIA port forwarding on: the app gets a port while PIA is connected"
+								: "PIA port forwarding off", Toast.LENGTH_SHORT).show();
+					}
+				}).show();
+	}
+
+	/** PIA username/password, used only to get a PIA token for port forwarding. */
+	public void changePiaLogin() {
+		final com.phinmadvader.andcpp.pia.PIAPortForwardingManager pia =
+				com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this);
+		android.widget.LinearLayout layout = new android.widget.LinearLayout(this);
+		layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+		int pad = Math.round(16 * getResources().getDisplayMetrics().density);
+		layout.setPadding(pad, pad / 2, pad, 0);
+
+		final EditText user = new EditText(this);
+		user.setHint("PIA username (p1234567)");
+		user.setSingleLine(true);
+		user.setText(pia.getUsername());
+		layout.addView(user);
+
+		final EditText pass = new EditText(this);
+		pass.setHint(pia.hasCredentials() ? "Password (leave empty to keep the saved one)" : "PIA password");
+		pass.setSingleLine(true);
+		pass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+		layout.addView(pass);
+
+		DisplayAlert("PIA Login",
+				"Used only to get a PIA token for port forwarding. Stored in this app's private storage on the phone "
+						+ "and sent only to PIA.",
+				"Save", (dialog, which) -> {
+					String u = user.getText().toString().trim();
+					String p = pass.getText().toString();
+					if (u.isEmpty()) {
+						pia.setCredentials("", "");
+						Toast.makeText(Settings.this, "PIA login removed", Toast.LENGTH_SHORT).show();
+						return;
+					}
+					if (p.isEmpty()) {
+						if (!pia.hasCredentials()) {
+							Toast.makeText(Settings.this, "Enter the PIA password", Toast.LENGTH_SHORT).show();
+							return;
+						}
+						p = getSharedPreferences(Constants.PREFS_NAME, 0)
+								.getString(com.phinmadvader.andcpp.pia.PIAPortForwardingManager.PREF_PASSWORD, "");
+					}
+					pia.setCredentials(u, p);
+					if (!pia.isEnabled()) pia.setEnabled(true);
+					Toast.makeText(Settings.this, "PIA login saved; port forwarding is on", Toast.LENGTH_SHORT).show();
+				}, "Cancel", null, layout);
+	}
+
+	/** The port your VPN forwards to this phone (shown in the VPN app, e.g. PIA "Port forwarding"). */
+	public void changeVpnForwardedPort() {
+		final EditText input = new EditText(this);
+		input.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+		int current = getVpnForwardedPort(this);
+		input.setHint("e.g. 47123 (leave empty for none)");
+		if (current > 0) input.setText(String.valueOf(current));
+		DisplayAlert("VPN Forwarded Port",
+				"If your VPN forwards a port to this phone (PIA: Settings > Network > Port Forwarding), enter it here. "
+						+ "While the VPN is on, the app listens on this port and goes active. "
+						+ "Some VPNs give a new port on every reconnect: update it here when that happens.",
+				"Save", (dialog, which) -> {
+					String s = input.getText().toString().trim();
+					try {
+						int port = s.isEmpty() ? 0 : Integer.parseInt(s);
+						if (port != 0 && (port < 1024 || port > 65535)) throw new NumberFormatException();
+						putVpnForwardedPort(port, Settings.this);
+						Toast.makeText(Settings.this, port == 0 ? "VPN port cleared" : "VPN port saved: " + port,
+								Toast.LENGTH_SHORT).show();
+					} catch (NumberFormatException e) {
+						Toast.makeText(Settings.this, "Invalid port (1024-65535)", Toast.LENGTH_SHORT).show();
+					}
+				}, "Cancel", null, input);
 	}
 
 	public void changeAutoReconnectHubs() {
@@ -233,12 +338,25 @@ public class Settings extends Activity{
 
 	public static boolean getActiveMode(Context c) {
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
-		return prefs.getBoolean(Constants.SETTINGS_ACTIVE_KEY, false); // new installs: passive mode
+		// true = active mode allowed: it is auto-detected per network and falls back to passive when other users
+		// can't reach us (see ConnectivityDetector). false = always passive.
+		return prefs.getBoolean(Constants.SETTINGS_ACTIVE_KEY, true);
 	}
 
 	public static void putActiveMode(boolean active, Context c) {
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
 		prefs.edit().putBoolean(Constants.SETTINGS_ACTIVE_KEY, active).apply();
+	}
+
+	/** Port the VPN provider forwards to this phone (e.g. PIA "port forwarding"); 0 = none. */
+	public static int getVpnForwardedPort(Context c) {
+		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
+		return prefs.getInt(Constants.SETTINGS_VPN_PORT_KEY, 0);
+	}
+
+	public static void putVpnForwardedPort(int port, Context c) {
+		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
+		prefs.edit().putInt(Constants.SETTINGS_VPN_PORT_KEY, port).apply();
 	}
 
 	public static int getUploadSlots(Context c) {

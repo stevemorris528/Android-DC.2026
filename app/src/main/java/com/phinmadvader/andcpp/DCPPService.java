@@ -284,6 +284,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		public volatile DCDownloader.DownloadQueueEntity download_status = null;
 		public volatile String waitReason = null;
+		/**
+		 * Set when we asked the peer to connect to us ($ConnectToMe) and it never arrived: e.g. both of us are on
+		 * the same VPN server (no NAT loop-back) or a firewall. Next attempts let an active peer accept the
+		 * connection instead ($RevConnectToMe), which is what worked in passive mode.
+		 */
+		private volatile boolean preferRevConnect = false;
 		private volatile long lastSignalTime = 0L;
 		private volatile int peerWaitRetryCount = 0;
 		private volatile long nextRetryAt = 0L;
@@ -560,6 +566,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			my_user.ip = advertiseIp != null ? advertiseIp : "";
 			his_user.nick = target_nick;
 
+			if (canAcceptIncoming && preferRevConnect && peerIsActive) {
+				// Our $ConnectToMe went unanswered before: let the (active) peer accept the connection instead.
+				Log.d("andcpp", "[DLTRACE] " + file_name + ": peer didn't connect to us last time; using RevConnectToMe");
+				canAcceptIncoming = false;
+			}
 			if (canAcceptIncoming) {
 				activeRc = new DCClient.ActiveDownloadConnection(his_user, my_user,
 						session.prefs, local_file, remote_file, session.client);
@@ -1103,8 +1114,20 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								if (connectTimedOut) {
 									Log.w("andcpp", "[DLTRACE] No response from " + work.target_nick + " for " + work.file_name
 											+ " (status=" + st + "); parking and moving on");
+									// Asked the peer to connect to us and it never arrived (QUEUED = nobody came):
+									// next time let it accept the connection instead (same VPN server, firewall, ...).
+									boolean wasConnectToMe = work.activeRc != null && st == DCConstants.DownloadStatus.QUEUED;
 									work.abandonCurrentAttempt();
-									work.markWaiting("no response from peer");
+									if (wasConnectToMe && !work.preferRevConnect) {
+										work.preferRevConnect = true;
+										work.peerWaitRetryCount = 0;
+										work.waitReason = "retrying with the peer accepting the connection";
+										work.nextRetryAt = System.currentTimeMillis() + 5000L; // retry almost at once
+										Log.i("andcpp", "[DLTRACE] " + work.file_name + " (" + work.target_nick
+												+ "): no connection from peer to us; retrying with RevConnectToMe");
+									} else {
+										work.markWaiting("no response from peer");
+									}
 									break;
 								}
 								// Re-send the connect request only while our request is still pending on the peer.
@@ -1536,6 +1559,176 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return false;
 	}
 
+	// ---- Active / passive auto-detection ----
+	private ConnectivityDetector connectivityDetector;
+	/** Last detection result; null until the first detection has finished (we are passive until then). */
+	private volatile ConnectivityDetector.Result connectivityResult = null;
+	private final java.util.concurrent.ScheduledExecutorService connectivityExecutor =
+			java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+				Thread t = new Thread(r, "Connectivity");
+				t.setDaemon(true);
+				return t;
+			});
+
+	/** Current connection mode for display, e.g. "Active (UPnP, 1.2.3.4)" or "Passive (...)". */
+	public String getConnectionModeDescription() {
+		ConnectivityDetector.Result r = connectivityResult;
+		return r != null ? r.describe() : "Detecting…";
+	}
+
+	/** True when the current mode is active (for display colours). */
+	public boolean isConnectionActive() {
+		return isActiveNow();
+	}
+
+	/** Active only when allowed and detection showed other users can reach us. */
+	private boolean isActiveNow() {
+		ConnectivityDetector.Result r = connectivityResult;
+		return Settings.getActiveMode(this) && r != null && r.active;
+	}
+
+	private volatile boolean lastVpnActive = false;
+
+	/** True while the active network is a VPN (then incoming connections arrive through the VPN, not the router). */
+	private boolean isVpnActive() {
+		try {
+			ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+			if (cm == null) return false;
+			if (Build.VERSION.SDK_INT >= 23) {
+				android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(cm.getActiveNetwork());
+				return caps != null && caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN);
+			}
+			NetworkInfo ni = cm.getActiveNetworkInfo();
+			return ni != null && ni.getType() == ConnectivityManager.TYPE_VPN;
+		} catch (Exception e) {
+			return false;
+		}
+	}
+
+	/**
+	 * The port to listen on: while a VPN is on, PIA's automatically forwarded port (if PIA port forwarding is
+	 * on and has a port) or the manually entered VPN port; otherwise the normal port.
+	 */
+	private int desiredListenPort() {
+		if (isVpnActive()) {
+			PIAPortForwardingManager pia = PIAPortForwardingManager.getInstance(this);
+			if (pia.isEnabled() && pia.getCurrentPort() != null) {
+				try {
+					return Integer.parseInt(pia.getCurrentPort());
+				} catch (NumberFormatException ignored) {
+				}
+			}
+			int vpnPort = Settings.getVpnForwardedPort(this);
+			if (vpnPort > 0) return vpnPort;
+		}
+		return Settings.getListeningPort(this);
+	}
+
+	/** Re-runs detection in the background (start, network change, ...) and applies the result to all hubs. */
+	public void redetectConnectivity(final String why) {
+		try {
+			connectivityExecutor.execute(() -> {
+				try {
+					if (connectivityDetector == null) connectivityDetector = new ConnectivityDetector(DCPPService.this);
+					connectivityDetector.removeMapping(); // a mapping from a previous network is useless now
+					// Listen on the right port for this network (VPN forwarded port or the normal one).
+					int port = desiredListenPort();
+					if (uploadManager != null && (!uploadManager.isListening() || uploadManager.getPort() != port)) {
+						uploadManager.startListening(port);
+					}
+					ConnectivityDetector.Result r;
+					if (!Settings.getActiveMode(DCPPService.this)) {
+						r = new ConnectivityDetector.Result(false, null, "passive mode chosen");
+					} else if (isVpnActive()) {
+						// Through a VPN only the VPN provider can forward a port to us; the home router can't.
+						// Other users then connect to the VPN address the hub reports for us ($UserIP).
+						PIAPortForwardingManager pia = PIAPortForwardingManager.getInstance(DCPPService.this);
+						int vpnPort = Settings.getVpnForwardedPort(DCPPService.this);
+						boolean listening = uploadManager != null && uploadManager.isListening();
+						if (pia.isEnabled()) {
+							if (why.startsWith("network changed")) {
+								pia.triggerRebind(); // new tunnel (maybe another server): re-check with PIA
+							} else {
+								pia.ensureRunning(); // no-op while already running
+							}
+							if (pia.getCurrentPort() != null && listening) {
+								r = new ConnectivityDetector.Result(true, null, "PIA port forwarding, port " + pia.getCurrentPort());
+							} else if (pia.getLastError() != null) {
+								r = new ConnectivityDetector.Result(false, null, "PIA port forwarding: " + pia.getLastError());
+							} else {
+								r = new ConnectivityDetector.Result(false, null, "VPN active, waiting for PIA port forwarding");
+							}
+						} else if (vpnPort > 0 && listening) {
+							r = new ConnectivityDetector.Result(true, null, "VPN port forwarding, port " + vpnPort);
+						} else {
+							r = new ConnectivityDetector.Result(false, null,
+									"VPN active: turn on PIA Port Forwarding (or enter the VPN's forwarded port) in Settings");
+						}
+					} else {
+						PIAPortForwardingManager.getInstance(DCPPService.this).stopPortForwarding(); // no VPN now
+						r = connectivityDetector.detect(port);
+					}
+					applyConnectivity(r, why);
+				} catch (Exception e) {
+					Log.w("andcpp", "Connectivity re-detection failed", e);
+				}
+			});
+		} catch (java.util.concurrent.RejectedExecutionException ignored) {
+			// service is shutting down
+		}
+	}
+
+	/** Sets every hub session to the detected mode; re-sends $MyINFO where it changed. Runs off the UI thread. */
+	private void applyConnectivity(ConnectivityDetector.Result r, String why) {
+		ConnectivityDetector.Result old = connectivityResult;
+		connectivityResult = r;
+		Log.i("andcpp", "Connection mode (" + why + "): " + r.describe());
+		boolean changed = old == null || old.active != r.active
+				|| (r.externalIp != null && !r.externalIp.equals(old.externalIp));
+		for (HubSession s : sessions.values()) {
+			if (s.prefs == null) continue;
+			if (r.active && uploadManager != null) s.prefs.upload_port = uploadManager.getPort();
+			if (s.prefs.active != r.active) {
+				s.prefs.active = r.active;
+				if (s.myuser != null) {
+					s.myuser.active = r.active;
+					s.myuser.tag = null; // regenerate the tag with M:A / M:P
+				}
+				if (s.status == DCClientStatus.CONNECTED && s.client != null && s.myuser != null) {
+					try {
+						s.client.sendMyInfo(s.myuser, s.prefs);
+					} catch (Exception e) {
+						Log.w("andcpp", "Could not re-send MyINFO to " + s.hubIp, e);
+					}
+				}
+			}
+		}
+		if (changed) {
+			final String text = "Connection mode: " + r.describe();
+			new Handler(Looper.getMainLooper()).post(() ->
+					Toast.makeText(getApplicationContext(), text, Toast.LENGTH_LONG).show());
+		}
+	}
+
+	/**
+	 * The hub tells us which address it sees ($UserIP). If we went active but the hub sees a different public
+	 * address, there is another NAT layer (e.g. the carrier's) and nobody can reach us: fall back to passive.
+	 */
+	private void checkHubSeesOurAddress(final String hubSeenIp) {
+		final ConnectivityDetector.Result r = connectivityResult;
+		if (r == null || !r.active || r.externalIp == null || hubSeenIp == null) return;
+		if (hubSeenIp.indexOf(':') >= 0 || ConnectivityDetector.isPrivateOrLoopback(hubSeenIp)) return; // LAN hub / IPv6
+		if (hubSeenIp.equals(r.externalIp)) return;
+		try {
+			connectivityExecutor.execute(() -> {
+				if (connectivityDetector != null) connectivityDetector.removeMapping();
+				applyConnectivity(new ConnectivityDetector.Result(false, null,
+						"hub sees us at " + hubSeenIp + ", not " + r.externalIp + ": extra NAT"), "hub address check");
+			});
+		} catch (java.util.concurrent.RejectedExecutionException ignored) {
+		}
+	}
+
 	/**
 	 * The address we can advertise in $ConnectToMe / $SR: the address the hub reported for us ($UserIP), else our
 	 * local socket address if it is public, or if the hub itself is on the same private network. Never the hub's
@@ -1547,6 +1740,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			String hubReported = (s.prefs != null) ? s.prefs.get_self_ip() : null;
 			if (hubReported != null && !hubReported.isEmpty()) {
 				return hubReported; // the hub saw us at this address
+			}
+			ConnectivityDetector.Result r = connectivityResult;
+			if (r != null && r.active && r.externalIp != null) {
+				return r.externalIp; // public address found by detection (own IP or the router's, via UPnP)
 			}
 			if (s.client != null && s.client.getSocket() != null && s.client.getSocket().getLocalAddress() != null) {
 				String local = s.client.getSocket().getLocalAddress().getHostAddress();
@@ -2289,6 +2486,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				if (session != null && session.prefs != null) {
 					session.prefs.set_self_ip(detectedIp);
 				}
+				checkHubSeesOurAddress(detectedIp);
 				
 				if (session != null && session.client != null && session.myuser != null) {
 					// Update user object and preferences
@@ -2531,12 +2729,36 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		
 		        uploadManager = new UploadManager(this);
 		installUploadCallback();
-        // Do not start listening yet if PIA is enabled. Wait for onPortBound.
-        if (!com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this).isEnabled()) {
-            int savedPort = Settings.getListeningPort(this);
-            uploadManager.startListening(savedPort);
-        }
-        
+		// Listen now; detection moves the listener to a forwarded VPN/PIA port when there is one.
+		uploadManager.startListening(desiredListenPort());
+
+		// PIA port forwarding reports its port (or failure) here; detection then applies it.
+		PIAPortForwardingManager.getInstance(this).setListener(new PIAPortForwardingManager.PortForwardingListener() {
+			@Override
+			public void onPortBound(String port) {
+				handlePIAPortBound(port);
+			}
+
+			@Override
+			public void onPortError() {
+				Log.w("andcpp", "PIA port forwarding failed: " + PIAPortForwardingManager.getInstance(DCPPService.this).getLastError());
+				redetectConnectivity("PIA port forwarding failed");
+			}
+		});
+
+		// Active/passive auto-detection: now, and keep a UPnP port mapping alive (lease is 1 hour).
+		// Record the current VPN state first, so the first network event isn't mistaken for "VPN turned on"
+		// (that restarted PIA port forwarding and got a second, different port on every start).
+		lastVpnActive = isVpnActive();
+		redetectConnectivity("start");
+		connectivityExecutor.scheduleWithFixedDelay(() -> {
+			ConnectivityDetector.Result r = connectivityResult;
+			if (r != null && r.active && ("UPnP".equals(r.reason) || "NAT-PMP".equals(r.reason)) && connectivityDetector != null
+					&& !connectivityDetector.refreshMapping()) {
+				redetectConnectivity("UPnP mapping lost");
+			}
+		}, 30, 30, java.util.concurrent.TimeUnit.MINUTES);
+
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
 		if (powerManager != null) {
 			wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AnDCpp::NetworkWakeLock");
@@ -2552,18 +2774,6 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		// Restore active/queued/incomplete downloads after service creation
 		new Handler(Looper.getMainLooper()).postDelayed(this::restoreDownloadsState, 1500);
 		
-		com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this).setListener(new com.phinmadvader.andcpp.pia.PIAPortForwardingManager.PortForwardingListener() {
-			@Override
-			public void onPortBound(String port) {
-				handlePIAPortBound(port);
-			}
-
-			@Override
-			public void onPortError() {
-				Log.e("andcpp", "PIA Port Binding failed.");
-			}
-		});
-
 		networkReceiver = new BroadcastReceiver() {
 			@Override
 			public void onReceive(Context context, Intent intent) {
@@ -2581,11 +2791,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						Log.d("andcpp", "Network connected (" + networkKey + "), triggering reconnection logic");
 						triggerReconnections();
 
+						// VPN switched on/off: incoming connections now take another path; re-check active/passive.
+						boolean vpnNow = isVpnActive();
+						if (vpnNow != lastVpnActive) {
+							lastVpnActive = vpnNow;
+							redetectConnectivity(vpnNow ? "VPN turned on" : "VPN turned off");
+						}
+
 						long now = System.currentTimeMillis();
 						if (networkChanged && now - lastNetworkRestartAt > 5000) {
 							lastNetworkRestartAt = now;
 							Log.i("andcpp", "Network changed; restarting active downloads");
 							restartDownloadsAfterNetworkChange();
+							redetectConnectivity("network changed"); // new network: active may (no longer) be possible
 						}
 					} else if (lastNetworkKey != null) {
 						networkLostSinceLastConnect = true;
@@ -2607,6 +2825,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		wifiOnlyPrefListener = (sp, key) -> {
 			if (Constants.SETTINGS_WIFI_ONLY_DOWNLOADS_KEY.equals(key)) {
 				new Handler(Looper.getMainLooper()).post(this::onWifiOnlyConditionChanged);
+			} else if (Constants.SETTINGS_VPN_PORT_KEY.equals(key)) {
+				redetectConnectivity("VPN forwarded port changed"); // re-listens on the new port and re-checks
+			} else if (PIAPortForwardingManager.PREF_ENABLED.equals(key)
+					|| PIAPortForwardingManager.PREF_PASSWORD.equals(key)) {
+				PIAPortForwardingManager.getInstance(this).stopPortForwarding(); // start over with the new settings
+				redetectConnectivity("PIA settings changed");
 			}
 		};
 		getSharedPreferences(Constants.PREFS_NAME, 0)
@@ -2764,11 +2988,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private void triggerReconnections() {
-		com.phinmadvader.andcpp.pia.PIAPortForwardingManager piaManager = com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this);
-		if (piaManager.isEnabled()) {
-			piaManager.triggerRebind();
-		}
-
+		// (PIA port forwarding is (re)started by connectivity detection, not on every network event:
+		// restarting it each time could get a new port.)
 		for (Map.Entry<String, HubSession> entry : sessions.entrySet()) {
 			HubSession session = entry.getValue();
 			if (session.status == DCClientStatus.RECONNECTING || session.status == DCClientStatus.DISCONNECTED || session.status == DCClientStatus.INVALIDIP) {
@@ -2779,25 +3000,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		retryPendingDownloads();
 	}
 
+	/** PIA assigned/kept a forwarded port: re-run detection, which listens on it and goes active. */
 	private void handlePIAPortBound(String portStr) {
-		int port = Integer.parseInt(portStr);
-		Log.i("andcpp", "PIA Port bound (" + port + "), restarting UploadManager and updating active sessions.");
-		
-		if (uploadManager != null) {
-			uploadManager.startListening(port);
+		ConnectivityDetector.Result r = connectivityResult;
+		String expected = "PIA port forwarding, port " + portStr;
+		if (r != null && r.active && expected.equals(r.reason)
+				&& uploadManager != null && String.valueOf(uploadManager.getPort()).equals(portStr)) {
+			return; // keep-alive of the port we already use
 		}
-
-		for (HubSession session : sessions.values()) {
-			if (session.status == DCClientStatus.CONNECTED && session.client != null && session.prefs != null && session.prefs.active) {
-				session.prefs.upload_port = port;
-				session.myuser.tag = null; // force tag regeneration
-				try {
-					session.client.sendMyInfo(session.myuser, session.prefs);
-				} catch (Exception e) {
-					Log.e("andcpp", "Failed to send updated MyINFO for PIA port on hub " + session.hubIp, e);
-				}
-			}
-		}
+		Log.i("andcpp", "PIA port bound: " + portStr);
+		redetectConnectivity("PIA port " + portStr + " bound");
 	}
 
 	private void manageWakeLock() {
@@ -3044,8 +3256,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			
 			// Load preferences
 			SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, 0);
-			boolean activeMode = Settings.getActiveMode(this);
-			int uploadPort = Settings.getListeningPort(this);
+			// Auto-detected: active only if other users can reach us (passive until detection has finished).
+			boolean activeMode = isActiveNow();
+			if (connectivityResult == null) {
+				redetectConnectivity("first hub connection");
+			}
+			int uploadPort = desiredListenPort(); // VPN forwarded port while a VPN is on
 
 			if (uploadManager == null) {
 				uploadManager = new UploadManager(DCPPService.this);
@@ -3527,12 +3743,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
-	/** Upload connections that are still open (for the Uploads list). */
+	/**
+	 * Upload connections that are still open (for the Uploads list). Only connections that identified themselves
+	 * (sent $MyNick): with a public port, internet scanners connect too, and those must not show as uploads.
+	 */
 	public List<PeerConnectionHandler> getActiveUploads() {
 		List<PeerConnectionHandler> list = new ArrayList<>();
 		if (uploadManager == null) return list;
 		for (PeerConnectionHandler h : uploadManager.getActiveUploads()) {
-			if (!h.isFinished()) list.add(h);
+			if (h.isFinished()) continue;
+			if (h.getState() == PeerConnectionHandler.ConnectionState.HANDSHAKING) continue;
+			String nick = h.getHisNick();
+			if (nick == null || nick.isEmpty() || "Unknown".equals(nick)) continue;
+			list.add(h);
 		}
 		return list;
 	}
@@ -3617,6 +3840,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		super.onDestroy();
 		saveDownloadsStateNow();
 		saveAllTimeTotals();
+		connectivityExecutor.shutdownNow();
+		final ConnectivityDetector detector = connectivityDetector;
+		if (detector != null) {
+			// Remove our router port mapping (network I/O: not on the main thread).
+			new Thread(detector::removeMapping, "UPnP-cleanup").start();
+		}
 		searchReplyExecutor.shutdownNow();
 		searchSendExecutor.shutdownNow();
 		userCommandExecutor.shutdownNow();
