@@ -88,6 +88,40 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		DISCONNECTED, INVALIDIP, CONNECTED, CONNECTING, RECONNECTING
 	}
 
+	/** One entry of a hub's command menu ($UserCommand). */
+	public static class UserCommand {
+		public static final int TYPE_SEPARATOR = 0;
+		public static final int CONTEXT_HUB = 1, CONTEXT_USER = 2, CONTEXT_SEARCH = 4, CONTEXT_FILELIST = 8;
+		public final int type;
+		public final int context;
+		/** Menu path; submenus separated by '\'. Null for an untitled separator. */
+		public final String title;
+		/** Raw NMDC command(s) with %[...] placeholders; '|' encoded as &#124;. */
+		public final String command;
+
+		UserCommand(int type, int context, String title, String command) {
+			this.type = type;
+			this.context = context;
+			this.title = title;
+			this.command = command;
+		}
+
+		public boolean isSeparator() {
+			return type == TYPE_SEPARATOR;
+		}
+
+		/** Prompts of the %[line:...] placeholders, in order of first appearance. */
+		public List<String> linePrompts() {
+			List<String> prompts = new ArrayList<>();
+			if (command == null) return prompts;
+			java.util.regex.Matcher m = java.util.regex.Pattern.compile("%\\[line:([^\\]]*)\\]").matcher(command);
+			while (m.find()) {
+				if (!prompts.contains(m.group(1))) prompts.add(m.group(1));
+			}
+			return prompts;
+		}
+	}
+
 	public class HubSession {
 		public String hubIp;
 		public int hubPort;
@@ -105,6 +139,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public long lastReconnectAttempt = 0;
 		/** Build m: pending download requests, kept across hub reconnects. */
 		public DCDownloader keptDownloads = null;
+		/** Hub/user menu commands sent by this hub ($UserCommand). Reset on every (re)connect. */
+		public final List<UserCommand> userCommands = new java.util.concurrent.CopyOnWriteArrayList<>();
 
 		public HubSession(String ip, int port) {
 			this.hubIp = ip;
@@ -3058,6 +3094,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				});
 				session.client.setCustomRawHandler("Search", new MyIncomingSearchHandler(hubKey));
+				// Hub command menus: start empty on every (re)connect; the hub sends them after login.
+				session.userCommands.clear();
+				session.client.setCustomRawHandler("UserCommand", dcMessage -> handleUserCommand(session, dcMessage));
 				session.client.setCustomRawHandler("HubQuit", new MyHubQuitHandler(hubKey));
 				session.client.setCustomRawHandler("RevConnectToMe", new MyRevConnectHandler(hubKey));
 				session.client.setCustomRawHandler("UserIP", new MyUserIPHandler(hubKey));
@@ -3246,6 +3285,105 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		stopSelf();
 	}
 
+	// ---- Hub user commands ($UserCommand) ----
+
+	private void handleUserCommand(HubSession session, DCMessage msg) {
+		if (msg.uc_type < 0) return;
+		int ctx = msg.uc_context;
+		if (msg.uc_type == 255) {
+			// Clear: remove every command in the given contexts (0 = all).
+			for (UserCommand uc : session.userCommands) {
+				if (ctx == 0 || (uc.context & ctx) != 0) session.userCommands.remove(uc);
+			}
+			Log.d("andcpp", "Hub " + session.hubIp + " cleared its user commands (context " + ctx + ")");
+			return;
+		}
+		if (msg.uc_type == UserCommand.TYPE_SEPARATOR) {
+			session.userCommands.add(new UserCommand(UserCommand.TYPE_SEPARATOR, ctx, msg.uc_title, null));
+			return;
+		}
+		if ((msg.uc_type == 1 || msg.uc_type == 2) && msg.uc_title != null && !msg.uc_title.isEmpty()
+				&& msg.uc_command != null) {
+			// Same title in an overlapping context replaces the old entry (hubs re-send updated menus).
+			for (UserCommand uc : session.userCommands) {
+				if (!uc.isSeparator() && msg.uc_title.equals(uc.title) && (uc.context & ctx) != 0) {
+					session.userCommands.remove(uc);
+				}
+			}
+			session.userCommands.add(new UserCommand(msg.uc_type, ctx, msg.uc_title, msg.uc_command));
+			Log.d("andcpp", "Hub " + session.hubIp + " user command: " + msg.uc_title + " (context " + ctx + ")");
+		}
+	}
+
+	/** Commands (and separators) this hub offers in the given context, e.g. UserCommand.CONTEXT_USER. */
+	public List<UserCommand> getUserCommands(String hubIp, int contextBit) {
+		List<UserCommand> out = new ArrayList<>();
+		HubSession session = getSession(hubIp);
+		if (session == null || session.status != DCClientStatus.CONNECTED) return out;
+		for (UserCommand uc : session.userCommands) {
+			if ((uc.context & contextBit) != 0) out.add(uc);
+		}
+		return out;
+	}
+
+	private final java.util.concurrent.ExecutorService userCommandExecutor =
+			java.util.concurrent.Executors.newSingleThreadExecutor();
+
+	/** NMDC escaping for text inserted into a command ('|' and '$' are protocol delimiters). */
+	private static String escapeNmdc(String s) {
+		return s == null ? "" : s.replace("&", "&amp;").replace("|", "&#124;").replace("$", "&#36;");
+	}
+
+	/**
+	 * Runs a hub command for targetNick: fills in %[nick]/%[userNI], %[mynick]/%[myNI], %[userIP] and the
+	 * %[line:...] answers, then sends each command part to the hub (off the UI thread).
+	 * Returns false if the hub is not connected.
+	 */
+	public boolean runUserCommand(String hubIp, UserCommand uc, String targetNick, Map<String, String> lineValues) {
+		final HubSession session = getSession(hubIp);
+		if (session == null || session.client == null || session.myuser == null
+				|| session.status != DCClientStatus.CONNECTED || uc == null || uc.command == null) {
+			return false;
+		}
+		String myNick = session.myuser.nick != null ? session.myuser.nick : "";
+		String nick = targetNick != null ? targetNick : "";
+		String userIp = "";
+		List<DCUser> users = session.client.get_nick_list();
+		if (users != null) {
+			for (DCUser u : users) {
+				if (u != null && nick.equalsIgnoreCase(u.nick) && u.ip != null) { userIp = u.ip; break; }
+			}
+		}
+
+		final List<String> parts = new ArrayList<>();
+		for (String part : uc.command.split("&#124;", -1)) {
+			if (part.trim().isEmpty()) continue;
+			String m = part.replace("&#36;", "$");
+			m = m.replace("%[nick]", nick).replace("%[userNI]", nick)
+					.replace("%[mynick]", myNick).replace("%[myNI]", myNick)
+					.replace("%[userIP]", userIp);
+			if (lineValues != null) {
+				for (Map.Entry<String, String> e : lineValues.entrySet()) {
+					m = m.replace("%[line:" + e.getKey() + "]", escapeNmdc(e.getValue()));
+				}
+			}
+			m = m.replace("&amp;", "&");
+			parts.add(m);
+		}
+		if (parts.isEmpty()) return false;
+		Log.i("andcpp", "Running hub command '" + uc.title + "' for " + nick + " on " + session.hubIp);
+		userCommandExecutor.execute(() -> {
+			try {
+				for (String p : parts) {
+					session.client.sendRaw(p);
+				}
+			} catch (Exception e) {
+				Log.e("andcpp", "Failed to send hub command '" + uc.title + "'", e);
+			}
+		});
+		return true;
+	}
+
 	/** Sends searches in order, off the UI thread (network on the main thread crashes the app). */
 	private final java.util.concurrent.ExecutorService searchSendExecutor =
 			java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -3425,6 +3563,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		saveAllTimeTotals();
 		searchReplyExecutor.shutdownNow();
 		searchSendExecutor.shutdownNow();
+		userCommandExecutor.shutdownNow();
 		synchronized (this) {
 			if (searchUdpSocket != null) {
 				searchUdpSocket.close();

@@ -131,6 +131,7 @@ public class DCClient {
 		supported_methods.add("UserIP");
 		supported_methods.add("TTHL");
 		supported_methods.add("TTHF");
+		supported_methods.add("UserCommand"); // hubs only send $UserCommand (hub/user menus) to clients announcing it
 
 		handler.send_supports(supported_methods);
 		handler.send_key(DCFunctions.convert_lock_to_key(lock.lock_s.getBytes()));

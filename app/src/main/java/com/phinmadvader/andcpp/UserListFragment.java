@@ -19,6 +19,7 @@ import android.widget.AdapterView;
 import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.phinvader.libjdcpp.DCMessage;
 import com.phinvader.libjdcpp.DCUser;
@@ -137,6 +138,18 @@ public class UserListFragment extends Fragment {
 		popup.getMenu().add(0, 1, 0, "1. Get file list");
 		popup.getMenu().add(0, 2, 1, "2. Send private message");
 
+		// Hub commands: only if this user's hub sent user-list commands to us ($UserCommand, context 2).
+		final List<DCPPService.UserCommand> hubCommands = (mainActivity != null && mainActivity.mService != null)
+				? mainActivity.mService.getUserCommands(currentHubIp, DCPPService.UserCommand.CONTEXT_USER)
+				: new ArrayList<DCPPService.UserCommand>();
+		boolean hasHubCommands = false;
+		for (DCPPService.UserCommand uc : hubCommands) {
+			if (!uc.isSeparator()) { hasHubCommands = true; break; }
+		}
+		if (hasHubCommands) {
+			popup.getMenu().add(0, 3, 2, "3. Hub commands");
+		}
+
 		popup.setOnMenuItemClickListener(new android.widget.PopupMenu.OnMenuItemClickListener() {
 			@Override
 			public boolean onMenuItemClick(android.view.MenuItem item) {
@@ -147,6 +160,9 @@ public class UserListFragment extends Fragment {
 					case 2:
 						mainActivity.open_private_chat(currentHubIp, user.nick);
 						return true;
+					case 3:
+						showHubCommandMenu(user, hubCommands, "");
+						return true;
 					default:
 						return false;
 				}
@@ -154,6 +170,76 @@ public class UserListFragment extends Fragment {
 		});
 
 		popup.show();
+	}
+
+	/**
+	 * Shows one level of the hub's command menu. Titles use '\' for submenus ("Ops\Kick"): entries below
+	 * the current path become submenus ("Ops ›"), the rest are commands.
+	 */
+	private void showHubCommandMenu(final DCUserComparable user, final List<DCPPService.UserCommand> commands,
+									final String path) {
+		if (getActivity() == null) return;
+		final List<String> labels = new ArrayList<>();
+		final List<Object> targets = new ArrayList<>(); // String = submenu path, UserCommand = command
+		for (DCPPService.UserCommand uc : commands) {
+			if (uc.isSeparator() || uc.title == null || !uc.title.startsWith(path)) continue;
+			String rest = uc.title.substring(path.length());
+			int slash = rest.indexOf('\\');
+			if (slash > 0) {
+				String sub = path + rest.substring(0, slash + 1);
+				if (!targets.contains(sub)) {
+					labels.add(rest.substring(0, slash) + "  ›");
+					targets.add(sub);
+				}
+			} else if (!rest.isEmpty()) {
+				labels.add(rest);
+				targets.add(uc);
+			}
+		}
+		if (labels.isEmpty()) {
+			Toast.makeText(getActivity(), "No hub commands here", Toast.LENGTH_SHORT).show();
+			return;
+		}
+		String title = path.isEmpty() ? "Hub commands: " + user.nick
+				: path.substring(0, path.length() - 1).replace("\\", " › ");
+		new android.app.AlertDialog.Builder(getActivity())
+				.setTitle(title)
+				.setItems(labels.toArray(new String[0]), (dialog, which) -> {
+					Object t = targets.get(which);
+					if (t instanceof String) {
+						showHubCommandMenu(user, commands, (String) t);
+					} else {
+						DCPPService.UserCommand uc = (DCPPService.UserCommand) t;
+						askLineValues(user, uc, uc.linePrompts(), 0, new java.util.LinkedHashMap<String, String>());
+					}
+				})
+				.setNegativeButton("Close", null)
+				.show();
+	}
+
+	/** Asks for each %[line:prompt] value in turn, then runs the command. Cancel aborts. */
+	private void askLineValues(final DCUserComparable user, final DCPPService.UserCommand uc,
+							   final List<String> prompts, final int index, final java.util.Map<String, String> values) {
+		if (getActivity() == null) return;
+		if (index >= prompts.size()) {
+			boolean sent = mainActivity != null && mainActivity.mService != null
+					&& mainActivity.mService.runUserCommand(currentHubIp, uc, user.nick, values);
+			Toast.makeText(getActivity(), sent ? "Sent: " + uc.title.substring(uc.title.lastIndexOf('\\') + 1)
+					: "Not connected to the hub", Toast.LENGTH_SHORT).show();
+			return;
+		}
+		final EditText input = new EditText(getActivity());
+		input.setSingleLine(true);
+		String prompt = prompts.get(index);
+		new android.app.AlertDialog.Builder(getActivity())
+				.setTitle(prompt.isEmpty() ? "Enter value" : prompt)
+				.setView(input)
+				.setPositiveButton(index + 1 < prompts.size() ? "Next" : "Send", (d, w) -> {
+					values.put(prompt, input.getText().toString());
+					askLineValues(user, uc, prompts, index + 1, values);
+				})
+				.setNegativeButton("Cancel", null)
+				.show();
 	}
 
 	private void scheduleFilterUpdate() {

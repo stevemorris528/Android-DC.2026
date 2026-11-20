@@ -33,6 +33,11 @@ public class DCMessage {
 	public String file_path;
 	public long file_size;
 	public String file_signature;
+	// $UserCommand <type> <context> <title>$<command>
+	public int uc_type = -1;      // 0 separator, 1 raw, 2 raw (once per nick), 255 clear
+	public int uc_context;        // bit mask: 1 hub menu, 2 user list, 4 search results, 8 file list
+	public String uc_title;       // menu path, submenus separated by '\'
+	public String uc_command;     // raw NMDC command(s), '|' encoded as &#124;
 	public boolean is_dir_result; // $SR: the result is a directory (no size / TTH)
 	public String file_tth; // $SR: TTH of the file, or null
 	public String sr_hub_address; // $SR: "hubip:port" the result came from, or null
@@ -186,6 +191,17 @@ public class DCMessage {
 						}
 					}
 
+				} else if (command.equals("UserCommand")) {
+					// $UserCommand <type> <context>[ <title>$<command>]
+					String rest = new String(input, beg + 1, input.length - beg - 1);
+					String[] t = rest.split(" ", 3);
+					uc_type = Integer.parseInt(t[0].trim());
+					uc_context = t.length > 1 ? Integer.parseInt(t[1].trim()) : 0;
+					if (t.length > 2) {
+						int dollar = t[2].indexOf('$');
+						uc_title = dollar >= 0 ? t[2].substring(0, dollar) : t[2];
+						uc_command = dollar >= 0 ? t[2].substring(dollar + 1) : "";
+					}
 				} else if (command.equals("HubName")) {
 					hubname_s = new String(input, beg + 1, input.length - beg
 							- 1);
