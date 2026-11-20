@@ -58,7 +58,7 @@ public class LoginFragment extends Fragment {
 		String nick = mainActivity.getprefs().getString(
 				Constants.SETTINGS_NICK_KEY, "");
 		boolean active = mainActivity.getprefs().getBoolean(
-				Constants.SETTINGS_ACTIVE_KEY, false);
+				Constants.SETTINGS_ACTIVE_KEY, false); // new installs: passive mode
 		nickText.setText(nick);
 		ipText.setText(ip);
 		activeCheckBox.setChecked(active);

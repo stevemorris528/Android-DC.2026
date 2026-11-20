@@ -351,7 +351,7 @@ public class MessageHandler {
 		boolean isActive = (prefs != null) ? prefs.active : myuser.active;
 		if (myuser.description == null)
 			myuser.description = "";
-		
+
 		// LibreTorrent/Modern client style tag: <++ V:0.8.7,M:A,H:1/0/0,S:3>
 		// M:A for Active, M:P for Passive
 		if (myuser.tag == null) {

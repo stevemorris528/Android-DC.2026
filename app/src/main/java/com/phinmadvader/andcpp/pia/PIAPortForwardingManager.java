@@ -31,6 +31,15 @@ public class PIAPortForwardingManager {
     private static final String TAG = "PIAPortForwarding";
     private static final int PIA_PORT = 19999;
 
+    /**
+     * PIA port forwarding is switched off app-wide (its Settings entries were removed).
+     * While false: never enabled, no network calls, and any previously saved "enabled" flag is cleared.
+     */
+    public static final boolean FEATURE_AVAILABLE = false;
+
+    /** Trust-all TLS for the PIA gateway's self-signed cert, applied ONLY to PIA's own connections. */
+    private javax.net.ssl.SSLSocketFactory piaSocketFactory;
+
     private static PIAPortForwardingManager instance;
     private final Context context;
     private final SharedPreferences prefs;
@@ -52,9 +61,18 @@ public class PIAPortForwardingManager {
     private PIAPortForwardingManager(Context context) {
         this.context = context.getApplicationContext();
         this.prefs = this.context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-        this.isEnabled = prefs.getBoolean("pia_port_forwarding_enabled", false);
-        trustAllHosts(); // Necessary for self-signed 10.0.0.1 cert
+        if (!FEATURE_AVAILABLE) {
+            // Properly off: clear any flag saved by an older version (its Settings switch no longer exists),
+            // and never touch the network or TLS settings.
+            this.isEnabled = false;
+            if (prefs.getBoolean("pia_port_forwarding_enabled", false)) {
+                prefs.edit().putBoolean("pia_port_forwarding_enabled", false).apply();
+                Log.i(TAG, "PIA port forwarding was enabled by an older version; disabled.");
+            }
+            return;
+        }
 
+        this.isEnabled = prefs.getBoolean("pia_port_forwarding_enabled", false);
         if (isEnabled) {
             startPortForwarding();
         }
@@ -79,6 +97,9 @@ public class PIAPortForwardingManager {
     }
 
     public void setEnabled(boolean enabled) {
+        if (!FEATURE_AVAILABLE) {
+            enabled = false; // cannot be switched on while the feature is unavailable
+        }
         this.isEnabled = enabled;
         prefs.edit().putBoolean("pia_port_forwarding_enabled", enabled).apply();
         if (enabled) {
@@ -122,6 +143,7 @@ public class PIAPortForwardingManager {
     }
 
     private void startPortForwarding() {
+        if (!FEATURE_AVAILABLE) return;
         if (executorService != null && !executorService.isShutdown()) {
             return;
         }
@@ -173,8 +195,7 @@ public class PIAPortForwardingManager {
         try {
             String gateway = getPIAGateway();
             URL url = new URL("https://" + gateway + ":" + PIA_PORT + "/getSignature?token=" + token);
-            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
-            conn.setHostnameVerifier((hostname, session) -> true);
+            HttpsURLConnection conn = openPiaConnection(url);
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(30000);
             conn.setReadTimeout(30000);
@@ -219,8 +240,7 @@ public class PIAPortForwardingManager {
         try {
             String gateway = getPIAGateway();
             URL url = new URL("https://" + gateway + ":" + PIA_PORT + "/bindPort?signature=" + signature + "&payload=" + payload);
-            HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
-            conn.setHostnameVerifier((hostname, session) -> true);
+            HttpsURLConnection conn = openPiaConnection(url);
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(30000);
             conn.setReadTimeout(30000);
@@ -271,18 +291,24 @@ public class PIAPortForwardingManager {
         }
     }
 
-    private static void trustAllHosts() {
-        TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
-            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[] {}; }
-            public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
-            public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
-        } };
-        try {
+    /**
+     * Opens a connection to the PIA gateway, accepting its self-signed certificate. Applied to this
+     * connection only: the app-wide HTTPS defaults are never changed.
+     */
+    private HttpsURLConnection openPiaConnection(URL url) throws Exception {
+        if (piaSocketFactory == null) {
+            TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
+                public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[] {}; }
+                public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
+                public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {}
+            } };
             SSLContext sc = SSLContext.getInstance("TLS");
             sc.init(null, trustAllCerts, new java.security.SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-        } catch (Exception e) {
-            e.printStackTrace();
+            piaSocketFactory = sc.getSocketFactory();
         }
+        HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+        conn.setSSLSocketFactory(piaSocketFactory);
+        conn.setHostnameVerifier((hostname, session) -> true);
+        return conn;
     }
 }

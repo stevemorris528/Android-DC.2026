@@ -34,12 +34,8 @@ public class Settings extends Activity{
 				"Theme: Light / Dark Mode",
 				"Accent Color",
 				"Change Downloads Directory",
-				"Change Listening Port",
 				"Change Upload Slots",
-				"Connection Mode (Active/Passive)",
-				"Auto-Reconnect Saved Hubs on Startup",
-				"PIA Port Forwarding",
-				"Set PIA Token"
+				"Auto-Reconnect Saved Hubs on Startup"
 		};
 		
 		ArrayAdapter<String> myArrayAdapter = new ArrayAdapter<String>(this,
@@ -63,22 +59,10 @@ public class Settings extends Activity{
 					changeDownloadsDirectory();
 					return;
 				case 3:
-					changeListeningPort();
-					return;
-				case 4:
 					changeUploadSlots();
 					return;
-				case 5:
-					changeConnectionMode();
-					return;
-				case 6:
+				case 4:
 					changeAutoReconnectHubs();
-					return;
-				case 7:
-					changePIAPortForwarding();
-					return;
-				case 8:
-					changePIAToken();
 					return;
 				default:
 					Log.d("andcpp", "this is unimplemented");
@@ -148,21 +132,6 @@ public class Settings extends Activity{
 				inputDirectoryTextView);
 	}
 
-	public void changeListeningPort() {
-		final EditText input = new EditText(this);
-		input.setText(String.valueOf(getListeningPort(this)));
-		DisplayAlert("Change Listening Port", "Enter port (1024-65535):", "Save", (dialog, which) -> {
-			try {
-				int port = Integer.parseInt(input.getText().toString());
-				if (port < 1024 || port > 65535) throw new NumberFormatException();
-				putListeningPort(port, Settings.this);
-				Toast.makeText(Settings.this, "Port saved. Restart service to apply.", Toast.LENGTH_SHORT).show();
-			} catch (NumberFormatException e) {
-				Toast.makeText(Settings.this, "Invalid port number", Toast.LENGTH_SHORT).show();
-			}
-		}, "Cancel", null, input);
-	}
-
 	public void changeUploadSlots() {
 		final EditText input = new EditText(this);
 		input.setText(String.valueOf(getUploadSlots(this)));
@@ -178,18 +147,6 @@ public class Settings extends Activity{
 		}, "Cancel", null, input);
 	}
 
-	public void changeConnectionMode() {
-		final String[] modes = {"Passive", "Active"};
-		int current = getActiveMode(this) ? 1 : 0;
-		new AlertDialog.Builder(this)
-				.setTitle("Select Connection Mode")
-				.setSingleChoiceItems(modes, current, (dialog, which) -> {
-					putActiveMode(which == 1, Settings.this);
-					Toast.makeText(Settings.this, "Mode saved. Restart service to apply.", Toast.LENGTH_SHORT).show();
-					dialog.dismiss();
-				}).show();
-	}
-
 	public void changeAutoReconnectHubs() {
 		final String[] options = {"Disabled", "Enabled"};
 		int current = getAutoReconnectHubs(this) ? 1 : 0;
@@ -202,33 +159,6 @@ public class Settings extends Activity{
 				}).show();
 	}
 
-	public void changePIAPortForwarding() {
-		com.phinmadvader.andcpp.pia.PIAPortForwardingManager piaManager = com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this);
-		boolean current = piaManager.isEnabled();
-		String currentPort = piaManager.getCurrentPort();
-		String message = "Current PIA Port: " + (currentPort != null ? currentPort : "None");
-		
-		new AlertDialog.Builder(this)
-				.setTitle("Enable PIA Port Forwarding")
-				.setMessage(message)
-				.setPositiveButton(current ? "Disable" : "Enable", (dialog, which) -> {
-					piaManager.setEnabled(!current);
-					Toast.makeText(Settings.this, "PIA Port Forwarding " + (!current ? "Enabled" : "Disabled"), Toast.LENGTH_SHORT).show();
-				})
-				.setNegativeButton("Cancel", null)
-				.show();
-	}
-
-	public void changePIAToken() {
-		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, 0);
-		final EditText input = new EditText(this);
-		input.setText(prefs.getString("pia_token", ""));
-		DisplayAlert("Change PIA Token", "Enter token:", "Save", (dialog, which) -> {
-			prefs.edit().putString("pia_token", input.getText().toString()).apply();
-			Toast.makeText(Settings.this, "Token saved.", Toast.LENGTH_SHORT).show();
-		}, "Cancel", null, input);
-	}
-	
 	public String DisplayAlert(String title, //Title for the alert
 			String message, //Message for the alert
 			String positiveString, //Positive option string
@@ -303,7 +233,7 @@ public class Settings extends Activity{
 
 	public static boolean getActiveMode(Context c) {
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
-		return prefs.getBoolean(Constants.SETTINGS_ACTIVE_KEY, false);
+		return prefs.getBoolean(Constants.SETTINGS_ACTIVE_KEY, false); // new installs: passive mode
 	}
 
 	public static void putActiveMode(boolean active, Context c) {
