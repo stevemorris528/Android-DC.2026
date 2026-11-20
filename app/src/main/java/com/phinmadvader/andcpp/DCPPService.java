@@ -566,6 +566,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			my_user.ip = advertiseIp != null ? advertiseIp : "";
 			his_user.nick = target_nick;
 
+			if (!preferRevConnect && peersPreferRevConnect.contains(target_nick.toLowerCase(Locale.ROOT))) {
+				preferRevConnect = true; // another download already found this peer can't connect to us
+			}
 			if (canAcceptIncoming && preferRevConnect && peerIsActive) {
 				// Our $ConnectToMe went unanswered before: let the (active) peer accept the connection instead.
 				Log.d("andcpp", "[DLTRACE] " + file_name + ": peer didn't connect to us last time; using RevConnectToMe");
@@ -1017,6 +1020,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								break;
 							}
 							updateFolderStatus(work, work.get_status());
+							if (work.download_status.status != DCConstants.DownloadStatus.QUEUED) {
+								unansweredConnectRequests = 0; // a peer connected to us: the hub is relaying fine
+							}
 							if (work.download_status.status == DCConstants.DownloadStatus.COMPLETED) {
 								
 
@@ -1120,6 +1126,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 									work.abandonCurrentAttempt();
 									if (wasConnectToMe && !work.preferRevConnect) {
 										work.preferRevConnect = true;
+										// Remember it for this peer: its other queued files skip the wait.
+										peersPreferRevConnect.add(work.target_nick.toLowerCase(Locale.ROOT));
 										work.peerWaitRetryCount = 0;
 										work.waitReason = "retrying with the peer accepting the connection";
 										work.nextRetryAt = System.currentTimeMillis() + 5000L; // retry almost at once
@@ -1127,6 +1135,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 												+ "): no connection from peer to us; retrying with RevConnectToMe");
 									} else {
 										work.markWaiting("no response from peer");
+									}
+									if (st == DCConstants.DownloadStatus.QUEUED) {
+										noteUnansweredConnectRequest(work.hubIp);
 									}
 									break;
 								}
@@ -1560,6 +1571,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	// ---- Active / passive auto-detection ----
+	/**
+	 * Peers (lower-case nicks) that didn't connect to us after a $ConnectToMe: downloads from them use
+	 * $RevConnectToMe (the peer accepts the connection) straight away. Cleared when our connectivity changes.
+	 */
+	private final Set<String> peersPreferRevConnect = java.util.Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 	private ConnectivityDetector connectivityDetector;
 	/** Last detection result; null until the first detection has finished (we are passive until then). */
 	private volatile ConnectivityDetector.Result connectivityResult = null;
@@ -1569,6 +1585,38 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				t.setDaemon(true);
 				return t;
 			});
+
+	/**
+	 * True once detection has a final answer (active, or passive for a known reason). Still waiting for PIA to
+	 * hand out a port doesn't count.
+	 */
+	public boolean isConnectivityDecided() {
+		ConnectivityDetector.Result r = connectivityResult;
+		return r != null && !r.reason.startsWith("VPN active, waiting");
+	}
+
+	/**
+	 * Runs action on the main thread as soon as active/passive is decided, or after timeoutMs at the latest
+	 * (then with whatever is known; passive until decided).
+	 */
+	public void whenConnectivityDecided(final Runnable action, final long timeoutMs) {
+		final long deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs;
+		final Handler h = new Handler(Looper.getMainLooper());
+		h.post(new Runnable() {
+			@Override
+			public void run() {
+				boolean decided = isConnectivityDecided();
+				if (decided || android.os.SystemClock.elapsedRealtime() >= deadline) {
+					Log.i("andcpp", decided ? "Connection mode decided (" + getConnectionModeDescription() + "); continuing"
+							: "Connection mode not decided after " + (timeoutMs / 1000) + " s; continuing as "
+							+ getConnectionModeDescription());
+					action.run();
+				} else {
+					h.postDelayed(this, 500);
+				}
+			}
+		});
+	}
 
 	/** Current connection mode for display, e.g. "Active (UPnP, 1.2.3.4)" or "Passive (...)". */
 	public String getConnectionModeDescription() {
@@ -1643,6 +1691,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						// Through a VPN only the VPN provider can forward a port to us; the home router can't.
 						// Other users then connect to the VPN address the hub reports for us ($UserIP).
 						PIAPortForwardingManager pia = PIAPortForwardingManager.getInstance(DCPPService.this);
+						// After a clean install the login comes back from the backup file once storage is readable.
+						pia.restoreFromBackupIfNeeded();
 						int vpnPort = Settings.getVpnForwardedPort(DCPPService.this);
 						boolean listening = uploadManager != null && uploadManager.isListening();
 						if (pia.isEnabled()) {
@@ -1685,6 +1735,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		Log.i("andcpp", "Connection mode (" + why + "): " + r.describe());
 		boolean changed = old == null || old.active != r.active
 				|| (r.externalIp != null && !r.externalIp.equals(old.externalIp));
+		if (old == null || !r.reason.equals(old.reason) || changed) {
+			peersPreferRevConnect.clear(); // new network / port: peers may be able to reach us now
+		}
 		for (HubSession s : sessions.values()) {
 			if (s.prefs == null) continue;
 			if (r.active && uploadManager != null) s.prefs.upload_port = uploadManager.getPort();
@@ -3052,6 +3105,38 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				Log.d("andcpp", "Released WIFI_LOCK");
 			}
 		}
+	}
+
+	/**
+	 * Build n: overnight test showed the hub link can stay "alive" (hub traffic keeps arriving) while our
+	 * $ConnectToMe/$RevConnectToMe stop getting any answer from the peer, for hours; every fresh hub login fixed it
+	 * at once. So: after UNANSWERED_CONNECT_LIMIT unanswered connect requests in a row (to a peer that is in the
+	 * nick list) we log in to the hub again, at most once per FORCED_RELOGIN_MIN_INTERVAL_MILLIS.
+	 * Pending requests survive the reconnect (build m) and parked downloads restart right after it (build g, M).
+	 */
+	private static final int UNANSWERED_CONNECT_LIMIT = 3;
+	private static final long FORCED_RELOGIN_MIN_INTERVAL_MILLIS = 15 * 60000L;
+	private volatile int unansweredConnectRequests = 0;
+	private volatile long lastForcedReloginAt = 0L;
+
+	private void noteUnansweredConnectRequest(String hubKey) {
+		int n = ++unansweredConnectRequests;
+		long now = System.currentTimeMillis();
+		Log.w("andcpp", "[DLTRACE] unanswered connect requests in a row: " + n);
+		if (n < UNANSWERED_CONNECT_LIMIT || now - lastForcedReloginAt < FORCED_RELOGIN_MIN_INTERVAL_MILLIS) return;
+		HubSession session = getSession(hubKey);
+		if (session == null || session.status != DCClientStatus.CONNECTED) return;
+		String key = null;
+		for (Map.Entry<String, HubSession> e : sessions.entrySet()) {
+			if (e.getValue() == session) { key = e.getKey(); break; }
+		}
+		if (key == null) return;
+		lastForcedReloginAt = now;
+		unansweredConnectRequests = 0;
+		Log.w("andcpp", "[DLTRACE] " + n + " connect requests unanswered; logging in to hub " + session.hubIp + " again");
+		final String k = key;
+		new Handler(Looper.getMainLooper()).post(() ->
+				handleConnectionFailure(k, session, "peers stopped answering connect requests"));
 	}
 
 	public static final String ACTION_TICK = "com.phinmadvader.andcpp.ACTION_TICK";

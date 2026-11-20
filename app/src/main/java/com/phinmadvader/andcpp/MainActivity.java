@@ -473,9 +473,6 @@ public class MainActivity extends FragmentActivity implements
 				}
 			}
 			return true;
-		} else if (id == R.id.action_saved_filelists) {
-			showSavedFileListsDialog();
-			return true;
 		} else if (id == R.id.action_shutdown) {
 			shutdownAppCompletely();
 			return true;
@@ -607,35 +604,6 @@ public class MainActivity extends FragmentActivity implements
 		} else {
 			finish();
 		}
-	}
-
-	private void showSavedFileListsDialog() {
-		java.io.File fileListDir = new java.io.File(Settings.getDCDownloadsDirectory(this), "FileLists");
-		java.io.File[] files = fileListDir.listFiles();
-		List<String> nicks = new java.util.ArrayList<>();
-		if (files != null) {
-			for (java.io.File f : files) {
-				if (f.isFile() && f.getName().endsWith(".xml")) {
-					String name = f.getName().substring(0, f.getName().length() - 4);
-					if (UploadManager.isLegacyFileListName(name)) continue; // old-build leftover
-					nicks.add(name);
-				}
-			}
-		}
-		java.util.Collections.sort(nicks);
-
-		if (nicks.isEmpty()) {
-			Toast.makeText(this, "No saved file lists found.", Toast.LENGTH_SHORT).show();
-			return;
-		}
-		String[] nickArray = nicks.toArray(new String[0]);
-		new AlertDialog.Builder(this)
-				.setTitle("Saved File Lists")
-				.setItems(nickArray, (dialog, which) -> {
-					String nick = nickArray[which];
-					open_cached_file_list(nick);
-				})
-				.show();
 	}
 
 	public void open_cached_file_list(String nick) {
@@ -820,7 +788,19 @@ public class MainActivity extends FragmentActivity implements
 		Set<String> favorites = prefs.getStringSet("favorite_hubs", new HashSet<String>());
 		if (favorites == null || favorites.isEmpty()) return;
 
-		List<String> favoritesList = new ArrayList<>(favorites);
+		// Connect only once active/passive is known, so each hub is told the right mode from the start
+		// (no passive login followed by a switch to active). Never waits more than 30 s.
+		final List<String> favoritesList = new ArrayList<>(favorites);
+		if (mService != null && !mService.isConnectivityDecided()) {
+			Toast.makeText(this, "Checking connection mode before reconnecting hubs…", Toast.LENGTH_SHORT).show();
+			mService.whenConnectivityDecided(() -> reconnectSavedHubs(favoritesList), 30000);
+		} else {
+			reconnectSavedHubs(favoritesList);
+		}
+	}
+
+	/** Connects to each saved hub that isn't connected yet (auto-reconnect on startup). */
+	private void reconnectSavedHubs(List<String> favoritesList) {
 		for (String hubStr : favoritesList) {
 			String ip = hubStr;
 			String port = "411";
@@ -1120,9 +1100,13 @@ public class MainActivity extends FragmentActivity implements
 		if (requestCode == 1) {
 			if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 				Log.d("andcpp", "Storage permission granted");
-				// Files from a previous install are only visible now: rebuild our file list.
+				// Files from a previous install are only visible now: rebuild our file list,
+				// and bring back the PIA login backup (survives clean installs), then re-check active mode.
 				if (mService != null) {
 					mService.refreshMyFileListSoon();
+					if (com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this).restoreFromBackupIfNeeded()) {
+						mService.redetectConnectivity("PIA login restored");
+					}
 				}
 			} else {
 				Toast.makeText(this, "Storage permission is required to download files.", Toast.LENGTH_LONG).show();

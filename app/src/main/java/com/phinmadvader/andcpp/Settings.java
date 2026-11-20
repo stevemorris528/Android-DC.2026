@@ -193,18 +193,43 @@ public class Settings extends Activity{
 		final EditText user = new EditText(this);
 		user.setHint("PIA username (p1234567)");
 		user.setSingleLine(true);
+		// No auto-capitalisation / suggestions: keyboards turn "p1234567" into "P1234567", which PIA rejects.
+		user.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+				| android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+				| android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 		user.setText(pia.getUsername());
 		layout.addView(user);
 
 		final EditText pass = new EditText(this);
-		pass.setHint(pia.hasCredentials() ? "Password (leave empty to keep the saved one)" : "PIA password");
+		pass.setHint("PIA password");
+		// Show the saved password (masked as dots) so it's clear it was kept; "Show password" reveals it.
+		pass.setText(getSharedPreferences(Constants.PREFS_NAME, 0)
+				.getString(com.phinmadvader.andcpp.pia.PIAPortForwardingManager.PREF_PASSWORD, ""));
 		pass.setSingleLine(true);
-		pass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+		pass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+				| android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 		layout.addView(pass);
 
+		// Let the user check what they typed (password fields hide it).
+		final android.widget.CheckBox show = new android.widget.CheckBox(this);
+		show.setText("Show password");
+		show.setOnCheckedChangeListener((b, checked) -> {
+			int cursor = pass.getSelectionEnd();
+			pass.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+					| (checked ? android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+					: android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD));
+			pass.setSelection(Math.max(0, Math.min(cursor, pass.getText().length())));
+		});
+		layout.addView(show);
+
+		int savedLen = pia.getSavedPasswordLength();
+		String status = savedLen > 0
+				? "Password: saved (" + savedLen + " characters)."
+				: "Password: not saved yet.";
+
 		DisplayAlert("PIA Login",
-				"Used only to get a PIA token for port forwarding. Stored in this app's private storage on the phone "
-						+ "and sent only to PIA.",
+				status + "\n\nUsed only to get a PIA token for port forwarding. Stored in this app's private storage "
+						+ "on the phone and sent only to PIA.",
 				"Save", (dialog, which) -> {
 					String u = user.getText().toString().trim();
 					String p = pass.getText().toString();
@@ -214,16 +239,20 @@ public class Settings extends Activity{
 						return;
 					}
 					if (p.isEmpty()) {
-						if (!pia.hasCredentials()) {
-							Toast.makeText(Settings.this, "Enter the PIA password", Toast.LENGTH_SHORT).show();
-							return;
-						}
-						p = getSharedPreferences(Constants.PREFS_NAME, 0)
-								.getString(com.phinmadvader.andcpp.pia.PIAPortForwardingManager.PREF_PASSWORD, "");
+						Toast.makeText(Settings.this, "Enter the PIA password", Toast.LENGTH_SHORT).show();
+						return;
 					}
 					pia.setCredentials(u, p);
 					if (!pia.isEnabled()) pia.setEnabled(true);
-					Toast.makeText(Settings.this, "PIA login saved; port forwarding is on", Toast.LENGTH_SHORT).show();
+					Toast.makeText(Settings.this, "PIA login saved (" + p.length() + "-character password). Checking with PIA…",
+							Toast.LENGTH_SHORT).show();
+					// Check it with PIA right away, so a wrong login is obvious (network: off the UI thread).
+					new Thread(() -> {
+						final String problem = pia.testLogin();
+						runOnUiThread(() -> Toast.makeText(Settings.this,
+								problem == null ? "PIA login OK: port forwarding will start" : "PIA: " + problem,
+								Toast.LENGTH_LONG).show());
+					}, "PIA-login-check").start();
 				}, "Cancel", null, layout);
 	}
 
@@ -356,7 +385,9 @@ public class Settings extends Activity{
 
 	public static void putVpnForwardedPort(int port, Context c) {
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
-		prefs.edit().putInt(Constants.SETTINGS_VPN_PORT_KEY, port).apply();
+		prefs.edit().putInt(Constants.SETTINGS_VPN_PORT_KEY, port).commit();
+		// Keep the backup (survives a clean install) in step.
+		com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(c).saveBackup();
 	}
 
 	public static int getUploadSlots(Context c) {
