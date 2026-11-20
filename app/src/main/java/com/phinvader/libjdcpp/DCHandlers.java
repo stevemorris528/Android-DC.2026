@@ -14,6 +14,16 @@ public class DCHandlers {
 
 	}
 
+	public interface UploadHandlerCallback {
+		void handleUploadConnection(Socket s);
+	}
+
+	private static UploadHandlerCallback uploadCallback = null;
+
+	public static void setUploadCallback(UploadHandlerCallback callback) {
+		uploadCallback = callback;
+	}
+
 	public static class MainDownloadHandler implements DCCommand {
 
 		private DCUser my_user;
@@ -30,60 +40,95 @@ public class DCHandlers {
 
 		@Override
 		public void onCommand(DCMessage msg) {
-			DCLogger.Log("in ConnectToMe handler: " + msg.toString());
-			String remote_ip = msg.host_name;
-			int remote_port = msg.port_number;
-			String targetNick = msg.connect_nick;
+			new Thread(() -> {
+				String ourNick = (my_user != null && my_user.nick != null) ? my_user.nick : "unknown";
+				android.util.Log.d("andcpp", "[DLTRACE] MainDownloadHandler.onCommand ran: connect_nick=" + msg.connect_nick + ", ourNick=" + ourNick);
+				DCLogger.Log("in ConnectToMe handler: " + msg.toString());
+				String remote_ip = msg.host_name;
+				int remote_port = msg.port_number;
 
-			DCClient downloader = new DCClient();
-
-			DCMessage hisnick = null;
-			DCMessage rlock = null;
-
-			MessageHandler handlerLocal = null;
-			try {
-				Socket s = new Socket();
-				s.connect(new java.net.InetSocketAddress(remote_ip, remote_port), 15000);
-				s.setSoTimeout(30000);
-				handlerLocal = new MessageHandler(s);
-
-				handlerLocal.send_mynick(my_user);
-				handlerLocal.send_lock();
-				
-				long startTime = System.currentTimeMillis();
-				while (hisnick == null || rlock == null) {
-					if (System.currentTimeMillis() - startTime > 20000) break;
-					DCMessage msg2 = handlerLocal.getNextMessage();
-					if (msg2 == null || "HubQuit".equals(msg2.command)) break;
-					if ("MyNick".equals(msg2.command)) hisnick = msg2;
-					if ("Lock".equals(msg2.command)) rlock = msg2;
+				if (downloaderManager == null || !downloaderManager.hasAnyDownloadEntities()) {
+					try {
+						Socket s = new Socket();
+						s.connect(new java.net.InetSocketAddress(remote_ip, remote_port), 15000);
+						s.setSoTimeout(30000);
+						if (uploadCallback != null) {
+							uploadCallback.handleUploadConnection(s);
+						} else {
+							s.close();
+						}
+					} catch (Exception e) {
+						DCLogger.Log("ERROR - Direct upload connection failed: " + e.toString());
+					}
+					return;
 				}
 
-			} catch (Exception e) {
-				DCLogger.Log("ERROR - Peer connection failed: " + e.toString());
-				if (handlerLocal != null) handlerLocal.close();
-				return;
-			}
+				DCMessage hisnick = null;
+				DCMessage rlock = null;
 
-			if (hisnick == null || hisnick.hisinfo == null || rlock == null) {
-				if (handlerLocal != null) handlerLocal.close();
-				return;
-			}
+				MessageHandler handlerLocal = null;
+				Socket s = null;
+				try {
+					s = new Socket();
+					s.connect(new java.net.InetSocketAddress(remote_ip, remote_port), 15000);
+					s.setSoTimeout(30000);
+					handlerLocal = new MessageHandler(s);
 
-			DCDownloader.DownloadQueueEntity downloadEntity = downloaderManager
-					.getDownloadEntity(hisnick.hisinfo.nick);
-			if (downloadEntity == null) {
-				// Try using targetNick from ConnectToMe if hisinfo.nick is not matching or null
-				downloadEntity = downloaderManager.getDownloadEntity(targetNick);
-			}
+					handlerLocal.send_mynick(my_user);
+					handlerLocal.send_lock();
+					
+					long startTime = System.currentTimeMillis();
+					while (hisnick == null || rlock == null) {
+						if (System.currentTimeMillis() - startTime > 20000) break;
+						DCMessage msg2 = handlerLocal.getNextMessage();
+						if (msg2 == null || "HubQuit".equals(msg2.command)) break;
+						if ("MyNick".equals(msg2.command)) hisnick = msg2;
+						if ("Lock".equals(msg2.command)) rlock = msg2;
+					}
 
-			if (downloadEntity == null) {
-				handlerLocal.close();
-				return;
-			}
+				} catch (Exception e) {
+					DCLogger.Log("ERROR - Peer connection failed: " + e.toString());
+					if (handlerLocal != null) {
+						handlerLocal.close();
+					} else if (s != null) {
+						try { s.close(); } catch (Exception ignored) {}
+					}
+					return;
+				}
 
-			client.startDownloadingFile(downloadEntity, client, rlock,
-					handlerLocal);
+				if (hisnick == null || hisnick.hisinfo == null || rlock == null) {
+					if (handlerLocal != null) {
+						handlerLocal.close();
+					} else if (s != null) {
+						try { s.close(); } catch (Exception ignored) {}
+					}
+					return;
+				}
+
+				String peerNick = hisnick.hisinfo.nick;
+				DCDownloader.DownloadQueueEntity downloadEntity = downloaderManager
+						.getDownloadEntityCaseInsensitive(peerNick);
+
+				if (downloadEntity != null) {
+					client.startDownloadingFile(downloadEntity, client, rlock, handlerLocal);
+				} else {
+					if (handlerLocal != null) {
+						handlerLocal.close();
+					}
+					try {
+						Socket sUpload = new Socket();
+						sUpload.connect(new java.net.InetSocketAddress(remote_ip, remote_port), 15000);
+						sUpload.setSoTimeout(30000);
+						if (uploadCallback != null) {
+							uploadCallback.handleUploadConnection(sUpload);
+						} else {
+							sUpload.close();
+						}
+					} catch (Exception e) {
+						DCLogger.Log("ERROR - Fallback upload connection failed: " + e.toString());
+					}
+				}
+			}).start();
 		}
 	}
 

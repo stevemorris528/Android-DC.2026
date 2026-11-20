@@ -151,7 +151,6 @@ public class MessageHandler {
 							}
 							output_file.getFD().sync(); // Force sync file descriptor
 						} finally {
-							// Always release the file, also when the socket dies mid-transfer.
 							if (output_file != null) {
 								try { output_file.close(); } catch (IOException ignored) {}
 							}

@@ -1,5 +1,7 @@
 package com.phinvader.libjdcpp;
 
+import android.util.Log;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 
@@ -27,45 +29,83 @@ public class DCDownloader {
 		public volatile long expectedDownloadSize = 0;
 		public volatile long startOffset = 0;
 		public volatile DCConstants.DownloadStatus status;
-
 	}
 
 	public HashMap<String, ArrayList<DownloadQueueEntity>> downloadQ;
 
-	public void initDownloadQ() {
-		this.downloadQ = new HashMap<String, ArrayList<DownloadQueueEntity>>();
+	public synchronized void initDownloadQ() {
+		if (this.downloadQ == null) {
+			this.downloadQ = new HashMap<String, ArrayList<DownloadQueueEntity>>();
+		}
 	}
 
-	public DownloadQueueEntity addDownloadEntity(String nick , DownloadQueueEntity entity) {
+	public synchronized DownloadQueueEntity addDownloadEntity(String nick , DownloadQueueEntity entity) {
 		if (downloadQ == null) initDownloadQ();
 		ArrayList<DownloadQueueEntity> list = downloadQ.get(nick);
 		if(list == null){
 			list = new ArrayList<DCDownloader.DownloadQueueEntity>();
 			downloadQ.put(nick, list);
 		}
+		int sizeBefore = list.size();
+		String remoteFile = entity != null ? entity.remote_filename : "null";
 		// Avoid stacking duplicate pending requests for the same file
-		for (DownloadQueueEntity e : list) {
-			if (e.remote_filename.equals(entity.remote_filename)) {
-				return e;
+		if (entity != null) {
+			for (DownloadQueueEntity e : list) {
+				if (e.remote_filename != null && e.remote_filename.equals(entity.remote_filename)) {
+					Log.d("andcpp", "[DLTRACE] DCDownloader.addDownloadEntity REUSED existing entity: nick=" + nick + ", remoteFile=" + remoteFile + ", listSizeBefore=" + sizeBefore + ", listSizeAfter=" + list.size());
+					return e;
+				}
 			}
+			list.add(entity);
 		}
-		list.add(entity);
+		Log.d("andcpp", "[DLTRACE] DCDownloader.addDownloadEntity ADDED new entity: nick=" + nick + ", remoteFile=" + remoteFile + ", listSizeBefore=" + sizeBefore + ", listSizeAfter=" + list.size());
 		return entity;
 	}
 
-	public DownloadQueueEntity getDownloadEntity(String nick) {
-		if(downloadQ == null)
+	public synchronized DownloadQueueEntity getDownloadEntity(String nick) {
+		if(downloadQ == null) {
+			Log.d("andcpp", "[DLTRACE] DCDownloader.getDownloadEntity: nick=" + nick + ", downloadQ is null");
 			return null;
+		}
 		ArrayList<DownloadQueueEntity> list = downloadQ.get(nick);
-		if(list == null || list.isEmpty())
+		int sizeBefore = (list != null ? list.size() : 0);
+		if(list == null || list.isEmpty()) {
+			Log.d("andcpp", "[DLTRACE] DCDownloader.getDownloadEntity: nick=" + nick + ", list empty or null, sizeBefore=" + sizeBefore);
 			return null;
+		}
 		DownloadQueueEntity ret = list.get(0);
 		list.remove(ret);
+		Log.d("andcpp", "[DLTRACE] DCDownloader.getDownloadEntity: nick=" + nick + ", retrieved entity remoteFile=" + (ret != null ? ret.remote_filename : "null") + ", listSizeBefore=" + sizeBefore + ", listSizeAfter=" + list.size());
 		return ret;
 	}
 
+	public synchronized DownloadQueueEntity getDownloadEntityCaseInsensitive(String nick) {
+		if (downloadQ == null || nick == null) return null;
+		String matchedKey = null;
+		for (String key : downloadQ.keySet()) {
+			if (key != null && key.equalsIgnoreCase(nick)) {
+				matchedKey = key;
+				break;
+			}
+		}
+		if (matchedKey == null) return null;
+		ArrayList<DownloadQueueEntity> list = downloadQ.get(matchedKey);
+		int sizeBefore = (list != null ? list.size() : 0);
+		if (list == null || list.isEmpty()) return null;
+		DownloadQueueEntity ret = list.get(0);
+		list.remove(ret);
+		Log.d("andcpp", "[DLTRACE] DCDownloader.getDownloadEntityCaseInsensitive: nick=" + nick + (matchedKey.equals(nick) ? "" : " (matched key " + matchedKey + ")") + ", retrieved entity remoteFile=" + (ret != null ? ret.remote_filename : "null") + ", listSizeBefore=" + sizeBefore + ", listSizeAfter=" + list.size());
+		return ret;
+	}
 
-	public boolean hasAnyDownloadEntities() {
+	public synchronized boolean isEntityPending(String nick, DownloadQueueEntity entity) {
+		if (downloadQ == null || entity == null || nick == null) return false;
+		ArrayList<DownloadQueueEntity> list = downloadQ.get(nick);
+		if (list == null) return false;
+		return list.contains(entity);
+	}
+
+	public synchronized boolean hasAnyDownloadEntities() {
 		if (downloadQ == null) return false;
 		for (ArrayList<DownloadQueueEntity> list : downloadQ.values()) {
 			if (list != null && !list.isEmpty()) return true;
@@ -107,8 +147,6 @@ public class DCDownloader {
 			handler.send_msg("$Get " + fname + "$" + (entity.startOffset + 1));
 			
 			entity.status = DownloadStatus.INITIATED;
-
-			// Wait (bounded) for the peer's answer to $Get, skipping handshake chatter.
 			DCMessage msg2 = null;
 			long startTime = System.currentTimeMillis();
 			while (System.currentTimeMillis() - startTime < 20000) {
@@ -116,17 +154,40 @@ public class DCDownloader {
 					throw new InterruptedException("download thread interrupted");
 				DCMessage m = handler.getNextMessage(1000, java.util.concurrent.TimeUnit.MILLISECONDS);
 				if (m == null || m.command == null) continue;
-				if ("HubQuit".equals(m.command) || "FileLength".equals(m.command)
-						|| "MaxedOut".equals(m.command) || "Error".equals(m.command)) {
+				if ("HubQuit".equals(m.command)) {
+					msg2 = m;
+					break;
+				}
+				if ("FileLength".equals(m.command) || "MaxedOut".equals(m.command) || "Error".equals(m.command)) {
 					msg2 = m;
 					break;
 				}
 			}
 
-			if (msg2 == null || !"FileLength".equals(msg2.command)) {
+			if (msg2 == null) {
 				entity.status = DownloadStatus.FAILED;
-				DCLogger.Log("Download failed: Expected FileLength, got " + (msg2 == null ? "no answer (timeout)"
-						: msg2.command + ("Error".equals(msg2.command) ? " " + msg2.msg_s : "")));
+				DCLogger.Log("Download failed: No response received from peer");
+				handler.close();
+				return false;
+			}
+
+			if ("MaxedOut".equals(msg2.command)) {
+				entity.status = DownloadStatus.WAITING_FOR_PEER;
+				DCLogger.Log("Download remote queued / maxed out from peer " + (entity.target_user != null ? entity.target_user.nick : "unknown"));
+				handler.close();
+				return false;
+			}
+
+			if ("Error".equals(msg2.command)) {
+				entity.status = DownloadStatus.FAILED;
+				DCLogger.Log("Download failed with error from peer: " + msg2.error_s);
+				handler.close();
+				return false;
+			}
+
+			if (!"FileLength".equals(msg2.command)) {
+				entity.status = DownloadStatus.FAILED;
+				DCLogger.Log("Download failed: Expected FileLength, got " + msg2.command);
 				handler.close();
 				return false;
 			}
@@ -141,7 +202,7 @@ public class DCDownloader {
 			// Download Started
 			entity.status = DownloadStatus.STARTED;
 
-			// Switch the reader to raw file mode BEFORE asking for data, so no file byte is parsed as protocol.
+			// Switch stream to raw mode BEFORE sending $Send
 			handler.dump_remaining_stream(save_file_name, msg2.file_length, entity.startOffset > 0);
 
 			// Request Start Download

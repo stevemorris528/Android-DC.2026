@@ -322,6 +322,15 @@ public class UploadManager {
             Log.e("andcpp", "Failed to set socket timeout for passive upload", e);
         }
     }
+
+    public void handleClientUploadConnection(Socket s) {
+        try {
+            s.setSoTimeout(30000);
+            registerAndExecute(new PeerConnectionHandler(s, this, false));
+        } catch (SocketException e) {
+            Log.e("andcpp", "Failed to set socket timeout for client upload", e);
+        }
+    }
     
     public List<PeerConnectionHandler> getActiveUploads() {
         return new ArrayList<>(activeUploads.values());

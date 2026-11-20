@@ -12,7 +12,7 @@ public class DCConstants {
 	public static String default_lock = "LIBJDCPPDOESNOTKNOWWHATLOCKTOGIVEU";
 	public static String default_pk = "libjdcppv1.0----";
 	public static enum DownloadStatus {
-		UNDEFINED, QUEUED, INITIATED, STARTED, INTERUPTED, SHUTDOWN, FAILED, DOWNLOADING, COMPLETED
+		UNDEFINED, QUEUED, INITIATED, STARTED, WAITING_FOR_PEER, INTERUPTED, SHUTDOWN, FAILED, DOWNLOADING, COMPLETED
 	};
 
 	/**

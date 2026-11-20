@@ -7,9 +7,11 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -98,6 +100,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		public void shutdown() {
 			status = DCClientStatus.DISCONNECTED;
+			if (prefs != null) {
+				prefs.set_self_ip(null);
+			}
 			if (client != null) {
 				client.close();
 			}
@@ -186,6 +191,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		void cancel_download();
 		boolean delete_download();
 		String getLocalFilePath();
+		String getWaitReason();
 	}
 
 	public static class FolderProgress {
@@ -226,9 +232,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public int currentID;
 		private long pendingStartOffset = 0;
 
-		public DCDownloader.DownloadQueueEntity download_status = null;
-		private boolean isPaused = false;
-		private boolean isCancelled = false;
+		public volatile DCDownloader.DownloadQueueEntity download_status = null;
+		public volatile String waitReason = null;
+		private volatile long lastSignalTime = 0L;
+		private volatile int peerWaitRetryCount = 0;
+		public String getWaitReason() {
+			return waitReason;
+		}
+		private volatile boolean isPaused = false;
+		private volatile boolean isCancelled = false;
 		public String groupLabel = null;
 		public String groupName = null;
 
@@ -293,12 +305,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						if (normal_queue != null && !normal_queue.contains(this)) {
 							normal_queue.put(this);
 						}
-						synchronized (DCPPService.this) {
-							if (normal_worker == null || !normal_worker.isAlive()) {
-								normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
-								normal_worker.start();
-							}
-						}
+						startNormalWorkersIfNeeded();
 						requestSaveDownloadsState();
 					} catch (InterruptedException e) {
 						Log.e("andcpp", "Failed to re-queue download", e);
@@ -382,76 +389,152 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			this.initialize_download_connection();
 		}
 
-		public void initialize_download_connection() {
-
-			String title = this.file_name;
-			if (remote_file.equalsIgnoreCase("files.xml")) {
-				title = "Fetching File List: " + target_nick;
+		private boolean isPrivateOrLoopbackIp(String ip) {
+			if (ip == null || ip.isEmpty()) return true;
+			if (ip.startsWith("127.") || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.equals("0.0.0.0")) {
+				return true;
 			}
-
-			this.mBuilder2.setContentTitle(title)
-					.setContentText("Download Queued")
-					.setSmallIcon(R.drawable.ic_launcher);
-			
-			mNotifyManager2 = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-			if (mNotifyManager2 != null && groupLabel == null) {
-				mNotifyManager2.notify(this.currentID, mBuilder2.build());
-			}
-			updateFolderStatus(this, DCConstants.DownloadStatus.QUEUED);
-
-			HubSession session = getSession(hubIp);
-			if (session == null) return;
-
-			DCUser my_user = new DCUser();
-			DCUser his_user = new DCUser();
-			my_user.nick = session.prefs.getNick();
-			String ourIp = null;
-			if (session.client != null && session.client.getSocket() != null && session.client.getSocket().getLocalAddress() != null) {
-				ourIp = session.client.getSocket().getLocalAddress().getHostAddress();
-			}
-			String hubReportedIp = com.phinvader.libjdcpp.DCPreferences.get_self_ip();
-			if (hubReportedIp != null && !hubReportedIp.isEmpty()) {
-				ourIp = hubReportedIp;
-			}
-			if (ourIp == null || ourIp.isEmpty()) {
-				ourIp = session.prefs.server_ip;
-			}
-			my_user.ip = ourIp;
-			his_user.nick = target_nick;
-			// Look up targetNick in user list across sessions to see if peer is passive/active
-			boolean peerIsActive = true;
-			for (HubSession s : getActiveSessions()) {
-				if (s.client != null) {
-					for (DCUser u : s.client.get_nick_list()) {
-						if (u.nick != null && u.nick.equalsIgnoreCase(target_nick)) {
-							peerIsActive = u.active;
-							break;
+			if (ip.startsWith("172.")) {
+				try {
+					String[] parts = ip.split("\\.");
+					if (parts.length >= 2) {
+						int secondOctet = Integer.parseInt(parts[1]);
+						if (secondOctet >= 16 && secondOctet <= 31) {
+							return true;
 						}
+					}
+				} catch (Exception ignored) {}
+			}
+			return false;
+		}
+
+		public void initialize_download_connection() {
+			waitReason = null;
+			HubSession session = getSession(hubIp);
+			if (session == null) {
+				if (!sessions.isEmpty()) {
+					session = sessions.values().iterator().next();
+					if (session != null) {
+						this.hubIp = session.hubIp;
 					}
 				}
 			}
 
-			// In NMDC:
-			// If WE are Active and PEER is Passive: We must send $RevConnectToMe (passive download) so peer connects to our listening port!
-			// If WE are Active and PEER is Active: We can connect to peer ($ConnectToMe - active download).
-			// If WE are Passive: We must send $RevConnectToMe (passive download).
-			if (session.prefs.active && peerIsActive && uploadManager != null && uploadManager.isListening()) {
-				activeRc = new DCClient.ActiveDownloadConnection(his_user, my_user,
-						session.prefs, local_file, remote_file, session.client);
-				myrc = null;
-			} else {
-				myrc = new DCClient.PassiveDownloadConnection(his_user, my_user,
-						session.prefs, local_file, remote_file, session.client);
-				activeRc = null;
+			// Pre-flight Check 1: Target nick in user list
+			boolean userFound = false;
+			DCUser peerUser = null;
+			for (HubSession s : getActiveSessions()) {
+				if (s.client != null) {
+					for (DCUser u : s.client.get_nick_list()) {
+						if (u.nick != null && u.nick.equalsIgnoreCase(target_nick)) {
+							userFound = true;
+							peerUser = u;
+							break;
+						}
+					}
+				}
+				if (userFound) break;
 			}
 
+			if (!userFound) {
+				Log.w("andcpp", "[DLTRACE] Pre-flight check failed: target nick '" + target_nick + "' not found in any session user list. Marking WAITING_FOR_PEER (user offline).");
+				waitReason = "user offline";
+				updateFolderStatus(this, DCConstants.DownloadStatus.WAITING_FOR_PEER);
+				if (mBuilder2 != null) {
+					mBuilder2.setProgress(0, 0, false);
+					mBuilder2.setContentText("Waiting for peer (user offline)")
+							.setOngoing(false);
+					if (mNotifyManager2 != null && groupLabel == null) {
+						mNotifyManager2.notify(currentID, mBuilder2.build());
+					}
+				}
+				return;
+			}
+
+			// Pre-flight Check 2: Both passive check
+			boolean weAreActive = (session != null && session.prefs != null && session.prefs.active);
+			boolean peerIsActive = (peerUser != null && (peerUser.active || (peerUser.tag != null && peerUser.tag.contains("M:A"))));
+
+			if (!weAreActive && !peerIsActive) {
+				Log.w("andcpp", "[DLTRACE] Pre-flight check failed: both client and peer (" + target_nick + ") are passive. Marking WAITING_FOR_PEER (both passive).");
+				waitReason = "both passive";
+				updateFolderStatus(this, DCConstants.DownloadStatus.WAITING_FOR_PEER);
+				if (mBuilder2 != null) {
+					mBuilder2.setProgress(0, 0, false);
+					mBuilder2.setContentText("Waiting for peer (both passive)")
+							.setOngoing(false);
+					if (mNotifyManager2 != null && groupLabel == null) {
+						mNotifyManager2.notify(currentID, mBuilder2.build());
+					}
+				}
+				return;
+			}
+
+			// Pre-flight Check 3: Active mode private/loopback IP fallback
+			boolean useActive = weAreActive && peerIsActive && uploadManager != null && uploadManager.isListening();
+			if (useActive) {
+				String ourIp = null;
+				if (session != null && session.client != null && session.client.getSocket() != null && session.client.getSocket().getLocalAddress() != null) {
+					ourIp = session.client.getSocket().getLocalAddress().getHostAddress();
+				}
+				String hubReportedIp = (session != null && session.prefs != null) ? session.prefs.get_self_ip() : null;
+				if (hubReportedIp == null || hubReportedIp.isEmpty()) {
+					hubReportedIp = (session != null && session.prefs != null) ? session.prefs.server_ip : null;
+				}
+
+				String advertiseIp = (hubReportedIp != null && !hubReportedIp.isEmpty()) ? hubReportedIp : ourIp;
+				if (isPrivateOrLoopbackIp(advertiseIp) && (hubReportedIp == null || hubReportedIp.isEmpty())) {
+					Log.w("andcpp", "[DLTRACE] Active mode advertising private/loopback IP " + advertiseIp + " with no hub-reported IP. Falling back to passive mode for this attempt.");
+					useActive = false;
+				}
+
+				if (useActive) {
+					DCUser my_user = new DCUser();
+					DCUser his_user = new DCUser();
+					my_user.nick = session.prefs.getNick();
+					my_user.ip = advertiseIp;
+					his_user.nick = target_nick;
+					activeRc = new DCClient.ActiveDownloadConnection(his_user, my_user,
+							session.prefs, local_file, remote_file, session.client);
+					myrc = null;
+				} else {
+					DCUser my_user = new DCUser();
+					DCUser his_user = new DCUser();
+					my_user.nick = session.prefs.getNick();
+					my_user.ip = advertiseIp;
+					his_user.nick = target_nick;
+					myrc = new DCClient.PassiveDownloadConnection(his_user, my_user,
+							session.prefs, local_file, remote_file, session.client);
+					activeRc = null;
+				}
+			} else {
+				DCUser my_user = new DCUser();
+				DCUser his_user = new DCUser();
+				my_user.nick = (session != null && session.prefs != null) ? session.prefs.getNick() : "";
+				my_user.ip = session != null && session.client != null && session.client.getSocket() != null && session.client.getSocket().getLocalAddress() != null ? session.client.getSocket().getLocalAddress().getHostAddress() : "";
+				his_user.nick = target_nick;
+				myrc = new DCClient.PassiveDownloadConnection(his_user, my_user,
+						session != null ? session.prefs : null, local_file, remote_file, session != null ? session.client : null);
+				activeRc = null;
+			}
 		}
 
 		public void start_download() throws InterruptedException {
 			if (isCancelled || isPaused) return;
+
+			if (waitReason != null || (download_status != null && download_status.status == DCConstants.DownloadStatus.WAITING_FOR_PEER)) {
+				return;
+			}
+
+			if (this.download_status != null && (this.download_status.status == DCConstants.DownloadStatus.INITIATED
+					|| this.download_status.status == DCConstants.DownloadStatus.STARTED
+					|| this.download_status.status == DCConstants.DownloadStatus.DOWNLOADING)) {
+				Log.d("andcpp", "[DLTRACE] DownloadObject.start_download skipping entity reassignment because current status is active: " + this.download_status.status);
+				return;
+			}
+
 			updateFolderStatus(this, DCConstants.DownloadStatus.STARTED);
-			if (download_status == null)
-				set_start_download_time();
+			set_start_download_time();
 
 			HubSession session = getSession(hubIp);
 			if (session == null || session.client == null) {
@@ -467,6 +550,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 			if (activeRc == null && myrc == null) {
 				initialize_download_connection();
+			}
+
+			if (waitReason != null || (download_status != null && download_status.status == DCConstants.DownloadStatus.WAITING_FOR_PEER)) {
+				return;
 			}
 
 			if (session == null) {
@@ -486,6 +573,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						(int) Constants.DOWNLOAD_TIMEOUT_MILLIS);
 			} else {
 				initialize_download_connection();
+				if (waitReason != null || (download_status != null && download_status.status == DCConstants.DownloadStatus.WAITING_FOR_PEER)) {
+					return;
+				}
 				if (activeRc != null) {
 					int port = uploadManager != null ? uploadManager.getPort() : session.prefs.upload_port;
 					entity = session.client.startActiveDownload(activeRc,
@@ -506,6 +596,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			this.download_status.startOffset = this.pendingStartOffset;
 			if (this.download_status.downloadedSize < this.pendingStartOffset)
 				this.download_status.downloadedSize = this.pendingStartOffset;
+			lastSignalTime = System.currentTimeMillis();
 		}
 
 		public void set_start_download_time() {
@@ -627,6 +718,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		public void addDownload(DownloadObject o) {
 			downloads.add(o);
+		}
+
+		@Override
+		public String getWaitReason() {
+			return null;
 		}
 
 		@Override
@@ -754,6 +850,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				try {
 					while (true) {
 						DownloadObject work = q.take();
+						if (work == null) continue;
+						if (work.isFileList()) {
+							updateFolderProgress(work);
+							continue;
+						}
 						if (work.isCancelled) {
 							updateFolderProgress(work);
 							continue;
@@ -1066,9 +1167,29 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		};
 	}
 
+	private final List<Thread> normalWorkers = new ArrayList<>();
+	private final Set<String> activeNicks = new HashSet<>();
+	private final Set<DownloadObject> activeWorkerObjects = new HashSet<>();
 	private LinkedBlockingQueue<DownloadObject> normal_queue;
 	private ArrayList<DownloadObject> initiated_downloads;
-	private Thread normal_worker;
+
+	private synchronized void startNormalWorkersIfNeeded() {
+		int workerCount = Settings.getDownloadWorkers(this);
+		if (workerCount <= 0) workerCount = Constants.DEFAULT_DOWNLOAD_WORKERS;
+		synchronized (normalWorkers) {
+			for (int i = normalWorkers.size() - 1; i >= 0; i--) {
+				if (!normalWorkers.get(i).isAlive()) {
+					normalWorkers.remove(i);
+				}
+			}
+			while (normalWorkers.size() < workerCount) {
+				Thread t = new Thread(generate_worker(normal_queue, initiated_downloads), "DownloadWorker-" + (normalWorkers.size() + 1));
+				t.setPriority(Thread.NORM_PRIORITY);
+				normalWorkers.add(t);
+				t.start();
+			}
+		}
+	}
 
 	public void download_file(final String nick, final String local_file,
 			final String remote_file, final long file_size) {
@@ -1116,12 +1237,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				if (normal_queue != null && !normal_queue.contains(obj))
 					normal_queue.put(obj);
-				synchronized (DCPPService.this) {
-					if (normal_worker == null || !normal_worker.isAlive()) {
-						normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
-						normal_worker.start();
-					}
-				}
+				startNormalWorkersIfNeeded();
 				requestSaveDownloadsState();
 			} catch (InterruptedException e) {
 				Log.e("andcpp", "Interrupted while adding to queue", e);
@@ -1290,9 +1406,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				DCFileList ret = DCFileList.parseXML(saved_file_list);
 				return ret;
 			} else {
+				if (obj.download_status != null) {
+					obj.download_status.status = DCConstants.DownloadStatus.FAILED;
+				}
+				synchronized (initiated_downloads) {
+					initiated_downloads.remove(obj);
+				}
 				if (mNotifyManager2 != null) {
 					obj.mBuilder2.setOngoing(false);
-					mNotifyManager2.notify(obj.currentID, obj.mBuilder2.build());
+					mNotifyManager2.cancel(obj.currentID);
 				}
 				String s = "null";
 				if (obj.download_status != null && obj.download_status.status != null)
@@ -1302,9 +1424,27 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		} catch (InterruptedException e) {
 			Log.d("andcpp", "DCPPService: Got an interrupted exception");
+			if (obj.download_status != null) {
+				obj.download_status.status = DCConstants.DownloadStatus.FAILED;
+			}
+			synchronized (initiated_downloads) {
+				initiated_downloads.remove(obj);
+			}
+			if (mNotifyManager2 != null) {
+				mNotifyManager2.cancel(obj.currentID);
+			}
 			return null;
 		} catch (Exception e) {
 			Log.d("andcpp", "DCPPService: Got an unknown exception in get_file_list", e);
+			if (obj.download_status != null) {
+				obj.download_status.status = DCConstants.DownloadStatus.FAILED;
+			}
+			synchronized (initiated_downloads) {
+				initiated_downloads.remove(obj);
+			}
+			if (mNotifyManager2 != null) {
+				mNotifyManager2.cancel(obj.currentID);
+			}
 			return null;
 		}
 
@@ -1485,7 +1625,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 					String sr;
 					if (session.prefs.active && uploadManager.isListening()) {
-						String hubReportedIp = com.phinvader.libjdcpp.DCPreferences.get_self_ip();
+						String hubReportedIp = (session != null && session.prefs != null) ? session.prefs.get_self_ip() : null;
 						if (hubReportedIp != null && !hubReportedIp.isEmpty()) {
 							ourIp = hubReportedIp;
 						}
@@ -1598,7 +1738,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				if (msg.revconnect_to.equals(session.myuser.nick)) {
 					if (session.prefs.active && uploadManager.isListening()) {
 						String ourIp = session.client.getSocket().getLocalAddress().getHostAddress();
-						String hubReportedIp = com.phinvader.libjdcpp.DCPreferences.get_self_ip();
+						String hubReportedIp = (session != null && session.prefs != null) ? session.prefs.get_self_ip() : null;
 						if (hubReportedIp != null && !hubReportedIp.isEmpty()) {
 							ourIp = hubReportedIp;
 						}
@@ -1656,9 +1796,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 			if (detectedIp != null && !detectedIp.isEmpty()) {
 				Log.d("andcpp", "Hub reported our IP as: " + detectedIp);
-				com.phinvader.libjdcpp.DCPreferences.self_ip = detectedIp;
-				
 				HubSession session = getSession(hubKey);
+				if (session != null && session.prefs != null) {
+					session.prefs.set_self_ip(detectedIp);
+				}
+				
 				if (session != null && session.client != null && session.myuser != null) {
 					// Update user object and preferences
 					session.myuser.active = session.prefs.active;
@@ -1971,6 +2113,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private void restartDownloadsAfterNetworkChange() {
+		for (HubSession s : getActiveSessions()) {
+			if (s.prefs != null) {
+				s.prefs.set_self_ip(null);
+			}
+		}
 		if (initiated_downloads == null) return;
 
 		List<DownloadObject> restart = new ArrayList<>();
@@ -2448,8 +2595,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 				if (!hasActiveDownloads) {
 					stopForeground(true);
-					if (normal_worker != null)
-						normal_worker.interrupt();
+					synchronized (normalWorkers) {
+						for (Thread t : normalWorkers) {
+							if (t != null) t.interrupt();
+						}
+					}
 					downloadEnqueueExecutor.shutdownNow();
 					downloadEnqueueExecutor = Executors.newSingleThreadExecutor();
 				} else {
@@ -2632,13 +2782,20 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		}
 
-		if (normal_worker != null) {
-			normal_worker.interrupt();
-			try {
-				normal_worker.join(2000);
-			} catch (InterruptedException e) {
-				Log.e("andcpp", "Interrupted waiting for normal_worker", e);
+		synchronized (normalWorkers) {
+			for (Thread t : normalWorkers) {
+				if (t != null) {
+					t.interrupt();
+				}
 			}
+			for (Thread t : normalWorkers) {
+				if (t != null) {
+					try {
+						t.join(1000);
+					} catch (InterruptedException ignored) {}
+				}
+			}
+			normalWorkers.clear();
 		}
 
 		// Also check/wait for any specific thread associated with active downloads with bounded timeout (2000ms)
@@ -2758,6 +2915,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (initiated_downloads == null) return;
 		synchronized (initiated_downloads) {
 			for (DownloadObject obj : initiated_downloads) {
+				if (obj.isFileList()) continue;
 				if (obj.isCancelled || obj.isPaused
 						|| (obj.download_status != null
 						&& obj.download_status.status == DCConstants.DownloadStatus.COMPLETED)) {
@@ -2782,12 +2940,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		}
 		if (normal_queue != null && !normal_queue.isEmpty()) {
-			synchronized (this) {
-				if (normal_worker == null || !normal_worker.isAlive()) {
-					normal_worker = new Thread(generate_worker(normal_queue, initiated_downloads));
-					normal_worker.start();
-				}
-			}
+			startNormalWorkersIfNeeded();
 		}
 	}
 
@@ -2897,8 +3050,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		}
 
-		if (normal_worker != null) {
-			normal_worker.interrupt();
+		synchronized (normalWorkers) {
+			for (Thread t : normalWorkers) {
+				if (t != null) t.interrupt();
+			}
 		}
 
 		// 3. Save download state with actual file lengths synchronously
