@@ -23,10 +23,10 @@ public class DCDownloader {
 		}
 
 		public Thread thread;
-		public long downloadedSize = 0;
-		public long expectedDownloadSize = 0;
-		public long startOffset = 0;
-		public DCConstants.DownloadStatus status;
+		public volatile long downloadedSize = 0;
+		public volatile long expectedDownloadSize = 0;
+		public volatile long startOffset = 0;
+		public volatile DCConstants.DownloadStatus status;
 
 	}
 
@@ -106,22 +106,27 @@ public class DCDownloader {
 			// Notify target_user about file to download
 			handler.send_msg("$Get " + fname + "$" + (entity.startOffset + 1));
 			
-			DCMessage msg2 = handler.getNextMessage();
-			int safety = 0;
-			while (msg2 != null && msg2.command != null && 
-				   (msg2.command.equals("Key") || msg2.command.equals("Direction") || msg2.command.equals("MyNick") || msg2.command.equals("Lock")) && 
-				   safety < 10) {
-				msg2 = handler.getNextMessage();
-				safety++;
-			}
-
-			// Request Start Download
-			handler.send_msg("$Send");
 			entity.status = DownloadStatus.INITIATED;
 
-			if (msg2 == null || msg2.command == null || !msg2.command.equals("FileLength")) {
+			// Wait (bounded) for the peer's answer to $Get, skipping handshake chatter.
+			DCMessage msg2 = null;
+			long startTime = System.currentTimeMillis();
+			while (System.currentTimeMillis() - startTime < 20000) {
+				if (Thread.currentThread().isInterrupted())
+					throw new InterruptedException("download thread interrupted");
+				DCMessage m = handler.getNextMessage(1000, java.util.concurrent.TimeUnit.MILLISECONDS);
+				if (m == null || m.command == null) continue;
+				if ("HubQuit".equals(m.command) || "FileLength".equals(m.command)
+						|| "MaxedOut".equals(m.command) || "Error".equals(m.command)) {
+					msg2 = m;
+					break;
+				}
+			}
+
+			if (msg2 == null || !"FileLength".equals(msg2.command)) {
 				entity.status = DownloadStatus.FAILED;
-				DCLogger.Log("Download failed: Expected FileLength, got " + (msg2 == null ? "null" : msg2.command));
+				DCLogger.Log("Download failed: Expected FileLength, got " + (msg2 == null ? "no answer (timeout)"
+						: msg2.command + ("Error".equals(msg2.command) ? " " + msg2.msg_s : "")));
 				handler.close();
 				return false;
 			}
@@ -135,11 +140,18 @@ public class DCDownloader {
 
 			// Download Started
 			entity.status = DownloadStatus.STARTED;
+
+			// Switch the reader to raw file mode BEFORE asking for data, so no file byte is parsed as protocol.
 			handler.dump_remaining_stream(save_file_name, msg2.file_length, entity.startOffset > 0);
+
+			// Request Start Download
+			handler.send_msg("$Send");
+			entity.status = DownloadStatus.DOWNLOADING;
 			while (true) {
-				entity.status = DownloadStatus.DOWNLOADING;
-				DCMessage msg = handler.getNextMessage();
-				if (msg.command != null && msg.command.equals("HubQuit"))
+				if (Thread.currentThread().isInterrupted())
+					throw new InterruptedException("download thread interrupted");
+				DCMessage msg = handler.getNextMessage(1000, java.util.concurrent.TimeUnit.MILLISECONDS);
+				if (msg != null && msg.command != null && msg.command.equals("HubQuit"))
 					break;
 			}
 
@@ -161,9 +173,22 @@ public class DCDownloader {
 					+ entity.status.toString());
 
 		} catch (InterruptedException e) {
-			e.printStackTrace();
+			// Stopped from outside (pause, stall restart, shutdown): never leave an "active" status behind.
+			markStoppedIfActive(entity);
+			handler.close();
+			DCLogger.Log("Download interrupted: " + save_file_name);
+			return false;
 		}
 		return true;
+	}
+
+	/** Turns a leftover INITIATED/STARTED/DOWNLOADING status into INTERUPTED so the next attempt is not blocked. */
+	public static void markStoppedIfActive(DownloadQueueEntity entity) {
+		if (entity == null) return;
+		DownloadStatus st = entity.status;
+		if (st == DownloadStatus.INITIATED || st == DownloadStatus.STARTED || st == DownloadStatus.DOWNLOADING) {
+			entity.status = DownloadStatus.INTERUPTED;
+		}
 	}
 
 	/**

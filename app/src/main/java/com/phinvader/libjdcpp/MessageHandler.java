@@ -24,11 +24,11 @@ public class MessageHandler {
 	public OutputStream os;
 	private final ArrayBlockingQueue<DCMessage> message_queue;
 	Thread input_handler_thread;
-	private long dump_bytes_limit = 0;
-	private String dump_stream_file = null; // Once this is set to not null
+	private volatile long dump_bytes_limit = 0;
+	private volatile String dump_stream_file = null; // Once this is set to not null
 											// start dumping the stream to file
-	private boolean dump_append = false;
-	private long dump_bytes = 0;
+	private volatile boolean dump_append = false;
+	private volatile long dump_bytes = 0;
 
 	DCDownloader.DownloadQueueEntity downloadEntity = null;
 	public void setDownloadEntity(DCDownloader.DownloadQueueEntity entity) {
@@ -43,9 +43,27 @@ public class MessageHandler {
 	 * @param no_bytes
 	 */
 	public void dump_remaining_stream(String file_name, long no_bytes, boolean append) {
-		dump_stream_file = file_name;
 		dump_bytes_limit = no_bytes;
 		dump_append = append;
+		dump_stream_file = file_name; // volatile write last: publishes limit/append to the reader thread
+	}
+
+	/**
+	 * Posts the end-of-connection marker. Must not depend on the interrupt flag: close() interrupts the reader
+	 * thread right after closing the socket, and an interruptible put() would then throw and silently drop the
+	 * marker, leaving consumers blocked forever.
+	 */
+	private void postHubQuit(String raw) {
+		boolean wasInterrupted = Thread.interrupted();
+		DCMessage quit = DCMessage.parse_message(raw.getBytes());
+		while (!message_queue.offer(quit)) {
+			// Queue full: drop the oldest message so the terminal marker always gets through.
+			message_queue.poll();
+		}
+		if (update_sem != null)
+			update_sem.release();
+		if (wasInterrupted)
+			Thread.currentThread().interrupt();
 	}
 
 	public void dump_remaining_stream(String file_name, long no_bytes) {
@@ -90,6 +108,12 @@ public class MessageHandler {
 							buf_read_sz = -1;
 							break;
 						}
+						if (dump_stream_file != null) {
+							// Raw mode was requested while we were blocked in read(): this byte is file data,
+							// never protocol text, so a first data byte of '|' must not be treated as a delimiter.
+							messageBuffer.write(b);
+							break;
+						}
 						if (b == '|') {
 							addMessage(DCMessage.parse_message(messageBuffer.toByteArray()));
 							messageBuffer.reset();
@@ -99,46 +123,45 @@ public class MessageHandler {
 					}
 					if (buf_read_sz != -1 && dump_stream_file != null) {
 						dump_bytes = 0;
-						FileOutputStream output_file = new FileOutputStream(
-								dump_stream_file, dump_append);
+						FileOutputStream output_file = null;
+						try {
+							output_file = new FileOutputStream(
+									dump_stream_file, dump_append);
 
-						byte[] initial = messageBuffer.toByteArray();
-						if (initial.length > 0) {
-							output_file.write(initial);
-							dump_bytes += initial.length;
-							messageBuffer.reset();
-						}
-
-						byte[] write_buffer = new byte[DCConstants.io_buffer_size];
-						while (true) {
-							int s = bin.read(write_buffer);
-							if (s == -1)
-								break;
-							output_file.write(write_buffer, 0, s);
-							output_file.flush(); // Ensure writes are flushed immediately to persistent storage
-							dump_bytes += s;
-							if (downloadEntity != null) {
-								downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
+							byte[] initial = messageBuffer.toByteArray();
+							if (initial.length > 0) {
+								output_file.write(initial);
+								dump_bytes += initial.length;
+								messageBuffer.reset();
+								if (downloadEntity != null) {
+									downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
+								}
 							}
 
-							if (dump_bytes >= dump_bytes_limit || Thread.currentThread().isInterrupted())
-								break;
+							byte[] write_buffer = new byte[DCConstants.io_buffer_size];
+							while (dump_bytes < dump_bytes_limit && !Thread.currentThread().isInterrupted()) {
+								int s = bin.read(write_buffer);
+								if (s == -1)
+									break;
+								output_file.write(write_buffer, 0, s);
+								dump_bytes += s;
+								if (downloadEntity != null) {
+									downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
+								}
+							}
+							output_file.getFD().sync(); // Force sync file descriptor
+						} finally {
+							// Always release the file, also when the socket dies mid-transfer.
+							if (output_file != null) {
+								try { output_file.close(); } catch (IOException ignored) {}
+							}
 						}
-						output_file.getFD().sync(); // Force sync file descriptor
-						output_file.close();
 					}
 					bin.close();
-					addMessage(DCMessage.parse_message("$HubQuit".getBytes()));
+					postHubQuit("$HubQuit");
 				} catch (Exception e) { // IOException InterruptedException
-					try {
-						addMessage(DCMessage.parse_message(("$HubQuit " + e
-								.toString()).getBytes()));
-						// s.close();
-						// TODO remove this stacktrace. Added only for debugging
-						// purposes
-						e.printStackTrace();
-					} catch (InterruptedException e1) {
-					}
+					postHubQuit("$HubQuit " + e.toString());
+					e.printStackTrace();
 				}
 			}
 		};
@@ -149,10 +172,7 @@ public class MessageHandler {
 		try {
 			os = s.getOutputStream();
 		} catch (IOException e) {
-			try {
-				addMessage(DCMessage.parse_message("$HubQuit".getBytes()));
-			} catch (InterruptedException e1) {
-			}
+			postHubQuit("$HubQuit");
 		}
 	}
 
@@ -251,11 +271,7 @@ public class MessageHandler {
 				os.flush();
 			}
 		} catch (IOException e) {
-			try {
-				addMessage(DCMessage.parse_message(("$HubQuit " + e.toString())
-						.getBytes()));
-			} catch (InterruptedException e1) {
-			}
+			postHubQuit("$HubQuit " + e.toString());
 		}
 	}
 

@@ -77,12 +77,18 @@ public class DirectoryViewFragment extends Fragment {
 									int[] stats = {0};
 									long[] sizeStats = {0};
 									countFolderStats(selectedFile, stats, sizeStats);
-									
+
 									if (mainActivity.mService != null) {
 										mainActivity.mService.startFolderDownload(groupLabel, selectedFile.name, stats[0], sizeStats[0]);
 									}
-									
-									downloadDirectoryRecursive(mainActivity.chosenNick, localPath, remotePath, selectedFile, groupLabel, selectedFile.name);
+
+									// Walk the tree off the UI thread: it creates every local directory (disk I/O)
+									// and enqueues one download per file, which froze the UI on large folders.
+									final String nick = mainActivity.chosenNick;
+									final String rootLocal = localPath;
+									final String rootRemote = remotePath;
+									new Thread(() -> downloadDirectoryRecursive(nick, rootLocal, rootRemote, selectedFile, groupLabel, selectedFile.name),
+											"FolderEnqueue").start();
 									Toast.makeText(getActivity(), "Started folder download: " + selectedFile.name + " (" + stats[0] + " files)", Toast.LENGTH_SHORT).show();
 								} else {
 									Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();

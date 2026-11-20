@@ -239,6 +239,8 @@ public class DCClient {
 	public boolean stopDownloadHandler(
 			DCDownloader.DownloadQueueEntity downloadEntity) {
 		if (downloadEntity == null) return false;
+		// A stale "active" status would make the next start_download() skip its attempt.
+		DCDownloader.markStoppedIfActive(downloadEntity);
 		if (downloadEntity.connectionHandler != null) {
 			downloadEntity.connectionHandler.close();
 		}

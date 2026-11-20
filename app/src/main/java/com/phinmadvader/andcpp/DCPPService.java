@@ -265,7 +265,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							.setOngoing(false);
 					mNotifyManager2.notify(currentID, mBuilder2.build());
 				}
-				saveDownloadsState();
+				requestSaveDownloadsState();
 			} catch (Exception e) {
 				Log.e("andcpp", "Error in pause_download", e);
 			}
@@ -299,7 +299,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								normal_worker.start();
 							}
 						}
-						saveDownloadsState();
+						requestSaveDownloadsState();
 					} catch (InterruptedException e) {
 						Log.e("andcpp", "Failed to re-queue download", e);
 					}
@@ -339,7 +339,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (nm != null) {
 				nm.cancel(currentID);
 			}
-			saveDownloadsState();
+			requestSaveDownloadsState();
 		}
 
 		public boolean delete_download() {
@@ -744,7 +744,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private Runnable generate_worker(
-			final ArrayBlockingQueue<DownloadObject> q,
+			final LinkedBlockingQueue<DownloadObject> q,
 			final List<DownloadObject> initiated_list) {
 		return new Runnable() {
 
@@ -1057,7 +1057,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								updateFolderProgress(work);
 							}
 						}
-						saveDownloadsState();
+						requestSaveDownloadsState();
 					}
 				} catch (InterruptedException e) {
 					return;
@@ -1066,7 +1066,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		};
 	}
 
-	private ArrayBlockingQueue<DownloadObject> normal_queue;
+	private LinkedBlockingQueue<DownloadObject> normal_queue;
 	private ArrayList<DownloadObject> initiated_downloads;
 	private Thread normal_worker;
 
@@ -1122,7 +1122,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						normal_worker.start();
 					}
 				}
-				saveDownloadsState();
+				requestSaveDownloadsState();
 			} catch (InterruptedException e) {
 				Log.e("andcpp", "Interrupted while adding to queue", e);
 			}
@@ -1192,7 +1192,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 			initiated_downloads.removeAll(to_remove);
 		}
-		saveDownloadsState();
+		requestSaveDownloadsState();
 	}
 
 	private File getFileListDir() {
@@ -1885,8 +1885,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public DCPPService() {
 		super();
 		initiated_downloads = new ArrayList<DownloadObject>();
-		normal_queue = new ArrayBlockingQueue<DownloadObject>(
-				Constants.MAX_DOWNLOAD_Q);
+		// Unbounded: put() must never block. Callers hold initiated_downloads (or run on the UI thread) while
+		// enqueueing, and a full bounded queue there froze the app once more than MAX_DOWNLOAD_Q files were queued.
+		normal_queue = new LinkedBlockingQueue<DownloadObject>();
 	}
 
 	@Override
@@ -1896,7 +1897,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (initiated_downloads == null)
 			initiated_downloads = new ArrayList<DownloadObject>();
 		if (normal_queue == null)
-			normal_queue = new ArrayBlockingQueue<DownloadObject>(Constants.MAX_DOWNLOAD_Q);
+			normal_queue = new LinkedBlockingQueue<DownloadObject>();
 		mNotifyManager2 = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		
 		        uploadManager = new UploadManager(this);
@@ -2669,10 +2670,42 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		saveDownloadsState();
 
 		shutdown();
+		stateSaveExecutor.shutdownNow(); // the synchronous save above already persisted the final state
 		Log.d("andcpp", "destroyed!");
 	}
 
+	private final java.util.concurrent.ScheduledExecutorService stateSaveExecutor =
+			Executors.newSingleThreadScheduledExecutor();
+	private final java.util.concurrent.atomic.AtomicBoolean stateSavePending =
+			new java.util.concurrent.atomic.AtomicBoolean(false);
+
+	/**
+	 * Debounced, off-thread save. Adding a folder used to save the whole queue once per file (O(n^2) work plus a
+	 * synchronous commit each time, partly on the UI thread); now a burst of changes produces a single save.
+	 */
+	private void requestSaveDownloadsState() {
+		if (!stateSavePending.compareAndSet(false, true)) return; // a save is already scheduled
+		try {
+			stateSaveExecutor.schedule(() -> {
+				stateSavePending.set(false);
+				saveDownloadsState();
+			}, 1500, java.util.concurrent.TimeUnit.MILLISECONDS);
+		} catch (java.util.concurrent.RejectedExecutionException e) {
+			stateSavePending.set(false);
+		}
+	}
+
+	// Dedicated lock (not the service monitor): other code takes initiated_downloads then DCPPService.this,
+	// so locking the service here before get_download_queue() could deadlock.
+	private final Object stateSaveLock = new Object();
+
 	private void saveDownloadsState() {
+		synchronized (stateSaveLock) {
+			saveDownloadsStateLocked();
+		}
+	}
+
+	private void saveDownloadsStateLocked() {
 		try {
 			SharedPreferences prefs = getSharedPreferences("dcpp_downloads_state", Context.MODE_PRIVATE);
 			SharedPreferences.Editor editor = prefs.edit();
