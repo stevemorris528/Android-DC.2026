@@ -409,8 +409,7 @@ public class MainActivity extends FragmentActivity implements
 		MenuItem wifiOnly = menu.findItem(R.id.action_wifi_only);
 		if (wifiOnly != null) {
 			wifiOnly.setChecked(Settings.getWifiOnlyDownloads(this));
-		}
-		return super.onPrepareOptionsMenu(menu);
+		}		return super.onPrepareOptionsMenu(menu);
 	}
 
 	@Override

@@ -383,7 +383,7 @@ public class HubListFragment extends Fragment {
         }
 
         private void connectToHub(String hubIp) {
-look at the curren search function             String ip = hubIp;
+            String ip = hubIp;
             String port = "411";
             String[] parts = hubIp.split(":");
             if (parts.length == 2) {
