@@ -2752,13 +2752,20 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public static final String ACTION_TICK = "com.phinmadvader.andcpp.ACTION_TICK";
 	private static final long ALARM_INTERVAL_MILLIS = 60000L;
-	private static final long HUB_PROBE_AFTER_MILLIS = 40000L;
 	/**
-	 * A quiet hub (e.g. an empty test hub) can send nothing for minutes; only a hub that stays silent even though
-	 * we keep probing it (every tick after HUB_PROBE_AFTER_MILLIS) is treated as dead. A broken socket is caught
-	 * sooner anyway: the failed write ends the connection and triggers a reconnect.
+	 * Dead-link detection that is friendly to hubs: a quiet hub (e.g. an empty test hub) may send nothing for a long
+	 * time, and hubs flag repeated $GetNickList requests as "nicklist spam". So:
+	 *  - every tick we only send the standard empty keep-alive "|";
+	 *  - after HUB_PROBE_AFTER_MILLIS of total silence we send ONE $GetNickList (which every hub answers),
+	 *    at most once per HUB_PROBE_MIN_INTERVAL_MILLIS;
+	 *  - the link counts as dead only if nothing at all arrives within HUB_PROBE_REPLY_MILLIS of that probe.
+	 * A broken socket is caught sooner anyway: the failed write ends the connection and triggers a reconnect.
 	 */
-	private static final long HUB_SILENT_DEAD_MILLIS = 300000L;
+	private static final long HUB_PROBE_AFTER_MILLIS = 5 * 60000L;
+	private static final long HUB_PROBE_MIN_INTERVAL_MILLIS = 10 * 60000L;
+	private static final long HUB_PROBE_REPLY_MILLIS = 90000L;
+	/** Per hub: when we last sent the liveness probe (0 = none outstanding). */
+	private final Map<String, Long> hubProbeSentAt = new ConcurrentHashMap<>();
 	private final Object tickLock = new Object();
 	private volatile long lastTickAt = 0L;
 	private final ExecutorService tickExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -2769,8 +2776,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	/**
 	 * Periodic work, driven by both the Timer (30s) and an idle-capable alarm (60s): keep the hub link alive,
-	 * detect a dead hub link (no bytes received for 2 minutes even though we probe it), drop dead uploads and
-	 * restart queued downloads.
+	 * detect a dead hub link (a rare liveness check that goes unanswered, see HUB_PROBE_*), drop dead uploads
+	 * and restart queued downloads.
 	 */
 	private void runKeepAliveTick(String source) {
 		synchronized (tickLock) {
@@ -2781,21 +2788,33 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				for (Map.Entry<String, HubSession> entry : sessions.entrySet()) {
 					HubSession session = entry.getValue();
 					if (session.status != DCClientStatus.CONNECTED || session.client == null) continue;
+					String key = entry.getKey();
 					long silent = session.client.getMillisSinceLastReceived();
-					if (silent > HUB_SILENT_DEAD_MILLIS) {
-						Log.w("andcpp", "[DLTRACE] tick(" + source + "): hub " + session.hubIp + " silent for " + (silent / 1000)
-								+ "s; link is dead, reconnecting");
-						handleConnectionFailure(entry.getKey(), session, "hub silent for " + (silent / 1000) + "s");
-						continue;
+					Long probeAt = hubProbeSentAt.get(key);
+					if (probeAt != null && probeAt > 0) {
+						long sinceProbe = now - probeAt;
+						if (silent < sinceProbe) {
+							hubProbeSentAt.put(key, -probeAt); // the hub answered: link is alive (keep time for rate limit)
+						} else if (sinceProbe > HUB_PROBE_REPLY_MILLIS) {
+							Log.w("andcpp", "[DLTRACE] tick(" + source + "): hub " + session.hubIp + " silent for " + (silent / 1000)
+									+ "s and did not answer a probe within " + (HUB_PROBE_REPLY_MILLIS / 1000) + "s; link is dead, reconnecting");
+							hubProbeSentAt.remove(key);
+							handleConnectionFailure(key, session, "hub did not answer for " + (silent / 1000) + "s");
+							continue;
+						}
 					}
 					try {
-						// Silent hub: ask for the nick list. Every NMDC hub answers it (the list contains at least us),
-						// even an empty one, so a live hub always replies. ($GetINFO about ourselves is ignored by many
-						// hubs, especially since we announce NoGetINFO, which made idle hubs look dead.)
-						if (silent > HUB_PROBE_AFTER_MILLIS) {
+						long lastProbe = probeAt == null ? 0 : Math.abs(probeAt);
+						boolean probeOutstanding = probeAt != null && probeAt > 0;
+						if (!probeOutstanding && silent > HUB_PROBE_AFTER_MILLIS
+								&& now - lastProbe > HUB_PROBE_MIN_INTERVAL_MILLIS) {
+							// One liveness check: every NMDC hub answers $GetNickList, even an empty one.
+							Log.d("andcpp", "[DLTRACE] tick(" + source + "): hub " + session.hubIp + " quiet for "
+									+ (silent / 1000) + "s; sending one liveness check");
+							hubProbeSentAt.put(key, now);
 							session.client.sendRaw("$GetNickList");
 						} else {
-							session.client.sendRaw("");
+							session.client.sendRaw(""); // standard keep-alive "|"
 						}
 					} catch (Exception e) {
 						Log.e("andcpp", "Failed to send keep-alive to " + session.hubIp);
