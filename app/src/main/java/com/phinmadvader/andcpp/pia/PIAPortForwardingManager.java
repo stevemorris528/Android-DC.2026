@@ -89,6 +89,7 @@ public class PIAPortForwardingManager {
     private PIAPortForwardingManager(Context context) {
         this.context = context.getApplicationContext();
         this.prefs = this.context.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+        restoreFromBackupIfNeeded();
         this.isEnabled = FEATURE_AVAILABLE && prefs.getBoolean(PREF_ENABLED, false);
         // Not started here: the service starts it while a VPN is on (ensureRunning) and stops it otherwise.
     }
@@ -112,6 +113,93 @@ public class PIAPortForwardingManager {
         this.isEnabled = FEATURE_AVAILABLE && enabled;
         prefs.edit().putBoolean(PREF_ENABLED, this.isEnabled).apply();
         if (!this.isEnabled) stopPortForwarding();
+        saveBackup();
+    }
+
+    // ---- Backup that survives uninstall / clean install ----
+    // Android deletes the app's private storage on uninstall, so the PIA settings are also kept in the app's
+    // folder in shared storage (Download/Android-DC++/.pia_settings) and restored from there after a reinstall.
+    // The password is scrambled, not strongly encrypted: no key can survive an uninstall.
+
+    private static final String BACKUP_NAME = ".pia_settings";
+    private static final byte[] SCRAMBLE = "AnDCpp-PIA-settings-v1".getBytes(java.nio.charset.Charset.forName("UTF-8"));
+
+    private java.io.File backupFile() {
+        return new java.io.File(com.phinmadvader.andcpp.Settings.getDCDownloadsDirectory(context), BACKUP_NAME);
+    }
+
+    private static String scramble(String s) {
+        byte[] b = s.getBytes(java.nio.charset.Charset.forName("UTF-8"));
+        for (int i = 0; i < b.length; i++) b[i] ^= SCRAMBLE[i % SCRAMBLE.length];
+        return Base64.encodeToString(b, Base64.NO_WRAP);
+    }
+
+    private static String unscramble(String s) {
+        byte[] b = Base64.decode(s, Base64.NO_WRAP);
+        for (int i = 0; i < b.length; i++) b[i] ^= SCRAMBLE[i % SCRAMBLE.length];
+        return new String(b, java.nio.charset.Charset.forName("UTF-8"));
+    }
+
+    /** Writes the PIA settings (and the VPN port) to the backup file; deletes it when no login is saved. */
+    public void saveBackup() {
+        try {
+            java.io.File f = backupFile();
+            String user = prefs.getString(PREF_USERNAME, "");
+            String pass = prefs.getString(PREF_PASSWORD, "");
+            if (user.isEmpty() && pass.isEmpty()) {
+                if (f.exists()) f.delete();
+                return;
+            }
+            JSONObject j = new JSONObject();
+            j.put("v", 1);
+            j.put("user", user);
+            j.put("pass", scramble(pass));
+            j.put("enabled", prefs.getBoolean(PREF_ENABLED, false));
+            j.put("vpnPort", prefs.getInt(Constants.SETTINGS_VPN_PORT_KEY, 0));
+            java.io.File tmp = new java.io.File(f.getPath() + ".tmp");
+            try (java.io.OutputStream os = new java.io.FileOutputStream(tmp)) {
+                os.write(j.toString().getBytes("UTF-8"));
+            }
+            if (!tmp.renameTo(f)) {
+                f.delete();
+                tmp.renameTo(f);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Could not save the PIA settings backup: " + e.getMessage());
+        }
+    }
+
+    /** After a clean install (no PIA login saved), restore it from the backup file if there is one. */
+    public boolean restoreFromBackupIfNeeded() {
+        if (!prefs.getString(PREF_USERNAME, "").isEmpty()) return false;
+        try {
+            java.io.File f = backupFile();
+            if (!f.isFile()) return false;
+            byte[] data = new byte[(int) Math.min(f.length(), 64 * 1024)];
+            try (java.io.InputStream in = new java.io.FileInputStream(f)) {
+                int off = 0, n;
+                while (off < data.length && (n = in.read(data, off, data.length - off)) > 0) off += n;
+            }
+            JSONObject j = new JSONObject(new String(data, "UTF-8"));
+            String user = j.optString("user", "");
+            String pass = unscramble(j.optString("pass", ""));
+            if (user.isEmpty() || pass.isEmpty()) return false;
+            SharedPreferences.Editor e = prefs.edit()
+                    .putString(PREF_USERNAME, user)
+                    .putString(PREF_PASSWORD, pass)
+                    .putBoolean(PREF_ENABLED, j.optBoolean("enabled", true));
+            int vpnPort = j.optInt("vpnPort", 0);
+            if (vpnPort > 0 && prefs.getInt(Constants.SETTINGS_VPN_PORT_KEY, 0) == 0) {
+                e.putInt(Constants.SETTINGS_VPN_PORT_KEY, vpnPort);
+            }
+            e.commit();
+            isEnabled = FEATURE_AVAILABLE && prefs.getBoolean(PREF_ENABLED, false);
+            Log.i(TAG, "Restored the PIA login from " + f.getPath() + " (after a reinstall)");
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "Could not restore the PIA settings backup: " + e.getMessage());
+            return false;
+        }
     }
 
     public boolean hasCredentials() {
@@ -119,15 +207,37 @@ public class PIAPortForwardingManager {
     }
 
     public void setCredentials(String username, String password) {
-        prefs.edit().putString(PREF_USERNAME, username == null ? "" : username.trim())
+        // PIA usernames are lowercase (p1234567); keyboards often capitalise the first letter.
+        prefs.edit().putString(PREF_USERNAME, username == null ? "" : username.trim().toLowerCase(java.util.Locale.ROOT))
                 .putString(PREF_PASSWORD, password == null ? "" : password)
                 .remove(PREF_TOKEN).remove(PREF_TOKEN_TIME) // new login: get a new token
                 .remove(PREF_SIGNATURE).remove(PREF_PAYLOAD).remove(PREF_GATEWAY)
-                .apply();
+                .commit();
+        saveBackup(); // keep a copy that survives a clean install
     }
 
     public String getUsername() {
         return prefs.getString(PREF_USERNAME, "");
+    }
+
+    /** Length of the saved password (0 = none), so the Settings screen can show that one is stored. */
+    public int getSavedPasswordLength() {
+        return prefs.getString(PREF_PASSWORD, "").length();
+    }
+
+    /**
+     * Checks the saved login with PIA right away (network: call off the UI thread).
+     * Returns null if PIA accepted it, otherwise the reason. A good token is cached for port forwarding.
+     */
+    public String testLogin() {
+        if (prefs.getString(PREF_USERNAME, "").isEmpty() || prefs.getString(PREF_PASSWORD, "").isEmpty()) {
+            return "no PIA login saved";
+        }
+        // Same guarded path as port forwarding: shares one request, respects PIA's rate limit.
+        String token = getToken(false);
+        if (token == null) return lastError != null ? lastError : "PIA login failed";
+        lastError = null;
+        return null;
     }
 
     /** The forwarded port, once PIA assigned and bound it; null otherwise. */
@@ -282,27 +392,68 @@ public class PIAPortForwardingManager {
         }
     }
 
-    /** A valid PIA token: the cached one, or a new one from the saved username/password. */
-    private String getToken(boolean forceNew) {
-        String token = prefs.getString(PREF_TOKEN, "");
-        long age = System.currentTimeMillis() - prefs.getLong(PREF_TOKEN_TIME, 0);
-        if (!forceNew && !token.isEmpty() && age < TOKEN_MAX_AGE_MILLIS) return token;
+    // ---- Login guard: PIA rate-limits token requests ("too many login attempts") ----
+    private final Object tokenLock = new Object();
+    /** Hash of a username/password pair PIA rejected: not retried until the login is changed. */
+    private int rejectedLoginHash = 0;
+    private String rejectedLoginError = null;
+    /** After PIA answered "too many attempts": no token requests before this time. */
+    private long loginBlockedUntil = 0;
+    private static final long TOO_MANY_ATTEMPTS_BACKOFF_MILLIS = TimeUnit.MINUTES.toMillis(15);
+    private static final long FRESH_TOKEN_MILLIS = TimeUnit.MINUTES.toMillis(2);
 
-        String user = prefs.getString(PREF_USERNAME, "");
-        String pass = prefs.getString(PREF_PASSWORD, "");
-        if (user.isEmpty() || pass.isEmpty()) {
-            lastError = "set your PIA login in Settings";
-            return null;
+    /**
+     * A valid PIA token: the cached one, or ONE new request with the saved login. Serialized, so several
+     * callers at once (Settings check, port forwarding, ...) share a single request; a rejected login is not
+     * retried until it changes, and after "too many attempts" nothing is requested for 15 minutes.
+     */
+    private String getToken(boolean forceNew) {
+        synchronized (tokenLock) {
+            String token = prefs.getString(PREF_TOKEN, "");
+            long age = System.currentTimeMillis() - prefs.getLong(PREF_TOKEN_TIME, 0);
+            if (!token.isEmpty() && (age < (forceNew ? FRESH_TOKEN_MILLIS : TOKEN_MAX_AGE_MILLIS))) {
+                return token; // forceNew still reuses a token that is only seconds old
+            }
+
+            String user = prefs.getString(PREF_USERNAME, "");
+            String pass = prefs.getString(PREF_PASSWORD, "");
+            if (user.isEmpty() || pass.isEmpty()) {
+                lastError = "set your PIA login in Settings";
+                return null;
+            }
+            int loginHash = (user + "\n" + pass).hashCode();
+            if (loginHash == rejectedLoginHash) {
+                lastError = rejectedLoginError; // same login PIA already rejected: don't ask again
+                return null;
+            }
+            long now = System.currentTimeMillis();
+            if (now < loginBlockedUntil) {
+                long mins = Math.max(1, (loginBlockedUntil - now + 59999) / 60000);
+                lastError = "too many PIA login attempts; trying again in " + mins + " min";
+                return null;
+            }
+
+            token = fetchToken(user, pass);
+            if (token != null) {
+                rejectedLoginHash = 0;
+                prefs.edit().putString(PREF_TOKEN, token).putLong(PREF_TOKEN_TIME, System.currentTimeMillis()).apply();
+            } else if (lastFetchStatus == 429) {
+                loginBlockedUntil = System.currentTimeMillis() + TOO_MANY_ATTEMPTS_BACKOFF_MILLIS;
+                lastError = "too many PIA login attempts; trying again in 15 min";
+            } else if (lastFetchStatus == 401 || lastFetchStatus == 403) {
+                rejectedLoginHash = loginHash;
+                rejectedLoginError = lastError;
+            }
+            return token;
         }
-        token = fetchToken(user, pass);
-        if (token != null) {
-            prefs.edit().putString(PREF_TOKEN, token).putLong(PREF_TOKEN_TIME, System.currentTimeMillis()).apply();
-        }
-        return token;
     }
+
+    /** HTTP status of the last token request (0 = network error). */
+    private volatile int lastFetchStatus = 0;
 
     /** PIA token API (normal, fully verified HTTPS to privateinternetaccess.com). */
     private String fetchToken(String user, String pass) {
+        lastFetchStatus = 0;
         try {
             URL url = new URL("https://www.privateinternetaccess.com/api/client/v2/token");
             HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
@@ -316,8 +467,14 @@ public class PIAPortForwardingManager {
                 os.write(form.getBytes("UTF-8"));
             }
             int code = conn.getResponseCode();
+            lastFetchStatus = code;
+            if (code == 429) {
+                lastError = "too many PIA login attempts, try again in a few minutes";
+                return null;
+            }
             if (code == 401 || code == 403) {
-                lastError = "PIA login rejected: check username/password in Settings";
+                lastError = "PIA login rejected (HTTP " + code + "): check username/password in Settings";
+                Log.w(TAG, "PIA token request rejected (HTTP " + code + ") for user '" + user + "'");
                 return null;
             }
             if (code != 200) {

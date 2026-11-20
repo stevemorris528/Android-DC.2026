@@ -7,47 +7,43 @@
         android:visible="false"
         android:title="Search"/>
 
-    <item
-        android:id="@+id/action_saved_filelists"
-        android:orderInCategory="10"
-        android:showAsAction="never"
-        android:title="Saved File Lists"/>
-
-    <item
-        android:id="@+id/action_shutdown"
-        android:orderInCategory="20"
-        android:showAsAction="never"
-        android:title="@string/action_shutdown"/>
-
+    <!-- Menu order, top to bottom: Public Hubs, Wi-Fi DL Only, Settings, About, Licence, Shutdown.
+         (Saved file lists are on their own "Saved" tab.) -->
     <item
         android:id="@+id/action_public_hubs"
-        android:orderInCategory="80"
+        android:orderInCategory="10"
         android:showAsAction="never"
         android:title="@string/action_public_hubs"/>
 
     <item
-        android:id="@+id/action_about"
-        android:orderInCategory="90"
-        android:showAsAction="never"
-        android:title="@string/action_about"/>
-
-    <item
         android:id="@+id/action_wifi_only"
-        android:orderInCategory="95"
+        android:orderInCategory="20"
         android:showAsAction="never"
         android:checkable="true"
         android:checked="false"
-        android:title="Download Only Over Wi-Fi"/>
+        android:title="Wi-Fi DL Only"/>
 
     <item
         android:id="@+id/action_settings"
-        android:orderInCategory="100"
+        android:orderInCategory="30"
         android:showAsAction="never"
         android:title="@string/action_settings"/>
 
     <item
+        android:id="@+id/action_about"
+        android:orderInCategory="40"
+        android:showAsAction="never"
+        android:title="@string/action_about"/>
+
+    <item
         android:id="@+id/action_license"
-        android:orderInCategory="105"
+        android:orderInCategory="50"
         android:showAsAction="never"
         android:title="@string/action_license"/>
+
+    <item
+        android:id="@+id/action_shutdown"
+        android:orderInCategory="70"
+        android:showAsAction="never"
+        android:title="@string/action_shutdown"/>
 </menu>

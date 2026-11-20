@@ -25,9 +25,10 @@ public class Constants {
     public static String SETTINGS_DOWNLOAD_WORKERS_KEY = "dc_download_workers";
     public static int MAX_DOWNLOAD_Q = 1024;
     public static int DOWNLOAD_TIMEOUT_MILLIS = 60000;
-    public static int DOWNLOAD_CONNECT_DEADLINE_MILLIS = 90000; // 90 seconds connect deadline
-    public static int DOWNLOAD_HANDSHAKE_DEADLINE_MILLIS = 60000; // max time a claimed connection may sit in INITIATED/STARTED
-    public static int DOWNLOAD_RESIGNAL_INTERVAL_MILLIS = 30000; // re-send $ConnectToMe/$RevConnectToMe while still pending
+    // A DC client normally connects within a few seconds of our request; don't let a stalled one hold the queue.
+    public static int DOWNLOAD_CONNECT_DEADLINE_MILLIS = 25000; // give up on a connect attempt after 25 s
+    public static int DOWNLOAD_HANDSHAKE_DEADLINE_MILLIS = 30000; // max time a claimed connection may sit in INITIATED/STARTED
+    public static int DOWNLOAD_RESIGNAL_INTERVAL_MILLIS = 10000; // re-send $ConnectToMe/$RevConnectToMe once, at 10 s
     public static int DOWNLOAD_UPDATE_INTERVAL_MILLIS = 1000; // Updates all download activities every 1s
     public static int POLLING_CLASS_TIME_IN_MILLIS = 5000; // Interval frequency for poll updates
 }
