@@ -27,6 +27,15 @@ public class SearchResultsFragment extends Fragment {
 													// curFiles
 	private List<DCFileList> curFiles; // adapter list being displayed
 	private List<DCMessage> searchResults;
+	private android.widget.TextView titleView;
+
+	/** Header shows how many results there are, e.g. "Search Results (12)". */
+	private void updateTitle() {
+		if (titleView != null) {
+			int n = searchResults != null ? searchResults.size() : 0;
+			titleView.setText(n > 0 ? "Search Results (" + n + ")" : "Search Results");
+		}
+	}
 
 	public SearchResultsFragment() {
 		super();
@@ -40,8 +49,13 @@ public class SearchResultsFragment extends Fragment {
 		mainActivity = (MainActivity) getActivity();
 		ArrayAdapter<DCFileList> myFileAdapter = new FileListAdapter(
 				mainActivity, android.R.layout.simple_list_item_1, curFiles);
-		View rootview = inflater.inflate(R.layout.file_list, container, false);
+		View rootview = inflater.inflate(R.layout.search_results_layout, container, false);
 		fileListView = (ListView) rootview.findViewById(R.id.listView);
+		titleView = (android.widget.TextView) rootview.findViewById(R.id.txtSearchResultsTitle);
+		rootview.findViewById(R.id.btnClearSearchResults).setOnClickListener(v -> {
+			clear_search_results();
+			Toast.makeText(getActivity(), "Search results cleared", Toast.LENGTH_SHORT).show();
+		});
 		fileListView.setAdapter(myFileAdapter);
 		fileListView
 				.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -103,6 +117,7 @@ public class SearchResultsFragment extends Fragment {
 				});
 		this.filesAdapter = myFileAdapter;
 		is_ready = true;
+		updateTitle();
 		return rootview;
 	}
 
@@ -137,6 +152,7 @@ public class SearchResultsFragment extends Fragment {
 				if (searchResults != null) searchResults.add(sr);
 				if (is_ready && filesAdapter != null)
 					filesAdapter.notifyDataSetChanged();
+				updateTitle();
 			} catch (Exception e) {
 				Log.e("andcpp", "Error adding search result", e);
 			}
@@ -160,6 +176,7 @@ public class SearchResultsFragment extends Fragment {
 				if (searchResults != null) searchResults.clear();
 				if (is_ready && filesAdapter != null)
 					filesAdapter.notifyDataSetChanged();
+				updateTitle();
 			} catch (Exception e) {
 				Log.e("andcpp", "Error clearing search results", e);
 			}
