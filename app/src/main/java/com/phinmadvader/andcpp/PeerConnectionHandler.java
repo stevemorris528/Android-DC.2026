@@ -370,8 +370,10 @@ public class PeerConnectionHandler implements Runnable {
         
         this.totalSize = sendSize;
 
-        // Check slots before sending $FileLength
-        if (!uploadManager.requestSlot(this)) {
+        // Check slots before sending $FileLength. Our file list is always served (no slot needed),
+        // as other DC clients do, so users can browse us even when all upload slots are busy.
+        boolean isFileList = UploadManager.isFileListRequest(requestedFile);
+        if (!isFileList && !uploadManager.requestSlot(this)) {
             state = ConnectionState.QUEUED;
             int pos = uploadManager.getQueuePosition(this);
             Log.d("andcpp", "Upload slots full. Peer " + hisNick + " queued at position " + pos);

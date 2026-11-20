@@ -1030,6 +1030,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								mNotifyManager2.notify(work.currentID,
 										work.mBuilder2.build());
 
+								// Share the new file: rebuild our file list shortly (debounced).
+								if (uploadManager != null) {
+									uploadManager.requestFileListRefresh();
+								}
+
 								break;
 
 							} else if (work.is_finished()) {
@@ -1837,6 +1842,31 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 			}
 		}
+	}
+
+	/** Rebuild our shared file list within a few seconds (app opened / storage permission granted). */
+	public void refreshMyFileListSoon() {
+		if (uploadManager != null) {
+			uploadManager.requestFileListRefreshSoon();
+		}
+	}
+
+	/**
+	 * Absolute paths of downloads that are not complete (queued, running, paused, failed or cancelled).
+	 * These files are partial on disk, so they are left out of our shared file list.
+	 */
+	public Set<String> getIncompleteDownloadPaths() {
+		Set<String> paths = new HashSet<>();
+		if (initiated_downloads == null) return paths;
+		synchronized (initiated_downloads) {
+			for (DownloadObject o : initiated_downloads) {
+				if (o.local_file == null) continue;
+				boolean complete = !o.isCancelled && o.download_status != null
+						&& o.download_status.status == DCConstants.DownloadStatus.COMPLETED;
+				if (!complete) paths.add(new File(o.local_file).getAbsolutePath());
+			}
+		}
+		return paths;
 	}
 
 	public List<String> get_saved_file_lists() {

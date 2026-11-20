@@ -175,7 +175,10 @@ public class MainActivity extends FragmentActivity implements
 			mService = binder.getService();
 			mBound = true;
 			Log.d("andcpp", "mservice is bound");
-			
+
+			// Rebuild our shared file list on every app open (cheap: hashes are cached).
+			mService.refreshMyFileListSoon();
+
 			refreshWelcomeFragment();
 
 			// Refresh UI state from active sessions
@@ -1062,6 +1065,10 @@ public class MainActivity extends FragmentActivity implements
 		if (requestCode == 1) {
 			if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 				Log.d("andcpp", "Storage permission granted");
+				// Files from a previous install are only visible now: rebuild our file list.
+				if (mService != null) {
+					mService.refreshMyFileListSoon();
+				}
 			} else {
 				Toast.makeText(this, "Storage permission is required to download files.", Toast.LENGTH_LONG).show();
 			}
