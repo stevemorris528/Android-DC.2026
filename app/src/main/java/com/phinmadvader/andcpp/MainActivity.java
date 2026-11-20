@@ -636,7 +636,7 @@ public class MainActivity extends FragmentActivity implements
 			if (tab_page_adapter != null) {
 				tab_page_adapter.notifyDataSetChanged();
 				tab_page_adapter.add_tab(TabPagerAdapter.TAB_FILELIST,
-						null, nick + " (Offline)");
+						null, fileListTabTitle(nick));
 				tab_page_adapter.move_to_last_page();
 			}
 			try {
@@ -984,6 +984,26 @@ public class MainActivity extends FragmentActivity implements
 		fileDownloadThread.start();
 	}
 
+	/** True if a user with this nick is currently online on any connected hub. */
+	private boolean isUserOnline(String nick) {
+		if (mService == null || nick == null) return false;
+		for (DCPPService.HubSession s : mService.getActiveSessions()) {
+			if (s.status != DCPPService.DCClientStatus.CONNECTED || s.client == null) continue;
+			java.util.List<com.phinvader.libjdcpp.DCUser> users = s.client.get_nick_list();
+			if (users == null) continue;
+			for (com.phinvader.libjdcpp.DCUser u : users) {
+				if (u != null && nick.equalsIgnoreCase(u.nick)) return true;
+			}
+		}
+		return false;
+	}
+
+	/** Tab title for a file list: based on whether the user is really online, not on where the list came from. */
+	private String fileListTabTitle(String nick) {
+		if (UploadManager.MY_FILE_LIST_NAME.equals(nick)) return nick; // our own share
+		return isUserOnline(nick) ? nick + "'s FileList" : nick + " (Offline)";
+	}
+
 	private void display_file_list(DCFileList fileList, String nick, boolean offline) {
 		MainActivity.this.rootfileList = fileList;
 		MainActivity.this.chosenNick = nick;
@@ -992,9 +1012,8 @@ public class MainActivity extends FragmentActivity implements
 		}
 		if (tab_page_adapter != null) {
 			tab_page_adapter.notifyDataSetChanged();
-			String title = nick + (offline ? " (Offline)" : "'s FileList");
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_FILELIST,
-					null, title);
+					null, fileListTabTitle(nick));
 		}
 		try {
 			getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
