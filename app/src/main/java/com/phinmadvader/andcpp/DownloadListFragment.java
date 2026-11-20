@@ -60,6 +60,9 @@ public class DownloadListFragment extends Fragment {
         txtUploadSpeed = (android.widget.TextView) root.findViewById(R.id.txtUploadSpeed);
         txtUploadStats = (android.widget.TextView) root.findViewById(R.id.txtUploadStats);
         uploadRowsContainer = (android.widget.LinearLayout) root.findViewById(R.id.uploadRowsContainer);
+        // The pager rebuilds this tab's view when tabs change (e.g. a file list opens to queue downloads).
+        // Rows made for the previous view are no longer on screen: forget them so new ones are created.
+        uploadRows.clear();
         txtDownloadSpeed = (android.widget.TextView) root.findViewById(R.id.txtDownloadSpeed);
         txtDlTotals = (android.widget.TextView) root.findViewById(R.id.txtDlTotals);
         txtUlTotals = (android.widget.TextView) root.findViewById(R.id.txtUlTotals);
@@ -74,15 +77,6 @@ public class DownloadListFragment extends Fragment {
         btnClear.setOnClickListener(v -> {
             if (mainActivity.mService != null) {
                 mainActivity.mService.clear_finished_downloads();
-                updateList();
-            }
-        });
-
-        Button btnResetAll = (Button) root.findViewById(R.id.btnResetAllDownloads);
-        btnResetAll.setOnClickListener(v -> {
-            if (mainActivity.mService != null) {
-                mainActivity.mService.resetAllDownloads();
-                Toast.makeText(getActivity(), "Resetting all downloads...", Toast.LENGTH_SHORT).show();
                 updateList();
             }
         });

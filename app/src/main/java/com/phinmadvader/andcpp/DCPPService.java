@@ -1876,8 +1876,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (files != null) {
 			for (File f : files) {
 				if (f.isFile() && f.getName().endsWith(".xml")) {
-					String name = f.getName();
-					nicks.add(name.substring(0, name.length() - 4));
+					String name = f.getName().substring(0, f.getName().length() - 4);
+					if (UploadManager.isLegacyFileListName(name)) continue; // old-build leftover
+					nicks.add(name);
 				}
 			}
 		}
