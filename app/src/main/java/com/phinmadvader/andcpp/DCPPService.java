@@ -1634,9 +1634,40 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				}
 			}
-			final DownloadObject obj = new DownloadObject(targetHubIp, nick, local_file,
+
+			// A file may already be on disk (e.g. after a clean install, from an earlier run).
+			// Never overwrite it: skip it if complete, resume it if partial, use a new name if it differs.
+			String targetFile = local_file;
+			long resumeFrom = 0;
+			File onDisk = new File(local_file);
+			if (onDisk.isFile()) {
+				long have = onDisk.length();
+				if (file_size > 0 && have == file_size) {
+					Log.i("andcpp", "Already downloaded, skipping: " + local_file);
+					final DownloadObject done = new DownloadObject(targetHubIp, nick, local_file,
+							remote_file, this, groupLabel, groupName);
+					done.set_total_bytes(file_size);
+					updateFolderProgress(done); // a folder download still counts this file as done
+					if (groupLabel == null) {
+						new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(getApplicationContext(),
+								"Already downloaded: " + onDisk.getName(), Toast.LENGTH_SHORT).show());
+					}
+					return;
+				} else if (file_size <= 0 || have < file_size) {
+					resumeFrom = have; // partial: continue where it stopped (appends, never truncates)
+					Log.i("andcpp", "Partial file found (" + have + "/" + file_size + " bytes); resuming: " + local_file);
+				} else {
+					// Bigger than the remote file: a different file with the same name. Keep it.
+					targetFile = uniqueLocalPath(local_file);
+					Log.w("andcpp", "Existing " + local_file + " is larger than the remote file (" + have + " > "
+							+ file_size + "); downloading to " + targetFile + " instead");
+				}
+			}
+
+			final DownloadObject obj = new DownloadObject(targetHubIp, nick, targetFile,
 					remote_file, this, groupLabel, groupName);
 			obj.set_total_bytes(file_size);
+			obj.pendingStartOffset = resumeFrom;
 			synchronized (initiated_downloads) {
 				initiated_downloads.add(obj);
 				manageWakeLock();
@@ -1651,6 +1682,20 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		});
 
+	}
+
+	/** "dir/name.ext" -> first free "dir/name (1).ext", "dir/name (2).ext", ... */
+	private static String uniqueLocalPath(String path) {
+		File f = new File(path);
+		String name = f.getName();
+		int dot = name.lastIndexOf('.');
+		String base = dot > 0 ? name.substring(0, dot) : name;
+		String ext = dot > 0 ? name.substring(dot) : "";
+		for (int i = 1; i < 1000; i++) {
+			File candidate = new File(f.getParentFile(), base + " (" + i + ")" + ext);
+			if (!candidate.exists()) return candidate.getPath();
+		}
+		return path + "." + System.currentTimeMillis();
 	}
 
 	public void startFolderDownload(String groupLabel, String folderName, int totalFiles, long totalSize) {

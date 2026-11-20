@@ -97,7 +97,8 @@ public class SearchResultsFragment extends Fragment {
 						// Check if file already exists in downloads to allow reopening
 						String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + filename;
 						File localFile = new File(localPath);
-						if (localFile.exists()) {
+						// Open it only if it's complete; a partial file is resumed by downloading again.
+						if (localFile.isFile() && (file_size <= 0 || localFile.length() == file_size)) {
 							mainActivity.openFile(localFile);
 							return;
 						}
