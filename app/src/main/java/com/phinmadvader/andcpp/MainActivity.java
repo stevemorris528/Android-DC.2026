@@ -179,6 +179,8 @@ public class MainActivity extends FragmentActivity implements
 
 			// Rebuild our shared file list on every app open (cheap: hashes are cached).
 			mService.refreshMyFileListSoon();
+			// The menu may have been built before the service was bound: re-check the search icon.
+			invalidateOptionsMenu();
 
 			refreshWelcomeFragment();
 
@@ -205,6 +207,7 @@ public class MainActivity extends FragmentActivity implements
 	@Override
 	public void onCommand(final DCMessage msg) {
 		// These all cause UI changes, so force run on UI thread by default
+		if (msg == null || msg.command == null) return; // unparsed message: switch(null) would crash
 		runOnUiThread(() -> {
 			switch (msg.command) {
 				case "MyINFO":
@@ -407,10 +410,26 @@ public class MainActivity extends FragmentActivity implements
 			if (searchview != null) {
 				searchview.setSubmitButtonEnabled(true);
 				searchview.setOnQueryTextListener(this);
+				searchview.setQueryHint("Search all connected hubs");
 			}
-			searchmenuitem.setVisible(false);
+			updateSearchMenuVisibility();
 		}
 		return true;
+	}
+
+	private boolean isAnyHubConnected() {
+		if (mService == null) return false;
+		for (DCPPService.HubSession s : mService.getActiveSessions()) {
+			if (s != null && s.status == DCPPService.DCClientStatus.CONNECTED) return true;
+		}
+		return false;
+	}
+
+	/** The search icon is shown while at least one hub is connected. */
+	private void updateSearchMenuVisibility() {
+		if (searchmenuitem != null) {
+			searchmenuitem.setVisible(isAnyHubConnected());
+		}
 	}
 
 	@Override
@@ -681,6 +700,13 @@ public class MainActivity extends FragmentActivity implements
 
 	@Override
 	public boolean onQueryTextSubmit(String query) {
+		// '|' and '$' are NMDC delimiters: they would corrupt the $Search command.
+		query = query == null ? "" : query.replace('|', ' ').replace('$', ' ').trim();
+		if (query.isEmpty()) return true;
+		if (!isAnyHubConnected()) {
+			Toast.makeText(this, "Connect to a hub to search", Toast.LENGTH_SHORT).show();
+			return true;
+		}
 		if (searchview != null) {
 			searchview.setQuery("", false);
 			searchview.clearFocus();
@@ -858,9 +884,9 @@ public class MainActivity extends FragmentActivity implements
 		}
 
 		if (tab_page_adapter == null) return;
-		
+
 		if (searchmenuitem != null) {
-			searchmenuitem.setVisible(false);
+			searchmenuitem.setVisible(true); // connected: search is available
 		}
 		if (login_fragment != null) {
 			login_fragment.setViewState(true);
@@ -922,9 +948,7 @@ public class MainActivity extends FragmentActivity implements
 	public void onDisonnectUIChanges() {
 		Log.d("andcpp", "Running disconnect UI changes");
 		if (tab_page_adapter == null) return;
-		if (searchmenuitem != null) {
-			searchmenuitem.setVisible(false);
-		}
+		updateSearchMenuVisibility(); // stays visible while another hub is still connected
 		if (login_fragment != null) {
 			login_fragment.setViewState(false);
 		}

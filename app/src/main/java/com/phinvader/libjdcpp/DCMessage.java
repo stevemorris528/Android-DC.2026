@@ -33,6 +33,9 @@ public class DCMessage {
 	public String file_path;
 	public long file_size;
 	public String file_signature;
+	public boolean is_dir_result; // $SR: the result is a directory (no size / TTH)
+	public String file_tth; // $SR: TTH of the file, or null
+	public String sr_hub_address; // $SR: "hubip:port" the result came from, or null
 	public String get_filename; // Get
 	public long startOffset; // Get/ADCGET
 	public long bytesToTransfer; // ADCGET
@@ -147,23 +150,41 @@ public class DCMessage {
 				} else if (command.equals("Key")) {
 					key_s = new String(input, beg + 1, input.length - beg - 1);
 				} else if (command.equals("SR")) {
-					// Search Result
-					String value = new String(input);
-					String[] values = value.split(" ");
-					String usernick = values[1];
-					String signature = values[values.length - 2];
-					String path = "";
-					for (int i = 2; i < values.length - 2; i++) {
-						path += values[i];
-						if (i != values.length - 3)
-							path += " ";
+					// Search Result (\x05 separates fields):
+					//   file: $SR <nick> <path>\x05<size> <free>/<total>\x05<TTH:hash|hubname> (<hubip:port>)[\x05<target>]
+					//   dir:  $SR <nick> <dirpath> <free>/<total>\x05<hubname> (<hubip:port>)[\x05<target>]
+					String body = new String(input, beg + 1, input.length - beg - 1);
+					int sp = body.indexOf(' ');
+					String[] parts = sp > 0 ? body.substring(sp + 1).split("\u0005", -1) : new String[0];
+					String sig = null;
+					if (parts.length >= 3 && parts[1].matches("\\d+ \\d+/\\d+.*")) {
+						file_path = parts[0];
+						String sizeSlots = parts[1];
+						file_size = Long.parseLong(sizeSlots.substring(0, sizeSlots.indexOf(' ')));
+						sig = parts[2];
+						is_dir_result = false;
+					} else if (parts.length >= 2) {
+						int ls = parts[0].lastIndexOf(' '); // "<dirpath> <free>/<total>"
+						file_path = ls > 0 ? parts[0].substring(0, ls) : parts[0];
+						file_size = 0;
+						sig = parts[1];
+						is_dir_result = true;
+					} else {
+						parse_success = false;
 					}
-					String[] path_size_raw = path.split("");
-					hisinfo = new DCUser();
-					hisinfo.nick = usernick;
-					file_path = path_size_raw[0];
-					file_size = Long.parseLong(path_size_raw[1]);
-					file_signature = signature;
+					if (sig != null) {
+						hisinfo = new DCUser();
+						hisinfo.nick = body.substring(0, sp);
+						int paren = sig.lastIndexOf(" (");
+						file_signature = paren >= 0 ? sig.substring(0, paren) : sig;
+						if (file_signature.startsWith("TTH:")) {
+							file_tth = file_signature.substring(4);
+						}
+						if (paren >= 0) {
+							int close = sig.indexOf(')', paren);
+							if (close > paren) sr_hub_address = sig.substring(paren + 2, close);
+						}
+					}
 
 				} else if (command.equals("HubName")) {
 					hubname_s = new String(input, beg + 1, input.length - beg

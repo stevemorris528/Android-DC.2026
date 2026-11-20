@@ -1975,58 +1975,115 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public void onCommand(DCMessage dcMessage) {
 			HubSession session = getSession(hubKey);
 			if (session != null) {
+				dcMessage.hubname_s = session.hubIp; // which hub the result came from (used to download it)
 				if (session.search_handler != null)
 					session.search_handler.onCommand(dcMessage);
-				session.search_results.add(dcMessage);
+				synchronized (session.search_results) {
+					if (session.search_results.size() < 2000) session.search_results.add(dcMessage);
+				}
 			}
 		}
 	}
-	
+
+	/**
+	 * Answers other users' searches off the hub reader thread (a slow answer must never stall the hub
+	 * connection). Bounded: on a busy hub, searches beyond the queue are dropped rather than piling up.
+	 */
+	private final java.util.concurrent.ThreadPoolExecutor searchReplyExecutor =
+			new java.util.concurrent.ThreadPoolExecutor(1, 1, 30, java.util.concurrent.TimeUnit.SECONDS,
+					new java.util.concurrent.ArrayBlockingQueue<Runnable>(32),
+					new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy());
+	private java.net.DatagramSocket searchUdpSocket;
+
 	private class MyIncomingSearchHandler implements DCCommand {
 		private String hubKey;
 		public MyIncomingSearchHandler(String hubKey) { this.hubKey = hubKey; }
 		@Override
 		public void onCommand(DCMessage msg) {
-			// Hub sent a search request. If we have the file, we reply with $SR
 			if (msg.search_ip_port == null || msg.search_term == null) return;
-			HubSession session = getSession(hubKey);
-			if (session == null || session.client == null) return;
-
-			Log.d("andcpp", "Received search request for: " + msg.search_term);
-
-			// Check if we have the file
-			// Search term format: F?T?0?1?searchterm
-			String term = msg.search_term;
-			if (term.startsWith("F?T?0?1?")) {
-				term = term.substring(8);
-			}
-			term = term.replace('$', ' '); // libjdcpp replaces space with $ in searchForFile, so we might receive it back
-
-			File foundFile = uploadManager.resolveSharedFile(term);
-			if (foundFile != null && foundFile.exists() && foundFile.isFile()) {
-				Log.d("andcpp", "Found file for search: " + foundFile.getAbsolutePath());
+			final String target = msg.search_ip_port;
+			final String term = msg.search_term;
+			searchReplyExecutor.execute(() -> {
 				try {
-					String tth = com.phinmadvader.andcpp.util.TTH.calculateTTH(foundFile);
-					String ourIp = resolveAdvertiseIp(session);
-					int ourPort = uploadManager.getPort();
-					
-					int freeSlots = uploadManager.getFreeSlots();
-					int maxSlots = uploadManager.getMaxSlots();
-					String slotStr = freeSlots + "/" + maxSlots;
-
-					String sr;
-					if (session.prefs.active && uploadManager.isListening() && ourIp != null) {
-						ourPort = uploadManager.getPort();
-						sr = "$SR " + session.myuser.nick + " Share\\" + foundFile.getName() + "\u0005" + foundFile.length() + " " + slotStr + " Hub:" + session.hubIp + " (" + ourIp + ":" + ourPort + ")\u0005TTH:" + tth;
-					} else {
-						// Passive search response or listener not ready
-						sr = "$SR " + session.myuser.nick + " Share\\" + foundFile.getName() + "\u0005" + foundFile.length() + " " + slotStr + " Hub:" + session.hubIp + "\u0005TTH:" + tth;
-					}
-					session.client.sendRaw(sr);
+					replyToSearch(hubKey, target, term);
 				} catch (Exception e) {
-					Log.e("andcpp", "Failed to send SR", e);
+					Log.e("andcpp", "Failed to answer search", e);
 				}
+			});
+		}
+	}
+
+	/**
+	 * $Search <Hub:nick | ip:port> <sizeRestricted>?<isMax>?<size>?<type>?<pattern>
+	 * Passive searchers (Hub:nick) get results through the hub with "\x05nick" appended (max 5);
+	 * active searchers (ip:port) get them by UDP (max 10).
+	 */
+	private void replyToSearch(String hubKey, String target, String term) throws Exception {
+		HubSession session = getSession(hubKey);
+		if (session == null || session.client == null || session.myuser == null || uploadManager == null
+				|| session.status != DCClientStatus.CONNECTED) return;
+		String myNick = session.myuser.nick;
+
+		String[] q = term.split("\\?", 5);
+		if (q.length < 5) return;
+		boolean sizeRestricted = "T".equals(q[0]);
+		boolean isMax = "T".equals(q[1]);
+		long size;
+		int type;
+		try {
+			size = Long.parseLong(q[2]);
+			type = Integer.parseInt(q[3]);
+		} catch (NumberFormatException e) {
+			return;
+		}
+		String pattern = q[4];
+
+		boolean passiveSearcher = target.startsWith("Hub:");
+		String searcherNick = passiveSearcher ? target.substring(4) : null;
+		if (passiveSearcher && searcherNick.equalsIgnoreCase(myNick)) return; // our own search echoed back
+		// Two passive users can never connect, so a passive searcher can't use our results while we're passive.
+		if (passiveSearcher && (session.prefs == null || !session.prefs.active)) return;
+
+		List<UploadManager.SearchHit> hits = uploadManager.searchShare(sizeRestricted, isMax, size, type, pattern,
+				passiveSearcher ? 5 : 10);
+		if (hits.isEmpty()) return;
+		Log.d("andcpp", "Search from " + target + " for '" + pattern + "' (type " + type + "): " + hits.size() + " result(s)");
+
+		String slots = uploadManager.getFreeSlots() + "/" + uploadManager.getMaxSlots();
+		String hubAddr = session.hubIp + ":" + session.hubPort;
+		String hubName = (session.hubName != null && !session.hubName.trim().isEmpty()) ? session.hubName.trim() : hubAddr;
+
+		for (UploadManager.SearchHit h : hits) {
+			String sr;
+			if (h.dir) {
+				sr = "$SR " + myNick + " " + h.path + " " + slots + "\u0005" + hubName + " (" + hubAddr + ")";
+			} else {
+				sr = "$SR " + myNick + " " + h.path + "\u0005" + h.size + " " + slots + "\u0005TTH:" + h.tth
+						+ " (" + hubAddr + ")";
 			}
+			if (passiveSearcher) {
+				session.client.sendRaw(sr + "\u0005" + searcherNick); // the hub routes it to the searcher
+			} else {
+				sendSearchResultUdp(target, sr + "|");
+			}
+		}
+	}
+
+	private void sendSearchResultUdp(String ipPort, String sr) {
+		int colon = ipPort.lastIndexOf(':');
+		if (colon <= 0) return;
+		try {
+			int port = Integer.parseInt(ipPort.substring(colon + 1).trim());
+			java.net.InetAddress addr = java.net.InetAddress.getByName(ipPort.substring(0, colon).trim());
+			synchronized (this) {
+				if (searchUdpSocket == null || searchUdpSocket.isClosed()) {
+					searchUdpSocket = new java.net.DatagramSocket();
+				}
+				byte[] data = sr.getBytes("ISO-8859-1"); // same encoding as hub messages
+				searchUdpSocket.send(new java.net.DatagramPacket(data, data.length, addr, port));
+			}
+		} catch (Exception e) {
+			Log.w("andcpp", "Could not send search result to " + ipPort + ": " + e.getMessage());
 		}
 	}
 
@@ -3163,12 +3220,24 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		stopSelf();
 	}
 
+	/** Sends searches in order, off the UI thread (network on the main thread crashes the app). */
+	private final java.util.concurrent.ExecutorService searchSendExecutor =
+			java.util.concurrent.Executors.newSingleThreadExecutor();
+
 	public void make_search(String hubKey, String searchtext) {
-		HubSession session = getSession(hubKey);
+		final HubSession session = getSession(hubKey);
 		if (session != null && session.client != null) {
 			session.search_results.clear();
 			Log.d("andcpp", "dcpp_service Making search request to " + session.hubIp + ":" + session.hubPort + ": " + searchtext);
-			session.client.searchForFile(searchtext, session.myuser, 1);
+			searchSendExecutor.execute(() -> {
+				try {
+					if (session.client != null) {
+						session.client.searchForFile(searchtext, session.myuser, 1);
+					}
+				} catch (Exception e) {
+					Log.e("andcpp", "Failed to send search to " + session.hubIp, e);
+				}
+			});
 		}
 	}
 	
@@ -3328,6 +3397,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		super.onDestroy();
 		saveDownloadsStateNow();
 		saveAllTimeTotals();
+		searchReplyExecutor.shutdownNow();
+		searchSendExecutor.shutdownNow();
+		synchronized (this) {
+			if (searchUdpSocket != null) {
+				searchUdpSocket.close();
+				searchUdpSocket = null;
+			}
+		}
 
 		if (wifiOnlyPrefListener != null) {
 			getSharedPreferences(Constants.PREFS_NAME, 0)

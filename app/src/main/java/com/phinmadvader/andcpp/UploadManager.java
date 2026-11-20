@@ -764,6 +764,115 @@ public class UploadManager {
         return bos.toByteArray();
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Answering other users' searches (from the in-memory share index: never hashes anything)
+    // ---------------------------------------------------------------------------------------------
+
+    /** One search match. path is the DC path, e.g. "Share\Music\a.mp3" (directories without trailing '\'). */
+    public static final class SearchHit {
+        public final String path;
+        public final long size;
+        public final String tth;   // null for directories
+        public final boolean dir;
+
+        SearchHit(String path, long size, String tth, boolean dir) {
+            this.path = path;
+            this.size = size;
+            this.tth = tth;
+            this.dir = dir;
+        }
+    }
+
+    private static final String[][] SEARCH_TYPE_EXTENSIONS = {
+            null, null,                                                                          // 0, 1 = any
+            {"mp3", "mp2", "wav", "au", "rm", "mid", "sm", "flac", "ogg", "m4a", "aac", "wma", "ape", "opus"}, // 2 audio
+            {"zip", "arj", "rar", "lzh", "gz", "z", "arc", "pak", "7z", "bz2", "tar", "xz"},     // 3 compressed
+            {"doc", "docx", "txt", "wri", "pdf", "ps", "tex", "odt", "rtf", "epub"},             // 4 document
+            {"pm", "exe", "bat", "com", "apk", "msi"},                                           // 5 executable
+            {"gif", "jpg", "jpeg", "bmp", "pcx", "png", "wmf", "psd", "webp"},                   // 6 picture
+            {"mpg", "mpeg", "avi", "asf", "mov", "mkv", "mp4", "wmv", "m4v", "webm", "ts"},      // 7 video
+    };
+
+    /**
+     * Searches our share. type: NMDC data type (1 any, 2-7 by extension, 8 folders, 9 TTH).
+     * pattern: search words separated by '$' (or "TTH:<hash>" for type 9).
+     */
+    public List<SearchHit> searchShare(boolean sizeRestricted, boolean isMax, long size, int type,
+                                       String pattern, int limit) {
+        List<SearchHit> hits = new ArrayList<>();
+        if (pattern == null || limit <= 0) return hits;
+
+        if (type == 9) { // TTH
+            String hash = pattern.regionMatches(true, 0, "TTH:", 0, 4) ? pattern.substring(4) : pattern;
+            File f = fileByTth.get(hash.trim().toUpperCase(java.util.Locale.ROOT));
+            String rel = (f != null && f.isFile()) ? sharePathOf(f) : null;
+            if (rel != null) hits.add(new SearchHit(rel, f.length(), hash.trim().toUpperCase(java.util.Locale.ROOT), false));
+            return hits;
+        }
+
+        ShareDir root = shareTree;
+        if (root == null) return hits;
+        List<String> terms = new ArrayList<>();
+        for (String t : pattern.split("\\$")) {
+            if (!t.trim().isEmpty()) terms.add(t.trim().toLowerCase(java.util.Locale.ROOT));
+        }
+        if (terms.isEmpty()) return hits;
+        searchDir(root, root.name, terms, sizeRestricted, isMax, size, type, limit, hits);
+        return hits;
+    }
+
+    private void searchDir(ShareDir dir, String dirPath, List<String> terms, boolean sizeRestricted,
+                           boolean isMax, long size, int type, int limit, List<SearchHit> hits) {
+        for (ShareDir d : dir.dirs) {
+            if (hits.size() >= limit) return;
+            String p = dirPath + "\\" + d.name;
+            if ((type <= 1 || type == 8) && matchesAll(p, terms)) {
+                hits.add(new SearchHit(p, 0, null, true));
+            }
+            searchDir(d, p, terms, sizeRestricted, isMax, size, type, limit, hits);
+        }
+        if (type == 8) return; // folders only
+        String[] exts = (type >= 0 && type < SEARCH_TYPE_EXTENSIONS.length) ? SEARCH_TYPE_EXTENSIONS[type] : null;
+        for (ShareFile f : dir.files) {
+            if (hits.size() >= limit) return;
+            if (f.tth == null) continue; // not shared until hashed
+            if (sizeRestricted && (isMax ? f.size > size : f.size < size)) continue;
+            if (exts != null && !hasExtension(f.name, exts)) continue;
+            String p = dirPath + "\\" + f.name;
+            if (matchesAll(p, terms)) hits.add(new SearchHit(p, f.size, f.tth, false));
+        }
+    }
+
+    private static boolean matchesAll(String path, List<String> terms) {
+        String lower = path.toLowerCase(java.util.Locale.ROOT);
+        for (String t : terms) {
+            if (!lower.contains(t)) return false;
+        }
+        return true;
+    }
+
+    private static boolean hasExtension(String name, String[] exts) {
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        String ext = name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+        for (String e : exts) {
+            if (e.equals(ext)) return true;
+        }
+        return false;
+    }
+
+    /** DC path ("Share\a\b.mkv") of a shared file, or null if it is outside the share. */
+    private String sharePathOf(File f) {
+        try {
+            String root = new File(Settings.getDCDownloadsDirectory(service)).getCanonicalPath() + File.separator;
+            String p = f.getCanonicalPath();
+            if (!p.startsWith(root)) return null;
+            return "Share\\" + p.substring(root.length()).replace(File.separatorChar, '\\');
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     private void writePartialDir(org.xmlpull.v1.XmlSerializer s, ShareDir dir, boolean recursive) throws IOException {
         s.startTag(null, "Directory");
         s.attribute(null, "Name", dir.name);

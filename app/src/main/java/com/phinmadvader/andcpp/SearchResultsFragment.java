@@ -51,16 +51,34 @@ public class SearchResultsFragment extends Fragment {
 						
 						if (i < 0 || i >= searchResults.size()) return;
 						
-						// Download File
 						DCMessage selected_search_result = searchResults.get(i);
 						String path = selected_search_result.file_path;
 						long file_size = selected_search_result.file_size;
 						String nick = selected_search_result.hisinfo.nick;
+						if (mainActivity == null || mainActivity.mService == null || path == null || nick == null) return;
+
+						// The hub this result came from (set by the service); fall back to any connected hub.
+						String hubIp = selected_search_result.hubname_s;
+						if (hubIp == null || mainActivity.mService.get_status(hubIp) != DCPPService.DCClientStatus.CONNECTED) {
+							hubIp = null;
+							for (DCPPService.HubSession s : mainActivity.mService.getActiveSessions()) {
+								if (s.status == DCPPService.DCClientStatus.CONNECTED) { hubIp = s.hubIp; break; }
+							}
+						}
+						if (hubIp == null) {
+							Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
+							return;
+						}
+
+						// Folder result: open that user's file list to download the folder from there.
+						if (selected_search_result.is_dir_result) {
+							Toast.makeText(getActivity(), "Opening " + nick + "'s file list", Toast.LENGTH_SHORT).show();
+							mainActivity.open_file_list(hubIp, new DCUserComparable(nick));
+							return;
+						}
 
 						String[] file_parts = path.split("\\\\");
 						String filename = file_parts[file_parts.length - 1];
-
-						Log.e("andcpp", path);
 
 						// Check if file already exists in downloads to allow reopening
 						String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + filename;
@@ -70,13 +88,8 @@ public class SearchResultsFragment extends Fragment {
 							return;
 						}
 
-						if (mainActivity == null || mainActivity.mService == null || mainActivity.mService.get_status() != DCPPService.DCClientStatus.CONNECTED) {
-							Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
-							return;
-						}
-						
-						// Download File
 						ConfirmDownloadFragment cdf = ConfirmDownloadFragment.newInstance(
+								hubIp,
 								nick,
 								localPath,
 								path,
@@ -103,8 +116,19 @@ public class SearchResultsFragment extends Fragment {
 		if (sr == null || sr.file_path == null || sr.hisinfo == null) return;
 		Runnable action = () -> {
 			try {
+				// The same user answers once per hub we're on: show each result only once.
+				if (searchResults != null) {
+					for (DCMessage existing : searchResults) {
+						if (existing.hisinfo != null && sr.hisinfo.nick != null
+								&& sr.hisinfo.nick.equals(existing.hisinfo.nick)
+								&& sr.file_path.equals(existing.file_path)) {
+							return;
+						}
+					}
+				}
 				String[] file_parts = sr.file_path.split("\\\\");
 				String name = file_parts.length > 0 ? file_parts[file_parts.length - 1] : sr.file_path;
+				if (sr.is_dir_result) name = "[Folder] " + name;
 				name = (sr.hisinfo.nick != null ? sr.hisinfo.nick : "Unknown") + ": " + name;
 
 				DCFileList entry = new DCFileList(name, sr.file_size);

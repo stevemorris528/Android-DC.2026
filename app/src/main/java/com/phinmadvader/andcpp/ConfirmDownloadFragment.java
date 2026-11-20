@@ -13,8 +13,14 @@ import android.widget.Toast;
 public class ConfirmDownloadFragment extends DialogFragment {
 
     public static ConfirmDownloadFragment newInstance(String nick, String localFilePath, String remotePath, long fileSize, String fileName) {
+        return newInstance(null, nick, localFilePath, remotePath, fileSize, fileName);
+    }
+
+    /** hubIp: the hub the user is on (search results come from a specific hub); null = first connected hub. */
+    public static ConfirmDownloadFragment newInstance(String hubIp, String nick, String localFilePath, String remotePath, long fileSize, String fileName) {
         ConfirmDownloadFragment f = new ConfirmDownloadFragment();
         Bundle args = new Bundle();
+        args.putString("hubIp", hubIp);
         args.putString("nick", nick);
         args.putString("localFilePath", localFilePath);
         args.putString("remotePath", remotePath);
@@ -32,6 +38,7 @@ public class ConfirmDownloadFragment extends DialogFragment {
         final String remotePath = args != null ? args.getString("remotePath") : "";
         final long fileSize = args != null ? args.getLong("fileSize") : 0;
         final String fileName = args != null ? args.getString("fileName") : "";
+        final String hubIp = args != null ? args.getString("hubIp") : null;
 
         AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         LayoutInflater inflater = getActivity().getLayoutInflater();
@@ -43,10 +50,15 @@ public class ConfirmDownloadFragment extends DialogFragment {
                     public void onClick(DialogInterface dialog, int id) {
                         MainActivity mainActivity = (MainActivity) getActivity();
                         if (mainActivity != null && mainActivity.mService != null) {
-                            mainActivity.mService.download_file(
-                                    nick,
-                                    localFilePath, remotePath,
-                                    fileSize);
+                            if (hubIp != null) {
+                                mainActivity.mService.download_file(hubIp, nick,
+                                        localFilePath, remotePath, fileSize, null, null);
+                            } else {
+                                mainActivity.mService.download_file(
+                                        nick,
+                                        localFilePath, remotePath,
+                                        fileSize);
+                            }
 
                             Toast.makeText(getActivity(),
                                     "Download Started",
