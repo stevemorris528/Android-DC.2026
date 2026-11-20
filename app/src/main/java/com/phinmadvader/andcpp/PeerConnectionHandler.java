@@ -347,6 +347,17 @@ public class PeerConnectionHandler implements Runnable {
         return null;
     }
 
+    /**
+     * Shortly after start the share index may not know every file yet. "$Error File Not Available" would make
+     * the other client drop us as a source for good, so answer "busy" instead: it retries later.
+     */
+    private boolean replyNotReadyYet(MessageHandler handler, String requestedFile) {
+        handler.send_msg("$MaxedOut");
+        Log.i("andcpp", "Share index not ready yet; sent $MaxedOut to " + hisNick + " for " + requestedFile
+                + " (will retry)");
+        return false;
+    }
+
     /** Serves one request. Returns true to keep the connection open for further requests. */
     private boolean serveRequest(MessageHandler handler, DCMessage req) throws IOException, InterruptedException {
         boolean adc = "ADCGET".equals(req.command);
@@ -358,6 +369,9 @@ public class PeerConnectionHandler implements Runnable {
         // download a whole folder (e.g. from search results). Uncompressed XML; no slot needed.
         if (adc && "list".equals(req.adc_type)) {
             byte[] xml = uploadManager.buildPartialFileList(requestedFile, req.adc_recursive);
+            if (xml == null && !uploadManager.isShareIndexReady()) {
+                return replyNotReadyYet(handler, requestedFile);
+            }
             if (xml == null) {
                 handler.send_msg("$Error File Not Available");
                 Log.w("andcpp", "Partial list requested for unknown directory: " + requestedFile);
@@ -373,6 +387,9 @@ public class PeerConnectionHandler implements Runnable {
         }
 
         File fileToUpload = (requestedFile != null) ? uploadManager.resolveSharedFile(requestedFile) : null;
+        if ((fileToUpload == null || !fileToUpload.exists()) && !uploadManager.isShareIndexReady()) {
+            return replyNotReadyYet(handler, requestedFile);
+        }
         if (fileToUpload == null || !fileToUpload.exists()) {
             handler.send_msg("$Error File Not Available");
             Log.w("andcpp", "Requested file not available: " + requestedFile);

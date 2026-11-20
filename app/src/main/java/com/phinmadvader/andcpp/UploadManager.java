@@ -56,6 +56,8 @@ public class UploadManager {
     private volatile Map<String, File> fileByTth = new ConcurrentHashMap<>();
     /** In-memory share tree of the last published list, for partial ($ADCGET list) requests. */
     private volatile ShareDir shareTree = null;
+    /** True once the first full file list refresh of this run has finished. */
+    private volatile boolean shareIndexReady = false;
     private java.util.concurrent.ScheduledExecutorService fileListScheduler;
     private final java.util.concurrent.atomic.AtomicBoolean quickRefreshPending =
             new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -482,9 +484,51 @@ public class UploadManager {
             t.setPriority(Thread.MIN_PRIORITY);
             return t;
         });
+        // Right away: serve TTH requests from the saved hash cache, so other clients can resume
+        // their downloads from us immediately after a restart (before the first refresh finishes).
+        fileListScheduler.execute(this::warmIndexFromCache);
         // First build shortly after start (after interrupted downloads are restored), then every 15 minutes.
         fileListScheduler.scheduleWithFixedDelay(this::refreshFileListSafe,
                 10, TimeUnit.MINUTES.toSeconds(FILE_LIST_REFRESH_MINUTES), TimeUnit.SECONDS);
+    }
+
+    /** True once this run's first full file list refresh has finished (all shared files are known). */
+    public boolean isShareIndexReady() {
+        return shareIndexReady;
+    }
+
+    /**
+     * Fills the TTH -> file table from the persisted hash cache, keeping only files that still exist with
+     * the same size and modification time. Cheap (no hashing); the full refresh replaces it later.
+     */
+    private void warmIndexFromCache() {
+        try {
+            synchronized (fileListLock) {
+                if (tthCache.isEmpty()) loadTthCache();
+                if (!fileByTth.isEmpty()) return; // a refresh already published the real index
+                Map<String, File> byTth = new ConcurrentHashMap<>();
+                for (Map.Entry<String, String> e : tthCache.entrySet()) {
+                    // key = absolutePath|size|lastModified
+                    String key = e.getKey();
+                    int p2 = key.lastIndexOf('|');
+                    int p1 = p2 > 0 ? key.lastIndexOf('|', p2 - 1) : -1;
+                    if (p1 <= 0) continue;
+                    try {
+                        File f = new File(key.substring(0, p1));
+                        long size = Long.parseLong(key.substring(p1 + 1, p2));
+                        long mtime = Long.parseLong(key.substring(p2 + 1));
+                        if (f.isFile() && f.length() == size && f.lastModified() == mtime) {
+                            byTth.put(e.getValue().toUpperCase(java.util.Locale.ROOT), f);
+                        }
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                fileByTth = byTth;
+                Log.i("andcpp", "Share index warmed from hash cache: " + byTth.size() + " files available for TTH requests");
+            }
+        } catch (Throwable t) {
+            Log.w("andcpp", "Could not warm share index from cache", t);
+        }
     }
 
     /** Rebuild soon (debounced), e.g. after a download finished. */
@@ -594,6 +638,7 @@ public class UploadManager {
             collectTths(tree, byTth);
             fileByTth = byTth;
             cachedShareSize = totalSize[0];
+            shareIndexReady = true;
 
             Log.i("andcpp", "File list refreshed: " + byTth.size() + " files, " + totalSize[0] + " bytes, "
                     + hashed + " newly hashed, in " + (System.currentTimeMillis() - started) + " ms");
