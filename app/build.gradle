@@ -2,22 +2,41 @@ plugins {
     id 'com.android.application'
 }
 
-// ---- Build number: +1 on every real build (assemble / install / bundle / Run), shown in About ----
-// Starts from an estimate of ~220 earlier builds (63 commits, Nov 11-20 2026, several test builds each).
+// ---- Build number, shown in About ----
+// build-number.properties holds the number of the last SUCCESSFUL build. A real build (assemble / install /
+// bundle / Run) is compiled as that number + 1, and the file is only updated once the build has succeeded,
+// so failed or cancelled builds don't use up numbers and each successful build gets exactly one number.
+// Started from an estimate of ~220 earlier builds (63 commits, Nov 11-20 2026, several test builds each).
 def buildNumberFile = file('build-number.properties')
-def buildNumberProps = new Properties()
-if (buildNumberFile.exists()) {
-    buildNumberFile.withInputStream { buildNumberProps.load(it) }
+def readLastBuildNumber = {
+    def p = new Properties()
+    if (buildNumberFile.exists()) {
+        buildNumberFile.withInputStream { p.load(it) }
+    }
+    (p.getProperty('BUILD_NUMBER') ?: '220') as int
 }
-int buildNumber = (buildNumberProps.getProperty('BUILD_NUMBER') ?: '220') as int
+int lastBuildNumber = readLastBuildNumber()
 // Count only actual builds, not Android Studio project syncs.
 boolean isRealBuild = gradle.startParameter.taskNames.any { it =~ /(?i)(assemble|install|bundle)/ }
-if (isRealBuild) {
-    buildNumber++
-    buildNumberProps.setProperty('BUILD_NUMBER', buildNumber.toString())
-    buildNumberFile.withOutputStream { buildNumberProps.store(it, 'Auto-incremented on every build. Do not edit by hand.') }
-}
+int buildNumber = isRealBuild ? lastBuildNumber + 1 : lastBuildNumber
 def buildDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern('dd.MM.yyyy'))
+
+if (isRealBuild) {
+    // Save the number only after the APK/bundle was produced. Several of these tasks can run in one build
+    // (e.g. assembleDebug + installDebug): the "only if higher" check makes that a single increment.
+    tasks.matching { it.name ==~ /(assemble|install|bundle)[A-Za-z]*/ }.configureEach { t ->
+        t.doLast {
+            if (readLastBuildNumber() < buildNumber) {
+                def p = new Properties()
+                p.setProperty('BUILD_NUMBER', buildNumber.toString())
+                buildNumberFile.withOutputStream {
+                    p.store(it, 'Number of the last successful build. Updated automatically; do not edit by hand.')
+                }
+                logger.lifecycle("Build number: ${buildNumber}")
+            }
+        }
+    }
+}
 
 android {
     buildFeatures {

@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -909,7 +910,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private Runnable generate_worker(
-			final ArrayBlockingQueue<DownloadObject> q,
+			final BlockingQueue<DownloadObject> q,
 			final List<DownloadObject> initiated_list) {
 		return new Runnable() {
 
@@ -1332,7 +1333,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private final List<Thread> normalWorkers = new ArrayList<>();
 	private final Set<String> activeNicks = new HashSet<>();
 	private final Set<DownloadObject> activeWorkerObjects = new HashSet<>();
-	private ArrayBlockingQueue<DownloadObject> normal_queue;
+	private LinkedBlockingQueue<DownloadObject> normal_queue; // unbounded: adding must never block (a full fixed-size queue froze the app)
 	private ArrayList<DownloadObject> initiated_downloads;
 
 	private final Object claimLock = new Object();
@@ -1476,9 +1477,17 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			Log.d("andcpp", "[DLTRACE] snapshot: queue=" + (normal_queue != null ? normal_queue.size() : -1)
 					+ " workersAlive=" + alive + " claimed=" + claimedObjs + " busyPeers=" + activeNicksSnapshot());
 			if (initiated_downloads == null) return;
+			// Only the first few items: with ~1000 queued downloads, listing all of them (each with a
+			// queue.contains() scan) every 30 s flooded the log and held this lock for a long time.
+			final int maxListed = 20;
+			int listed = 0;
+			int unfinished = 0;
 			synchronized (initiated_downloads) {
 				for (DownloadObject o : initiated_downloads) {
 					if (o.isFileList() || o.is_finished()) continue;
+					unfinished++;
+					if (listed >= maxListed) continue;
+					listed++;
 					HubSession hs = getSession(o.hubIp);
 					Log.d("andcpp", "[DLTRACE]   " + o.file_name + " nick=" + o.target_nick
 							+ " status=" + o.get_status() + " paused=" + o.isPaused
@@ -1488,6 +1497,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							+ " owned=" + isActiveWorkerObject(o)
 							+ " hub=" + (hs == null ? "none" : String.valueOf(hs.status)));
 				}
+			}
+			if (unfinished > listed) {
+				Log.d("andcpp", "[DLTRACE]   ... and " + (unfinished - listed) + " more unfinished downloads");
 			}
 		} catch (Exception e) {
 			Log.w("andcpp", "logQueueSnapshot failed", e);
@@ -2459,8 +2471,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public DCPPService() {
 		super();
 		initiated_downloads = new ArrayList<DownloadObject>();
-		normal_queue = new ArrayBlockingQueue<DownloadObject>(
-				Constants.MAX_DOWNLOAD_Q);
+		normal_queue = new LinkedBlockingQueue<DownloadObject>();
 	}
 
 	@Override
@@ -2470,7 +2481,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (initiated_downloads == null)
 			initiated_downloads = new ArrayList<DownloadObject>();
 		if (normal_queue == null)
-			normal_queue = new ArrayBlockingQueue<DownloadObject>(Constants.MAX_DOWNLOAD_Q);
+			normal_queue = new LinkedBlockingQueue<DownloadObject>();
 		mNotifyManager2 = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		
 		        uploadManager = new UploadManager(this);
