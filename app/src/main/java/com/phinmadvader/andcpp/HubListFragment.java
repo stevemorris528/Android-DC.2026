@@ -383,14 +383,7 @@ public class HubListFragment extends Fragment {
         }
 
         private void connectToHub(String hubIp) {
-            SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-            String nick = prefs.getString(Constants.SETTINGS_NICK_KEY, "");
-            if (nick.isEmpty()) {
-                Toast.makeText(mainActivity, "Please set a nickname in Login tab first", Toast.LENGTH_SHORT).show();
-                return;
-            }
-
-            String ip = hubIp;
+look at the curren search function             String ip = hubIp;
             String port = "411";
             String[] parts = hubIp.split(":");
             if (parts.length == 2) {
@@ -398,6 +391,14 @@ public class HubListFragment extends Fragment {
                 port = parts[1];
             } else if (parts.length > 2) {
                 Toast.makeText(mainActivity, "Invalid Hub Address", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Prefer the nick saved for this hub ("Edit Nick & Password"), else the Login tab nick.
+            String nick = mainActivity.resolveNickForHub(hubIp, ip, port);
+            if (nick.isEmpty()) {
+                Toast.makeText(mainActivity, "Set a nick for this hub (Edit Nick & Password) or on the Login tab", Toast.LENGTH_LONG).show();
+                showEditNickPasswordDialog(hubIp);
                 return;
             }
 
