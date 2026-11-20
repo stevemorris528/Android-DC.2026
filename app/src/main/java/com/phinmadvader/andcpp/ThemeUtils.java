@@ -34,6 +34,26 @@ public class ThemeUtils {
         prefs.edit().putString(PREF_COLOR_ACCENT, color).apply();
     }
 
+    /**
+     * The colour progress bars are drawn in (the theme's accent). Used for download speeds/totals so
+     * they always match the download progress bars. Before Android 5 bars aren't accent-tinted: teal.
+     */
+    public static int getAccentColor(Context context) {
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            android.util.TypedValue tv = new android.util.TypedValue();
+            if (context.getTheme().resolveAttribute(android.R.attr.colorAccent, tv, true)) {
+                if (tv.type >= android.util.TypedValue.TYPE_FIRST_COLOR_INT
+                        && tv.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT) {
+                    return tv.data;
+                }
+                if (tv.resourceId != 0) {
+                    return context.getResources().getColor(tv.resourceId);
+                }
+            }
+        }
+        return 0xFF00796B;
+    }
+
     public static void applyTheme(Activity activity) {
         boolean dark = isDarkMode(activity);
         String accent = getColorAccent(activity);

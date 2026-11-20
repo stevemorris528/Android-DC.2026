@@ -45,35 +45,76 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:visibility="gone">
+        android:visibility="visible">
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="?attr/appDividerColor" />
 
+        <!-- Totals on the left, matching speed on the right: DL row (teal), UL row (warm yellow) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:padding="16dp"
-            android:background="?attr/appHeaderBackgroundColor"
-            android:gravity="center_vertical">
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:background="?attr/appHeaderBackgroundColor">
 
-            <TextView
-                android:layout_width="0dp"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Uploads"
-                android:textAppearance="?android:attr/textAppearanceMedium"
-                android:textColor="?attr/appTextColorSecondary" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/txtUploadSpeed"
-                android:layout_width="wrap_content"
+                <TextView
+                    android:id="@+id/txtDlTotals"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textAppearance="?android:attr/textAppearanceSmall"
+                    android:textColor="#00796B"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/txtDownloadSpeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="8dp"
+                    android:textAppearance="?android:attr/textAppearanceSmall"
+                    android:textColor="#00796B" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textAppearance="?android:attr/textAppearanceSmall"
-                android:textColor="#00796B" />
+                android:layout_marginTop="4dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/txtUlTotals"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:textAppearance="?android:attr/textAppearanceSmall"
+                    android:textColor="#F9A825"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:id="@+id/txtUploadSpeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="8dp"
+                    android:textAppearance="?android:attr/textAppearanceSmall"
+                    android:textColor="#F9A825" />
+            </LinearLayout>
         </LinearLayout>
 
         <TextView
@@ -88,6 +129,15 @@
             android:textColor="?attr/appTextColorSecondary"
             android:singleLine="true"
             android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/txtNoUploads"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="12dp"
+            android:text="No uploads running"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?attr/appTextColorSecondary" />
 
         <LinearLayout
             android:id="@+id/uploadRowsContainer"

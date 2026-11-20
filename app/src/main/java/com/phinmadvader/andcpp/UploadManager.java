@@ -104,6 +104,10 @@ public class UploadManager {
         return stats;
     }
 
+    public long getTotalBytesUploaded() {
+        return totalBytesUploaded.get();
+    }
+
     public void addUploadedBytes(long bytes) {
         totalBytesUploaded.addAndGet(bytes);
     }

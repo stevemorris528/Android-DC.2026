@@ -38,6 +38,7 @@ public class DownloadListAdapter extends ArrayAdapter<DownloadItem> {
         TextView statusText = (TextView) convertView.findViewById(R.id.download_status_text);
         ProgressBar progress = (ProgressBar) convertView.findViewById(R.id.download_progress);
         TextView speed = (TextView) convertView.findViewById(R.id.download_speed);
+        speed.setTextColor(ThemeUtils.getAccentColor(context)); // same colour as the progress bar
 
         filename.setText(download.getFileName() + (download.isFolder() ? " (Folder)" : ""));
         

@@ -2461,6 +2461,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		};
 		getSharedPreferences(Constants.PREFS_NAME, 0)
 				.registerOnSharedPreferenceChangeListener(wifiOnlyPrefListener);
+
+		// Persist all-time DL/UL totals every 30 s (and on destroy).
+		saveExecutor.scheduleWithFixedDelay(() -> {
+			try {
+				saveAllTimeTotals();
+			} catch (Exception e) {
+				Log.w("andcpp", "Could not save all-time totals", e);
+			}
+		}, 30, 30, java.util.concurrent.TimeUnit.SECONDS);
 	}
 
 	/**
@@ -3177,7 +3186,55 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	public UploadManager.UploadStats getUploadStats() {
+		if (uploadManager == null) {
+			UploadManager.UploadStats empty = new UploadManager.UploadStats();
+			empty.connectedPeers = new ArrayList<>();
+			return empty;
+		}
 		return uploadManager.getUploadStats();
+	}
+
+	// ---- All-time transfer totals (persisted) ----
+	private static final String PREF_ALLTIME_DL = "alltime_dl_bytes";
+	private static final String PREF_ALLTIME_UL = "alltime_ul_bytes";
+	private final Object allTimeLock = new Object();
+	/** Session counter values already added to the stored all-time totals. */
+	private long dlSavedMark = com.phinvader.libjdcpp.MessageHandler.totalDownloadedBytes.get();
+	private long ulSavedMark = 0;
+
+	private long sessionUploadedBytes() {
+		return uploadManager != null ? uploadManager.getTotalBytesUploaded() : 0;
+	}
+
+	/** Adds bytes moved since the last save to the stored totals (never double counts). */
+	private void saveAllTimeTotals() {
+		synchronized (allTimeLock) {
+			long dl = com.phinvader.libjdcpp.MessageHandler.totalDownloadedBytes.get();
+			long ul = sessionUploadedBytes();
+			long dDl = dl >= dlSavedMark ? dl - dlSavedMark : dl; // counter restarted: count from 0
+			long dUl = ul >= ulSavedMark ? ul - ulSavedMark : ul;
+			if (dDl == 0 && dUl == 0) return;
+			SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, 0);
+			p.edit()
+					.putLong(PREF_ALLTIME_DL, p.getLong(PREF_ALLTIME_DL, 0) + dDl)
+					.putLong(PREF_ALLTIME_UL, p.getLong(PREF_ALLTIME_UL, 0) + dUl)
+					.apply();
+			dlSavedMark = dl;
+			ulSavedMark = ul;
+		}
+	}
+
+	/** {all-time downloaded, all-time uploaded} in bytes, including this session's unsaved part. */
+	public long[] getAllTimeTotals() {
+		synchronized (allTimeLock) {
+			SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, 0);
+			long dl = com.phinvader.libjdcpp.MessageHandler.totalDownloadedBytes.get();
+			long ul = sessionUploadedBytes();
+			return new long[]{
+					p.getLong(PREF_ALLTIME_DL, 0) + Math.max(0, dl - dlSavedMark),
+					p.getLong(PREF_ALLTIME_UL, 0) + Math.max(0, ul - ulSavedMark)
+			};
+		}
 	}
 
 	/** Upload connections that are still open (for the Uploads list). */
@@ -3269,6 +3326,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public void onDestroy() {
 		super.onDestroy();
 		saveDownloadsStateNow();
+		saveAllTimeTotals();
 
 		if (wifiOnlyPrefListener != null) {
 			getSharedPreferences(Constants.PREFS_NAME, 0)

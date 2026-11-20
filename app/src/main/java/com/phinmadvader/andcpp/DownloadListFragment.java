@@ -39,6 +39,10 @@ public class DownloadListFragment extends Fragment {
     private View uploadStatsLayout;
     private android.widget.TextView txtUploadSpeed;
     private android.widget.TextView txtUploadStats;
+    private android.widget.TextView txtDownloadSpeed;
+    private android.widget.TextView txtDlTotals;
+    private android.widget.TextView txtUlTotals;
+    private android.widget.TextView txtNoUploads;
     private android.widget.LinearLayout uploadRowsContainer;
     /** Reused row views (download_row_element), one per open upload connection. */
     private final List<View> uploadRows = new ArrayList<>();
@@ -56,6 +60,15 @@ public class DownloadListFragment extends Fragment {
         txtUploadSpeed = (android.widget.TextView) root.findViewById(R.id.txtUploadSpeed);
         txtUploadStats = (android.widget.TextView) root.findViewById(R.id.txtUploadStats);
         uploadRowsContainer = (android.widget.LinearLayout) root.findViewById(R.id.uploadRowsContainer);
+        txtDownloadSpeed = (android.widget.TextView) root.findViewById(R.id.txtDownloadSpeed);
+        txtDlTotals = (android.widget.TextView) root.findViewById(R.id.txtDlTotals);
+        txtUlTotals = (android.widget.TextView) root.findViewById(R.id.txtUlTotals);
+        txtNoUploads = (android.widget.TextView) root.findViewById(R.id.txtNoUploads);
+
+        // DL totals and speed use the same colour as the download progress bars (theme accent).
+        int dlColor = ThemeUtils.getAccentColor(mainActivity);
+        txtDlTotals.setTextColor(dlColor);
+        txtDownloadSpeed.setTextColor(dlColor);
 
         Button btnClear = (Button) root.findViewById(R.id.btnClearFinished);
         btnClear.setOnClickListener(v -> {
@@ -102,21 +115,41 @@ public class DownloadListFragment extends Fragment {
         downloadList.addAll(newList);
         adapter.notifyDataSetChanged();
 
-        updateUploadStats();
+        try {
+            updateUploadStats();
+        } catch (Exception e) {
+            // Never let a panel problem hide it silently: log it and keep the panel on screen.
+            android.util.Log.e("andcpp", "Transfers panel update failed", e);
+        }
     }
 
     private void updateUploadStats() {
         UploadManager.UploadStats stats = mainActivity.mService.getUploadStats();
         List<PeerConnectionHandler> uploads = mainActivity.mService.getActiveUploads();
-        if (uploads.isEmpty() && stats.queueLength == 0 && stats.currentSpeed <= 0 && stats.completedCount == 0) {
-            uploadStatsLayout.setVisibility(View.GONE);
-            return;
-        }
-        uploadStatsLayout.setVisibility(View.VISIBLE);
 
-        // Header: total speed, like a download row's speed text.
+        // Total download speed: sum of everything currently downloading (folders sum their own files).
+        double downloadSpeed = 0;
+        for (DownloadItem item : downloadList) {
+            if (item.isFolder() || item.get_status() == DCConstants.DownloadStatus.DOWNLOADING) {
+                downloadSpeed += item.avg_speed();
+            }
+        }
+        long totalDownloaded = com.phinvader.libjdcpp.MessageHandler.totalDownloadedBytes.get();
+        long[] allTime = mainActivity.mService.getAllTimeTotals();
+
+        // Always shown, so speeds, totals and running uploads are visible at a glance.
+        uploadStatsLayout.setVisibility(View.VISIBLE);
+        txtNoUploads.setVisibility(uploads.isEmpty() ? View.VISIBLE : View.GONE);
+
+        // Header: total speeds, like a row's speed text.
+        FileSize dlSpeedFs = new FileSize(downloadSpeed);
+        txtDownloadSpeed.setText(String.format(java.util.Locale.US, "⬇ %.2f %s/s", dlSpeedFs.fileSize, dlSpeedFs.unit));
         FileSize speedFs = new FileSize(stats.currentSpeed);
         txtUploadSpeed.setText(String.format(java.util.Locale.US, "⬆ %.2f %s/s", speedFs.fileSize, speedFs.unit));
+
+        // Totals: this session, then all time in brackets (colours come from the layout: DL teal, UL warm yellow).
+        txtDlTotals.setText("DL: " + formatSize(totalDownloaded) + "  (" + formatSize(allTime[0]) + ")");
+        txtUlTotals.setText("UL: " + formatSize(stats.totalBytes) + "  (" + formatSize(allTime[1]) + ")");
 
         FileSize totalFs = new FileSize(stats.totalBytes);
         String summary = String.format(java.util.Locale.US, "Active: %d | Queued: %d | Total: %.2f %s | Done: %d | Failed: %d",
@@ -131,6 +164,9 @@ public class DownloadListFragment extends Fragment {
         LayoutInflater inflater = LayoutInflater.from(mainActivity);
         while (uploadRows.size() < uploads.size()) {
             View row = inflater.inflate(R.layout.download_row_element, uploadRowsContainer, false);
+            // Upload rows: warm yellow progress bar and speed (download rows stay teal).
+            tintProgress((android.widget.ProgressBar) row.findViewById(R.id.download_progress), COLOR_UL);
+            ((android.widget.TextView) row.findViewById(R.id.download_speed)).setTextColor(COLOR_UL);
             if (!uploadRows.isEmpty()) {
                 View divider = new View(mainActivity);
                 divider.setLayoutParams(new android.widget.LinearLayout.LayoutParams(
@@ -149,6 +185,37 @@ public class DownloadListFragment extends Fragment {
         }
         for (int i = 0; i < uploads.size(); i++) {
             bindUploadRow(uploadRows.get(i), uploads.get(i));
+        }
+    }
+
+    /** Upload colour (warm yellow). The download colour is the theme accent, see ThemeUtils.getAccentColor(). */
+    private static final int COLOR_UL = 0xFFF9A825;
+
+    private static String formatSize(long bytes) {
+        FileSize fs = new FileSize(bytes);
+        return String.format(java.util.Locale.US, "%.2f %s", fs.fileSize, fs.unit);
+    }
+
+    private static void appendColored(android.text.SpannableStringBuilder sb, String text, int color) {
+        int start = sb.length();
+        sb.append(text);
+        sb.setSpan(new android.text.style.ForegroundColorSpan(color), start, sb.length(),
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    /** Tints a row's progress bar (determinate and spinning) in the given colour. */
+    private static void tintProgress(android.widget.ProgressBar bar, int color) {
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            android.content.res.ColorStateList csl = android.content.res.ColorStateList.valueOf(color);
+            bar.setProgressTintList(csl);
+            bar.setIndeterminateTintList(csl);
+        } else {
+            if (bar.getProgressDrawable() != null) {
+                bar.getProgressDrawable().mutate().setColorFilter(color, android.graphics.PorterDuff.Mode.SRC_IN);
+            }
+            if (bar.getIndeterminateDrawable() != null) {
+                bar.getIndeterminateDrawable().mutate().setColorFilter(color, android.graphics.PorterDuff.Mode.SRC_IN);
+            }
         }
     }
 

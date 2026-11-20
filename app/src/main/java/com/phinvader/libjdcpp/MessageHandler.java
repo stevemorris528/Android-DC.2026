@@ -22,6 +22,9 @@ public class MessageHandler {
 	private Socket tcp_scoket;
 	private Semaphore update_sem;
 	public OutputStream os;
+	/** Total file data received by all downloads since the app started (shown in the Transfers panel). */
+	public static final java.util.concurrent.atomic.AtomicLong totalDownloadedBytes =
+			new java.util.concurrent.atomic.AtomicLong(0);
 	private final ArrayBlockingQueue<DCMessage> message_queue;
 	Thread input_handler_thread;
 	private long dump_bytes_limit = 0;
@@ -117,6 +120,7 @@ public class MessageHandler {
 							if (initial.length > 0) {
 								output_file.write(initial);
 								dump_bytes += initial.length;
+								totalDownloadedBytes.addAndGet(initial.length);
 								messageBuffer.reset();
 							}
 
@@ -128,6 +132,7 @@ public class MessageHandler {
 								output_file.write(write_buffer, 0, s);
 								output_file.flush(); // Ensure writes are flushed immediately to persistent storage
 								dump_bytes += s;
+								totalDownloadedBytes.addAndGet(s);
 								if (downloadEntity != null) {
 									downloadEntity.downloadedSize = downloadEntity.startOffset + dump_bytes;
 								}

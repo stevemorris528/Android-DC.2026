@@ -149,6 +149,7 @@ public class MainActivity extends FragmentActivity implements
 	private MessageBoardFragment messageboard_fragment;
 	private UserListFragment userlist_fragment;
 	private DownloadListFragment downloadlist_fragment;
+	private TotalsFragment totals_fragment;
 	private SearchResultsFragment searchresult_fragment;
 
 	boolean exitFlag = false;
@@ -302,6 +303,7 @@ public class MainActivity extends FragmentActivity implements
 		messageboard_fragment = new MessageBoardFragment();
 		userlist_fragment = new UserListFragment();
 		downloadlist_fragment = new DownloadListFragment();
+		totals_fragment = new TotalsFragment();
 		searchresult_fragment = new SearchResultsFragment();
 
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_WELCOME,
@@ -321,6 +323,10 @@ public class MainActivity extends FragmentActivity implements
 		// Always make Downloads tab visible
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
 				downloadlist_fragment, "Downloads", false);
+
+		// Totals tab (all-time and session DL/UL), right after Downloads
+		tab_page_adapter.add_tab(TabPagerAdapter.TAB_TOTALS,
+				totals_fragment, "Totals", false);
 
 		// Always make Hub Users tab visible
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_USERLIST,
@@ -875,6 +881,10 @@ public class MainActivity extends FragmentActivity implements
 		if (downloadlist_fragment != null) {
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
 					downloadlist_fragment, "Downloads", false);
+		}
+		if (totals_fragment != null) {
+			tab_page_adapter.add_tab(TabPagerAdapter.TAB_TOTALS,
+					totals_fragment, "Totals", false);
 		}
 		// Build k: tabs above were added with notify=false; tell the pager or it crashes
 		// ("PagerAdapter changed the adapter's contents without calling notifyDataSetChanged").
