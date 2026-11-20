@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.phinmadvader.andcpp.util.TTH;
+import com.phinvader.libjdcpp.MessageHandler;
 
 import android.util.Log;
 
@@ -321,6 +322,16 @@ public class UploadManager {
         } catch (SocketException e) {
             Log.e("andcpp", "Failed to set socket timeout for passive upload", e);
         }
+    }
+
+    /** Upload connection already handshaken ($MyNick/$Lock exchanged) by the $ConnectToMe handler. */
+    public void handleHandshakenUploadConnection(Socket s, MessageHandler h, String hisNick, String hisLock) {
+        try {
+            s.setSoTimeout(30000);
+        } catch (SocketException e) {
+            Log.e("andcpp", "Failed to set socket timeout for handshaken upload", e);
+        }
+        registerAndExecute(new PeerConnectionHandler(s, this, h, hisNick, hisLock));
     }
     
     public List<PeerConnectionHandler> getActiveUploads() {

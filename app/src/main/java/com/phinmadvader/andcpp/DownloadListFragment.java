@@ -190,7 +190,8 @@ public class DownloadListFragment extends Fragment {
         
         final List<String> options = new ArrayList<>();
         if (status == DCConstants.DownloadStatus.DOWNLOADING || status == DCConstants.DownloadStatus.STARTED || 
-            status == DCConstants.DownloadStatus.INITIATED || status == DCConstants.DownloadStatus.QUEUED) {
+            status == DCConstants.DownloadStatus.INITIATED || status == DCConstants.DownloadStatus.QUEUED
+            || status == DCConstants.DownloadStatus.WAITING_FOR_PEER) {
             options.add("Pause");
         } else if (status == DCConstants.DownloadStatus.INTERUPTED || status == DCConstants.DownloadStatus.FAILED) {
             options.add("Resume");

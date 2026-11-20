@@ -840,6 +840,9 @@ public class MainActivity extends FragmentActivity implements
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
 					downloadlist_fragment, "Downloads", false);
 		}
+		// Build k: tabs above were added with notify=false; tell the pager or it crashes
+		// ("PagerAdapter changed the adapter's contents without calling notifyDataSetChanged").
+		tab_page_adapter.notifyDataSetChanged();
 		
 		// Refresh saved lists when service connects
 		Fragment savedFrag = tab_page_adapter.get_tab_fragment(TabPagerAdapter.TAB_SAVED_FILELISTS);

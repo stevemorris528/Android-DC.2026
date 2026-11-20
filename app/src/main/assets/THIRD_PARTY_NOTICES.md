@@ -1,0 +1,106 @@
+# Third-Party Software Notices and Licenses
+
+This document contains authoritative notices, dependency graphs, versions, licenses, copyright attributions, and packaging locations for all third-party software components included in the source code distribution and/or packaged within the Android DC++ APK.
+
+---
+
+## Summary of Distributed Components
+
+| Component Name | Version | Inclusion | License | Copyright / Attribution |
+| :--- | :--- | :--- | :--- | :--- |
+| **Android DC++ App Source** | 1.0.5 | Source ZIP & APK | GNU GPL v3.0 | Copyright © 2011–2026 Anish Shankar, Lakshminarayanan Srinivasan, Madhavan Malolan, and Android DC++ project contributors. |
+| **AnDCpp Core Library (libjdcpp)** | Original / Custom | Source ZIP & APK | GNU GPL v3.0 (derived/bundled) | Copyright © Anish Shankar, Lakshminarayanan Srinivasan, Madhavan Malolan. |
+| **Apache Commons Compress** | 1.26.2 | Source ZIP & APK | Apache License 2.0 | Copyright © 2002–2024 The Apache Software Foundation. |
+| **Apache Commons Codec** *(transitive via Commons Compress)* | 1.17.0 | APK (Transitive runtime) & Source ZIP | Apache License 2.0 | Copyright © 2002–2024 The Apache Software Foundation. |
+| **Apache Commons IO** *(transitive via Commons Compress)* | 2.16.1 | APK (Transitive runtime) & Source ZIP | Apache License 2.0 | Copyright © 2002–2024 The Apache Software Foundation. |
+| **Apache Commons Lang3** *(transitive via Commons Compress)* | 3.14.0 | APK (Transitive runtime) & Source ZIP | Apache License 2.0 | Copyright © 2001–2024 The Apache Software Foundation. |
+| **ACRA (Application Crash Report for Android)** | 4.5.0 | Source ZIP only (`app/libs/acra-4.5.0.jar`) | Apache License 2.0 | Copyright © 2010–2013 ACRA Team (Kevin Gaudin). |
+| **Android Support Library v4 & Components** | 28.0.0 (support-v4, support-compat, support-core-ui, support-core-utils, support-fragment, support-media-compat, collections, annotations, versionedparcelable, documentfile, loader, localbroadcastmanager, print, customview, viewpager, coordinatorlayout, drawerlayout, slidingpanelayout, interpolator, swiperefreshlayout, asynclayoutinflater, cursoradapter) | Source ZIP & APK | Apache License 2.0 | Copyright © The Android Open Source Project. |
+| **Android Architecture Components (Lifecycle & Core)** | 1.1.1 (lifecycle:runtime, common, viewmodel, livedata, livedata-core, core:common, runtime) | Source ZIP & APK | Apache License 2.0 | Copyright © The Android Open Source Project. |
+
+---
+
+## Detailed Component Notices & Licenses
+
+### 1. Android DC++ App Source & libjdcpp
+- **Name:** Android DC++ & libjdcpp
+- **Version:** 1.0.5
+- **Inclusion:** Source ZIP and APK
+- **License:** GNU General Public License v3.0 (GNU GPLv3)
+- **Copyright Notice:** 
+  Copyright © 2011-2026 Anish Shankar, Lakshminarayanan Srinivasan, Madhavan Malolan, and the Android DC++ project contributors.
+- **License Text:** See packaged in-app license viewer or root `LICENSE`.
+
+---
+
+### 2. Apache Commons Compress
+- **Name:** Apache Commons Compress
+- **Version:** 1.26.2
+- **Inclusion:** Source ZIP and APK
+- **License:** Apache License, Version 2.0
+- **Copyright Notice:**
+  Copyright © 2002–2024 The Apache Software Foundation.
+  This product includes software developed at The Apache Software Foundation (https://www.apache.org/).
+
+---
+
+### 3. Apache Commons Codec
+- **Name:** Apache Commons Codec
+- **Version:** 1.17.0
+- **Inclusion:** APK (Transitive dependency via Apache Commons Compress) & Source ZIP
+- **License:** Apache License, Version 2.0
+- **Copyright Notice:**
+  Copyright © 2002–2024 The Apache Software Foundation.
+  This product includes software developed at The Apache Software Foundation (https://www.apache.org/).
+
+---
+
+### 4. Apache Commons IO
+- **Name:** Apache Commons IO
+- **Version:** 2.16.1
+- **Inclusion:** APK (Transitive dependency via Apache Commons Compress) & Source ZIP
+- **License:** Apache License, Version 2.0
+- **Copyright Notice:**
+  Copyright © 2002–2024 The Apache Software Foundation.
+  This product includes software developed at The Apache Software Foundation (https://www.apache.org/).
+
+---
+
+### 5. Apache Commons Lang3
+- **Name:** Apache Commons Lang3
+- **Version:** 3.14.0
+- **Inclusion:** APK (Transitive dependency via Apache Commons Compress) & Source ZIP
+- **License:** Apache License, Version 2.0
+- **Copyright Notice:**
+  Copyright © 2001–2024 The Apache Software Foundation.
+  This product includes software developed at The Apache Software Foundation (https://www.apache.org/).
+
+---
+
+### 6. ACRA (Application Crash Report for Android)
+- **Name:** ACRA
+- **Version:** 4.5.0
+- **Inclusion:** Source ZIP only (`app/libs/acra-4.5.0.jar`) — *Note: Present in source repository libs, but not actively utilized or packaged in current APK builds.*
+- **License:** Apache License, Version 2.0
+- **Copyright Notice:**
+  Copyright © 2010–2013 ACRA Team (Kevin Gaudin).
+
+---
+
+### 7. Android Support Library & AndroidX Architecture Components
+- **Name:** Android Support Library & Architecture Components (support-v4, support-compat, lifecycle, etc.)
+- **Version:** Support Library: 28.0.0; Lifecycle/Core: 1.1.1
+- **Inclusion:** Source ZIP and APK
+- **License:** Apache License, Version 2.0
+- **Copyright Notice:**
+  Copyright © The Android Open Source Project. Licensed under the Apache License, Version 2.0.
+
+---
+
+## Full License Texts
+
+### Apache License 2.0
+See `apache-2.0.txt` in app assets and source distribution.
+
+### GNU General Public License v3.0 (GNU GPLv3)
+See `gpl-3.0.txt` in app assets and source distribution root `LICENSE`.

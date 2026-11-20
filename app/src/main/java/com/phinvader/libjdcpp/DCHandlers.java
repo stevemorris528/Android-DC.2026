@@ -14,6 +14,24 @@ public class DCHandlers {
 
 	}
 
+	public interface UploadHandlerCallback {
+		/**
+		 * Called when we connected out after a $ConnectToMe, exchanged $MyNick/$Lock, and found no pending
+		 * download for that peer: the SAME socket and MessageHandler continue as an upload connection.
+		 */
+		void handleHandshakenUploadConnection(Socket s, MessageHandler h, String hisNick, String hisLock);
+	}
+
+	private static volatile UploadHandlerCallback uploadCallback = null;
+
+	public static void setUploadCallback(UploadHandlerCallback callback) {
+		uploadCallback = callback;
+	}
+
+	/**
+	 * The only consumer of $ConnectToMe. In NMDC msg.connect_nick is the RECIPIENT (our own nick), so the peer is
+	 * identified from its $MyNick during the handshake, never from connect_nick.
+	 */
 	public static class MainDownloadHandler implements DCCommand {
 
 		private DCUser my_user;
@@ -29,61 +47,75 @@ public class DCHandlers {
 		}
 
 		@Override
-		public void onCommand(DCMessage msg) {
+		public void onCommand(final DCMessage msg) {
+			// Blocking connect/handshake must never run on the hub message router thread.
+			new Thread(new Runnable() {
+				@Override
+				public void run() {
+					handleConnectToMe(msg);
+				}
+			}, "ConnectToMe-handler").start();
+		}
+
+		private void handleConnectToMe(DCMessage msg) {
+			String ourNick = (my_user != null && my_user.nick != null) ? my_user.nick : "unknown";
+			android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe handler: connect_nick=" + msg.connect_nick
+					+ " (recipient, ours=" + ourNick + "), peer=" + msg.host_name + ":" + msg.port_number);
 			DCLogger.Log("in ConnectToMe handler: " + msg.toString());
-			String remote_ip = msg.host_name;
-			int remote_port = msg.port_number;
-			String targetNick = msg.connect_nick;
 
-			DCClient downloader = new DCClient();
-
-			DCMessage hisnick = null;
-			DCMessage rlock = null;
-
-			MessageHandler handlerLocal = null;
+			Socket s = null;
+			MessageHandler h = null;
 			try {
-				Socket s = new Socket();
-				s.connect(new java.net.InetSocketAddress(remote_ip, remote_port), 15000);
+				s = new Socket();
+				s.connect(new java.net.InetSocketAddress(msg.host_name, msg.port_number), 15000);
 				s.setSoTimeout(30000);
-				handlerLocal = new MessageHandler(s);
+				h = new MessageHandler(s);
 
-				handlerLocal.send_mynick(my_user);
-				handlerLocal.send_lock();
-				
+				// We connected out: we speak first ($MyNick, $Lock).
+				h.send_mynick(my_user);
+				h.send_lock();
+
+				DCMessage hisNick = null;
+				DCMessage rlock = null;
 				long startTime = System.currentTimeMillis();
-				while (hisnick == null || rlock == null) {
-					if (System.currentTimeMillis() - startTime > 20000) break;
-					DCMessage msg2 = handlerLocal.getNextMessage();
-					if (msg2 == null || "HubQuit".equals(msg2.command)) break;
-					if ("MyNick".equals(msg2.command)) hisnick = msg2;
-					if ("Lock".equals(msg2.command)) rlock = msg2;
+				while ((hisNick == null || rlock == null) && System.currentTimeMillis() - startTime < 20000) {
+					DCMessage m = h.getNextMessage(1000, java.util.concurrent.TimeUnit.MILLISECONDS);
+					if (m == null) continue;
+					if ("HubQuit".equals(m.command)) break;
+					if ("MyNick".equals(m.command)) hisNick = m;
+					if ("Lock".equals(m.command)) rlock = m;
 				}
 
+				if (hisNick == null || hisNick.hisinfo == null || hisNick.hisinfo.nick == null || rlock == null) {
+					android.util.Log.w("andcpp", "[DLTRACE] ConnectToMe handshake incomplete with " + msg.host_name + ":" + msg.port_number);
+					h.close();
+					return;
+				}
+
+				String peerNick = hisNick.hisinfo.nick;
+				DCDownloader.DownloadQueueEntity entity = downloaderManager.getDownloadEntityCaseInsensitive(peerNick);
+				android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: peer=" + peerNick + ", pendingDownloadFound=" + (entity != null));
+
+				if (entity != null) {
+					client.startDownloadingFile(entity, client, rlock, h);
+					return;
+				}
+
+				UploadHandlerCallback cb = uploadCallback;
+				if (cb != null) {
+					// Hand over the same, already handshaken connection instead of closing and reconnecting.
+					cb.handleHandshakenUploadConnection(s, h, peerNick, rlock.lock_s);
+				} else {
+					h.close();
+				}
 			} catch (Exception e) {
-				DCLogger.Log("ERROR - Peer connection failed: " + e.toString());
-				if (handlerLocal != null) handlerLocal.close();
-				return;
+				DCLogger.Log("ERROR - ConnectToMe connection failed: " + e.toString());
+				if (h != null) {
+					h.close();
+				} else if (s != null) {
+					try { s.close(); } catch (Exception ignored) {}
+				}
 			}
-
-			if (hisnick == null || hisnick.hisinfo == null || rlock == null) {
-				if (handlerLocal != null) handlerLocal.close();
-				return;
-			}
-
-			DCDownloader.DownloadQueueEntity downloadEntity = downloaderManager
-					.getDownloadEntity(hisnick.hisinfo.nick);
-			if (downloadEntity == null) {
-				// Try using targetNick from ConnectToMe if hisinfo.nick is not matching or null
-				downloadEntity = downloaderManager.getDownloadEntity(targetNick);
-			}
-
-			if (downloadEntity == null) {
-				handlerLocal.close();
-				return;
-			}
-
-			client.startDownloadingFile(downloadEntity, client, rlock,
-					handlerLocal);
 		}
 	}
 

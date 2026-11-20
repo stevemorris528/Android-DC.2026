@@ -26,6 +26,13 @@ public class DCClient {
 	private UsersHandler mainUserHandler;
 	private MessageRouter mainMessageRouter;
 	public DCDownloader downloadHandler;
+	/** Build m: register of pending download requests carried over from the previous hub connection. */
+	private DCDownloader keptDownloadHandler;
+
+	/** Build m: call before bootstrap() so a hub reconnect keeps pending download requests. */
+	public void adoptDownloadHandler(DCDownloader kept) {
+		this.keptDownloadHandler = kept;
+	}
 	public DCHandlers.MainDownloadHandler mainDownloader;
 	public DCRevconnect revConnectHandler;
 	private DCHandlers.BoardMessageHandler mainBoardMessageHandler;
@@ -174,7 +181,8 @@ public class DCClient {
 		mainMessageRouter = new MessageRouter(handler);
 		mainUserHandler = new UsersHandler();
 		mainBoardMessageHandler = new DCHandlers.BoardMessageHandler();
-		downloadHandler = new DCDownloader();
+		downloadHandler = (keptDownloadHandler != null) ? keptDownloadHandler : new DCDownloader();
+		keptDownloadHandler = null;
 		mainDownloader = new DCHandlers.MainDownloadHandler(myuser,
 				downloadHandler, this);
 		downloadHandler.initDownloadQ();
@@ -285,6 +293,11 @@ public class DCClient {
 		handler.send_search(searchString, myuser);
 	}
 	
+	/** Milliseconds since any byte was last read from this connection (a dead/half-open link grows without bound). */
+	public long getMillisSinceLastReceived() {
+		return handler != null ? handler.millisSinceLastReceived() : 0L;
+	}
+
 	public void sendRaw(String msg) {
 		if (handler != null) {
 			handler.send_msg(msg);

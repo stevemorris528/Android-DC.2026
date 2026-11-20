@@ -330,4 +330,14 @@ public class Settings extends Activity{
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
 		prefs.edit().putBoolean(Constants.SETTINGS_AUTO_RECONNECT_HUBS_KEY, autoReconnect).apply();
 	}
+
+	public static int getDownloadWorkers(Context c) {
+		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
+		return prefs.getInt(Constants.SETTINGS_DOWNLOAD_WORKERS_KEY, Constants.DEFAULT_DOWNLOAD_WORKERS);
+	}
+
+	public static void putDownloadWorkers(int workers, Context c) {
+		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
+		prefs.edit().putInt(Constants.SETTINGS_DOWNLOAD_WORKERS_KEY, workers).apply();
+	}
 }

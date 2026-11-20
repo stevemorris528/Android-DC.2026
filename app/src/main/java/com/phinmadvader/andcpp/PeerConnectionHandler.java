@@ -51,6 +51,11 @@ public class PeerConnectionHandler implements Runnable {
     }
 
     private UploadListener listener;
+
+    // Set only for connections handshaken by the $ConnectToMe handler (we connected out).
+    private MessageHandler preHandler = null;
+    private String preNick = null;
+    private String preLock = null;
     
     public PeerConnectionHandler(Socket socket, UploadManager uploadManager) {
         this(socket, uploadManager, true);
@@ -64,6 +69,14 @@ public class PeerConnectionHandler implements Runnable {
         if (uploadManager.getService() instanceof UploadListener) {
             this.listener = (UploadListener) uploadManager.getService();
         }
+    }
+
+    public PeerConnectionHandler(Socket socket, UploadManager uploadManager, MessageHandler existingHandler,
+            String hisNick, String hisLock) {
+        this(socket, uploadManager, false);
+        this.preHandler = existingHandler;
+        this.preNick = hisNick;
+        this.preLock = hisLock;
     }
 
     public String getHisNick() { return hisNick; }
@@ -101,7 +114,7 @@ public class PeerConnectionHandler implements Runnable {
             peerSocket.setSendBufferSize(64 * 1024);
             peerSocket.setReceiveBufferSize(64 * 1024);
 
-            handler = new MessageHandler(peerSocket);
+            handler = (preHandler != null) ? preHandler : new MessageHandler(peerSocket);
             
             // Get our session to get our identity
             DCUser myUser = null;
@@ -159,85 +172,88 @@ public class PeerConnectionHandler implements Runnable {
 
     private boolean performHandshake(MessageHandler handler, DCUser myUser) throws IOException, InterruptedException {
         long handshakeTimeout = 15000;
-        
-        Log.d("andcpp", "Starting handshake (isServer=" + isServer + ") with " + peerSocket.getRemoteSocketAddress());
-
-        if (!isServer) {
-            handler.send_mynick(myUser);
-            handler.send_lock();
-        }
-
-        // Handshake Phase 1: Identity Exchange
-        DCMessage hisNickMsg = null;
-        String hisLock = null;
-
         long startTime = System.currentTimeMillis();
-        while ((hisNickMsg == null || hisLock == null) && (System.currentTimeMillis() - startTime < handshakeTimeout)) {
-            DCMessage m = handler.getNextMessage(2000, TimeUnit.MILLISECONDS);
-            if (m == null) continue;
-            if ("HubQuit".equals(m.command)) throw new IOException("Peer closed connection during handshake");
-            if ("MyNick".equals(m.command)) {
-                hisNickMsg = m;
-                Log.d("andcpp", "Received $MyNick: " + m.hisinfo.nick);
-            }
-            if ("Lock".equals(m.command)) {
-                hisLock = m.lock_s;
-                Log.d("andcpp", "Received $Lock: " + m.lock_s);
-            }
-        }
+        String hisLock = null;
+        StringBuilder sentOrder = new StringBuilder();
 
-        if (hisNickMsg == null || hisNickMsg.hisinfo == null || hisLock == null) {
-            throw new IOException("Handshake failed: Peer identity or challenge not received");
-        }
-        this.hisNick = hisNickMsg.hisinfo.nick;
-        
-        if (isServer) {
-            com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity pendingDownload = null;
-            com.phinvader.libjdcpp.DCClient matchClient = null;
-            DCUser correctMyUser = null;
-            for (DCPPService.HubSession s : uploadManager.getService().getActiveSessions()) {
-                if (s.client != null && s.client.downloadHandler != null) {
-                    if (s.client.downloadHandler.downloadQ != null) {
-                        List<com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity> q = s.client.downloadHandler.downloadQ.get(hisNick);
-                        if (q != null && !q.isEmpty()) {
-                            pendingDownload = s.client.downloadHandler.getDownloadEntity(hisNick);
+        if (preHandler != null) {
+            // We connected out after a $ConnectToMe. The handler already sent $MyNick/$Lock and received the
+            // peer's, and found no pending download, so we continue as the uploader on the same connection.
+            this.hisNick = preNick;
+            hisLock = preLock;
+            sentOrder.append("MyNick, Lock (by ConnectToMe handler), ");
+            Log.d("andcpp", "Continuing pre-handshaken connection with " + hisNick);
+        } else {
+            Log.d("andcpp", "Starting handshake (isServer=" + isServer + ") with " + peerSocket.getRemoteSocketAddress());
+
+            if (!isServer) {
+                handler.send_mynick(myUser);
+                handler.send_lock();
+                sentOrder.append("MyNick, Lock, ");
+            }
+
+            // Handshake Phase 1: Identity Exchange
+            DCMessage hisNickMsg = null;
+            while ((hisNickMsg == null || hisLock == null) && (System.currentTimeMillis() - startTime < handshakeTimeout)) {
+                DCMessage m = handler.getNextMessage(2000, TimeUnit.MILLISECONDS);
+                if (m == null) continue;
+                if ("HubQuit".equals(m.command)) throw new IOException("Peer closed connection during handshake");
+                if ("MyNick".equals(m.command)) {
+                    hisNickMsg = m;
+                    Log.d("andcpp", "Received $MyNick: " + m.hisinfo.nick);
+                }
+                if ("Lock".equals(m.command)) {
+                    hisLock = m.lock_s;
+                    Log.d("andcpp", "Received $Lock: " + m.lock_s);
+                }
+            }
+
+            if (hisNickMsg == null || hisNickMsg.hisinfo == null || hisLock == null) {
+                throw new IOException("Handshake failed: Peer identity or challenge not received");
+            }
+            this.hisNick = hisNickMsg.hisinfo.nick;
+
+            if (isServer) {
+                com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity pendingDownload = null;
+                com.phinvader.libjdcpp.DCClient matchClient = null;
+                DCUser correctMyUser = null;
+                for (DCPPService.HubSession s : uploadManager.getService().getActiveSessions()) {
+                    if (s.client != null && s.client.downloadHandler != null
+                            && s.client.downloadHandler.hasPendingFor(hisNick)) {
+                        pendingDownload = s.client.downloadHandler.getDownloadEntityCaseInsensitive(hisNick);
+                        if (pendingDownload != null) {
                             correctMyUser = s.myuser;
                             matchClient = s.client;
                             break;
                         }
                     }
                 }
-            }
-            if (pendingDownload != null) {
-                Log.d("andcpp", "Intercepted incoming connection as pending active download for " + hisNick);
+                if (pendingDownload != null) {
+                    // The peer connected to our listening port because we sent it $ConnectToMe: this is our download.
+                    Log.d("andcpp", "Intercepted incoming connection as pending active download for " + hisNick);
+                    handler.send_mynick(correctMyUser);
+                    handler.send_lock();
+
+                    DCMessage rlockMsg = new DCMessage();
+                    rlockMsg.lock_s = hisLock;
+                    matchClient.startDownloadingFile(pendingDownload, matchClient, rlockMsg, handler);
+
+                    return false;
+                }
+
+                // Normal upload server path: answer with $MyNick then $Lock.
+                handler.send_mynick(myUser);
                 handler.send_lock();
-                handler.send_mynick(correctMyUser);
-                
-                DCMessage rlockMsg = new DCMessage();
-                rlockMsg.lock_s = hisLock;
-                matchClient.startDownloadingFile(pendingDownload, matchClient, rlockMsg, handler);
-                
-                return false;
+                sentOrder.append("MyNick, Lock, ");
             }
-        }
-        
-        if (isServer) {
-            handler.send_lock();
-        }
-        
-        // Handshake Phase 2: Key and Direction Exchange
-        byte[] hisKey = DCFunctions.convert_lock_to_key(DCFunctions.toBytes(hisLock));
-        handler.send_key(hisKey);
-        Log.d("andcpp", "Sent $Key for lock: " + hisLock);
-        
-        if (isServer) {
-            handler.send_mynick(myUser);
         }
 
-        // NMDC Protocol roles: One peer sends Direction Upload, the other sends Direction Download.
-        // As the uploader, we send $Direction Upload.
-        handler.send_direction(false); 
-        Log.d("andcpp", "Sent $Direction Upload");
+        // Handshake Phase 2: Direction and Key (after $Lock). As the uploader we send $Direction Upload.
+        byte[] hisKey = DCFunctions.convert_lock_to_key(DCFunctions.toBytes(hisLock));
+        handler.send_direction(false);
+        handler.send_key(hisKey);
+        sentOrder.append("Direction Upload, Key");
+        Log.d("andcpp", "Handshake send order with " + hisNick + ": " + sentOrder);
 
         // Wait for Peer's Key and Direction
         boolean hisKeyReceived = false;
@@ -264,7 +280,7 @@ public class PeerConnectionHandler implements Runnable {
                 break;
             }
         }
-        
+
         state = ConnectionState.CONNECTED;
         Log.d("andcpp", "Handshake completed successfully with " + hisNick);
         return true;
