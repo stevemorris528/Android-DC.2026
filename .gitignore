@@ -19,3 +19,8 @@ local.properties
 
 #IntelliJ local files
 .idea/*
+
+# Gradle / Android build output (regenerated on every build)
+.gradle/
+build/
+app/build/
