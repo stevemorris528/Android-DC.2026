@@ -73,7 +73,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private WifiManager.WifiLock wifiLock;
 	private BroadcastReceiver networkReceiver;
 	private Timer keepAliveTimer;
-	private int lastActiveNetworkType = -1;
+	// Identity of the last connected network (type + SSID/APN); survives disconnects so
+	// a wifi->wifi or wifi->mobile handover is detected even with a gap in between.
+	private String lastNetworkKey = null;
+	private boolean networkLostSinceLastConnect = false;
+	private long lastNetworkRestartAt = 0L;
 
 	public static enum DCClientStatus {
 		DISCONNECTED, INVALIDIP, CONNECTED, CONNECTING, RECONNECTING
@@ -2353,20 +2357,23 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
 					NetworkInfo activeNetwork = cm != null ? cm.getActiveNetworkInfo() : null;
 					if (activeNetwork != null && activeNetwork.isConnected()) {
-						int networkType = activeNetwork.getType();
-						boolean networkChanged =
-								lastActiveNetworkType != -1 && lastActiveNetworkType != networkType;
-						lastActiveNetworkType = networkType;
+						String networkKey = networkKeyOf(activeNetwork);
+						boolean networkChanged = lastNetworkKey != null
+								&& (networkLostSinceLastConnect || !networkKey.equals(lastNetworkKey));
+						lastNetworkKey = networkKey;
+						networkLostSinceLastConnect = false;
 
-						Log.d("andcpp", "Network connected, triggering reconnection logic");
+						Log.d("andcpp", "Network connected (" + networkKey + "), triggering reconnection logic");
 						triggerReconnections();
 
-						if (networkChanged) {
-							Log.i("andcpp", "Network type changed; restarting active downloads");
+						long now = System.currentTimeMillis();
+						if (networkChanged && now - lastNetworkRestartAt > 5000) {
+							lastNetworkRestartAt = now;
+							Log.i("andcpp", "Network changed; restarting active downloads");
 							restartDownloadsAfterNetworkChange();
 						}
-					} else {
-						lastActiveNetworkType = -1;
+					} else if (lastNetworkKey != null) {
+						networkLostSinceLastConnect = true;
 					}
 				}
 			}
@@ -2377,9 +2384,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		NetworkInfo initialNetwork = initialConnectivity != null
 				? initialConnectivity.getActiveNetworkInfo() : null;
 		if (initialNetwork != null && initialNetwork.isConnected()) {
-			lastActiveNetworkType = initialNetwork.getType();
+			lastNetworkKey = networkKeyOf(initialNetwork);
 		}
 		registerReceiver(networkReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+	}
+
+	private static String networkKeyOf(NetworkInfo info) {
+		String extra = info.getExtraInfo(); // SSID for wifi, APN for mobile (may be null)
+		return info.getType() + "|" + (extra != null ? extra : "");
 	}
 
 	private void restartDownloadsAfterNetworkChange() {
@@ -2527,110 +2539,110 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
-	public static final String ACTION_TICK = "com.phinmadvader.andcpp.ACTION_TICK";
-	private static final long ALARM_INTERVAL_MILLIS = 60000L;
-	private static final long HUB_PROBE_AFTER_MILLIS = 40000L;
-	private static final long HUB_SILENT_DEAD_MILLIS = 120000L;
-	private final Object tickLock = new Object();
-	private volatile long lastTickAt = 0L;
-	private final ExecutorService tickExecutor = Executors.newSingleThreadExecutor(r -> {
-		Thread t = new Thread(r, "DCTick");
-		t.setDaemon(true);
-		return t;
-	});
-
-	/**
-	 * Periodic work, driven by both the Timer (30s) and an idle-capable alarm (60s): keep the hub link alive,
-	 * detect a dead hub link (no bytes received for 2 minutes even though we probe it), drop dead uploads and
-	 * restart queued downloads.
-	 */
-	private void runKeepAliveTick(String source) {
-		synchronized (tickLock) {
-			long now = System.currentTimeMillis();
-			if (now - lastTickAt < 10000L) return; // timer and alarm fired together
-			lastTickAt = now;
-			try {
-				for (Map.Entry<String, HubSession> entry : sessions.entrySet()) {
-					HubSession session = entry.getValue();
-					if (session.status != DCClientStatus.CONNECTED || session.client == null) continue;
-					long silent = session.client.getMillisSinceLastReceived();
-					if (silent > HUB_SILENT_DEAD_MILLIS) {
-						Log.w("andcpp", "[DLTRACE] tick(" + source + "): hub " + session.hubIp + " silent for " + (silent / 1000)
-								+ "s; link is dead, reconnecting");
-						handleConnectionFailure(entry.getKey(), session, "hub silent for " + (silent / 1000) + "s");
-						continue;
-					}
-					try {
-						// Silent hub: ask it about ourselves, so a live hub must answer and a dead link shows up.
-						if (silent > HUB_PROBE_AFTER_MILLIS && session.myuser != null && session.myuser.nick != null) {
-							session.client.sendRaw("$GetINFO " + session.myuser.nick + " " + session.myuser.nick);
-						} else {
-							session.client.sendRaw("");
-						}
-					} catch (Exception e) {
-						Log.e("andcpp", "Failed to send keep-alive to " + session.hubIp);
-					}
-				}
-				if (uploadManager != null) {
-					uploadManager.cleanupZombieConnections();
-				}
-				retryPendingDownloads();
-			} catch (Exception e) {
-				Log.e("andcpp", "Exception in keep-alive tick (" + source + ")", e);
-			}
-		}
-	}
-
-	private PendingIntent tickPendingIntent() {
-		Intent i = new Intent(this, DCPPService.class);
-		i.setAction(ACTION_TICK);
-		int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-			flags |= PendingIntent.FLAG_IMMUTABLE;
-		}
-		return PendingIntent.getService(this, 7001, i, flags);
-	}
-
-	/** One-shot alarm that is allowed to fire while the phone is idle; each tick schedules the next one. */
-	private void scheduleNextTick() {
-		try {
-			AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-			if (am == null) return;
-			long at = SystemClock.elapsedRealtime() + ALARM_INTERVAL_MILLIS;
-			PendingIntent pi = tickPendingIntent();
-			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-				am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
-			} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-				am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
-			} else {
-				am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
-			}
-		} catch (Exception e) {
-			Log.w("andcpp", "Could not schedule keep-alive alarm", e);
-		}
-	}
-
-	private void cancelTick() {
-		try {
-			AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-			if (am != null) am.cancel(tickPendingIntent());
-		} catch (Exception ignored) {}
-	}
-
-	/** After the hub link is back, parked downloads should not sit out their backoff. */
-	private void clearBackoffsAfterReconnect() {
-		if (initiated_downloads == null) return;
-		synchronized (initiated_downloads) {
-			for (DownloadObject obj : initiated_downloads) {
-				if (obj.waitReason != null && !obj.isCancelled && !obj.isPaused) {
-					obj.waitReason = null;
-					obj.peerWaitRetryCount = 0;
-					obj.nextRetryAt = 0L;
-				}
-			}
-		}
-	}
-
+	public static final String ACTION_TICK = "com.phinmadvader.andcpp.ACTION_TICK";
+	private static final long ALARM_INTERVAL_MILLIS = 60000L;
+	private static final long HUB_PROBE_AFTER_MILLIS = 40000L;
+	private static final long HUB_SILENT_DEAD_MILLIS = 120000L;
+	private final Object tickLock = new Object();
+	private volatile long lastTickAt = 0L;
+	private final ExecutorService tickExecutor = Executors.newSingleThreadExecutor(r -> {
+		Thread t = new Thread(r, "DCTick");
+		t.setDaemon(true);
+		return t;
+	});
+
+	/**
+	 * Periodic work, driven by both the Timer (30s) and an idle-capable alarm (60s): keep the hub link alive,
+	 * detect a dead hub link (no bytes received for 2 minutes even though we probe it), drop dead uploads and
+	 * restart queued downloads.
+	 */
+	private void runKeepAliveTick(String source) {
+		synchronized (tickLock) {
+			long now = System.currentTimeMillis();
+			if (now - lastTickAt < 10000L) return; // timer and alarm fired together
+			lastTickAt = now;
+			try {
+				for (Map.Entry<String, HubSession> entry : sessions.entrySet()) {
+					HubSession session = entry.getValue();
+					if (session.status != DCClientStatus.CONNECTED || session.client == null) continue;
+					long silent = session.client.getMillisSinceLastReceived();
+					if (silent > HUB_SILENT_DEAD_MILLIS) {
+						Log.w("andcpp", "[DLTRACE] tick(" + source + "): hub " + session.hubIp + " silent for " + (silent / 1000)
+								+ "s; link is dead, reconnecting");
+						handleConnectionFailure(entry.getKey(), session, "hub silent for " + (silent / 1000) + "s");
+						continue;
+					}
+					try {
+						// Silent hub: ask it about ourselves, so a live hub must answer and a dead link shows up.
+						if (silent > HUB_PROBE_AFTER_MILLIS && session.myuser != null && session.myuser.nick != null) {
+							session.client.sendRaw("$GetINFO " + session.myuser.nick + " " + session.myuser.nick);
+						} else {
+							session.client.sendRaw("");
+						}
+					} catch (Exception e) {
+						Log.e("andcpp", "Failed to send keep-alive to " + session.hubIp);
+					}
+				}
+				if (uploadManager != null) {
+					uploadManager.cleanupZombieConnections();
+				}
+				retryPendingDownloads();
+			} catch (Exception e) {
+				Log.e("andcpp", "Exception in keep-alive tick (" + source + ")", e);
+			}
+		}
+	}
+
+	private PendingIntent tickPendingIntent() {
+		Intent i = new Intent(this, DCPPService.class);
+		i.setAction(ACTION_TICK);
+		int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+			flags |= PendingIntent.FLAG_IMMUTABLE;
+		}
+		return PendingIntent.getService(this, 7001, i, flags);
+	}
+
+	/** One-shot alarm that is allowed to fire while the phone is idle; each tick schedules the next one. */
+	private void scheduleNextTick() {
+		try {
+			AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+			if (am == null) return;
+			long at = SystemClock.elapsedRealtime() + ALARM_INTERVAL_MILLIS;
+			PendingIntent pi = tickPendingIntent();
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+				am.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+			} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+				am.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+			} else {
+				am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi);
+			}
+		} catch (Exception e) {
+			Log.w("andcpp", "Could not schedule keep-alive alarm", e);
+		}
+	}
+
+	private void cancelTick() {
+		try {
+			AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+			if (am != null) am.cancel(tickPendingIntent());
+		} catch (Exception ignored) {}
+	}
+
+	/** After the hub link is back, parked downloads should not sit out their backoff. */
+	private void clearBackoffsAfterReconnect() {
+		if (initiated_downloads == null) return;
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (obj.waitReason != null && !obj.isCancelled && !obj.isPaused) {
+					obj.waitReason = null;
+					obj.peerWaitRetryCount = 0;
+					obj.nextRetryAt = 0L;
+				}
+			}
+		}
+	}
+
 	private void startKeepAliveTimer() {
 		if (keepAliveTimer != null) keepAliveTimer.cancel();
 		// Use Handler with Alarm/Repeating check or Timer to ping more frequently during sleep (e.g., every 30 seconds)
@@ -3396,16 +3408,25 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	public void resetAllDownloads() {
-		// 1. Pause all active/running downloads
+		// pause_download() blocks up to 3s per item, so never run this on the UI thread.
+		new Thread(this::resetAllDownloadsBlocking, "ResetAllDownloads").start();
+	}
+
+	private void resetAllDownloadsBlocking() {
+		// 1. Stop every running download, remembering which ones the reset paused
+		//    (downloads the user paused by hand stay paused).
+		List<DownloadObject> toResume = new ArrayList<>();
+		List<DownloadObject> snapshot;
 		synchronized (initiated_downloads) {
-			for (DownloadObject obj : initiated_downloads) {
-				if (!obj.is_finished() && !obj.isPaused) {
-					try {
-						obj.pause_download();
-					} catch (Exception e) {
-						Log.e("andcpp", "Error pausing download during resetAllDownloads", e);
-					}
-				}
+			snapshot = new ArrayList<>(initiated_downloads);
+		}
+		for (DownloadObject obj : snapshot) {
+			if (obj.isFileList() || obj.isCancelled || obj.is_finished() || obj.isPaused) continue;
+			toResume.add(obj);
+			try {
+				obj.pause_download();
+			} catch (Exception e) {
+				Log.e("andcpp", "Error pausing download during resetAllDownloads", e);
 			}
 		}
 
@@ -3450,16 +3471,24 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 			}
 		}
-		saveDownloadsState();
+		saveDownloadsStateNow();
 
-		// 4. Clear current initiated downloads list
-		synchronized (initiated_downloads) {
-			initiated_downloads.clear();
-		}
+		// 4. Give the interrupted workers a moment to exit and release their claims,
+		//    then resume everything the reset paused.
+		try {
+			Thread.sleep(2000);
+		} catch (InterruptedException ignored) {}
 
-		// 5. Restore downloads state and re-queue/resume them (same as app restart sequence)
-		restoreDownloadsState();
-		Log.d("andcpp", "resetAllDownloads executed successfully.");
+		new Handler(Looper.getMainLooper()).post(() -> {
+			for (DownloadObject obj : toResume) {
+				if (obj.isCancelled || obj.is_finished()) continue;
+				obj.resume_download();
+			}
+			retryPendingDownloads();
+			Log.d("andcpp", "resetAllDownloads resumed " + toResume.size() + " downloads.");
+		});
+		// Safety net in case a worker was still releasing its claim on the first pass.
+		new Handler(Looper.getMainLooper()).postDelayed(this::retryPendingDownloads, 5000);
 	}
 
 	
