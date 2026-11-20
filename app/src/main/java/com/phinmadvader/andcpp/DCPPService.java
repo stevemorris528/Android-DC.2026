@@ -3139,6 +3139,26 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				handleConnectionFailure(k, session, "peers stopped answering connect requests"));
 	}
 
+	/**
+	 * User-requested reconnect (hub list "Reconnect"): drops the hub link and logs in again through the normal
+	 * reconnect path, so pending download requests are kept (build m) and parked downloads restart afterwards.
+	 */
+	public boolean reconnectHub(String hubIp) {
+		HubSession session = getSession(hubIp);
+		if (session == null) return false;
+		String key = null;
+		for (Map.Entry<String, HubSession> e : sessions.entrySet()) {
+			if (e.getValue() == session) { key = e.getKey(); break; }
+		}
+		if (key == null) return false;
+		Log.i("andcpp", "[DLTRACE] user requested reconnect of hub " + session.hubIp);
+		session.reconnectAttempts = 0; // first retry after the shortest delay
+		unansweredConnectRequests = 0;
+		final String k = key;
+		new Handler(Looper.getMainLooper()).post(() -> handleConnectionFailure(k, session, "reconnect requested by user"));
+		return true;
+	}
+
 	public static final String ACTION_TICK = "com.phinmadvader.andcpp.ACTION_TICK";
 	private static final long ALARM_INTERVAL_MILLIS = 60000L;
 	/**

@@ -78,11 +78,11 @@ public class HubListFragment extends Fragment {
         List<String> optionsList = new ArrayList<>();
         if (isConnected) {
             optionsList.add("Open Hub");
-            optionsList.add("Disconnect");
+            optionsList.add("Reconnect");
             optionsList.add("Delete Hub");
         } else if (isConnectingOrReconnecting) {
             optionsList.add("Open Hub Chat");
-            optionsList.add("Disconnect");
+            optionsList.add("Reconnect");
             optionsList.add("Delete Hub");
         } else {
             optionsList.add("Connect");
@@ -107,10 +107,13 @@ public class HubListFragment extends Fragment {
                             String targetIp = entry.session != null ? entry.session.hubIp : entry.hubIp.split(":")[0];
                             mainActivity.openChatForHub(targetIp);
                             break;
-                        case "Disconnect":
-                            if (mainActivity.mService != null && entry.session != null) {
-                                mainActivity.mService.shutdownSession(entry.session.hubIp);
-                                refresh();
+                        case "Reconnect":
+                            if (mainActivity.mService != null && entry.session != null
+                                    && mainActivity.mService.reconnectHub(entry.session.hubIp)) {
+                                Toast.makeText(getActivity(), "Reconnecting to " + entry.session.hubIp, Toast.LENGTH_SHORT).show();
+                                listView.postDelayed(this::refresh, 500);
+                            } else {
+                                adapter.connectToHub(entry.hubIp);
                             }
                             break;
                         case "Delete Hub":
