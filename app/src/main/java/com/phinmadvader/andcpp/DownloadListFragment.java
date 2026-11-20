@@ -98,11 +98,26 @@ public class DownloadListFragment extends Fragment {
         if (mainActivity == null || mainActivity.mService == null || !is_ready) return;
         
         List<DownloadItem> newList = mainActivity.mService.get_download_queue();
+        // Running downloads first, then ones connecting; everything else keeps its queue order (stable sort).
+        java.util.Collections.sort(newList, (a, b) -> Integer.compare(displayRank(a), displayRank(b)));
         downloadList.clear();
         downloadList.addAll(newList);
         adapter.notifyDataSetChanged();
 
         updateUploadStats();
+    }
+
+    /** 0 = transferring, 1 = connecting to the peer, 2 = anything else. A folder ranks by its busiest file. */
+    private static int displayRank(DownloadItem item) {
+        DCConstants.DownloadStatus s;
+        try {
+            s = item.get_status();
+        } catch (Exception e) {
+            return 2;
+        }
+        if (s == DCConstants.DownloadStatus.DOWNLOADING) return 0;
+        if (s == DCConstants.DownloadStatus.INITIATED || s == DCConstants.DownloadStatus.STARTED) return 1;
+        return 2;
     }
 
     private void updateUploadStats() {
