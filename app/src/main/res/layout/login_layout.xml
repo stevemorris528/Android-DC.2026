@@ -39,7 +39,7 @@
             android:id="@+id/editText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="e.g. 192.168.1.1:411"
+            android:hint="host:port, or nmdcs://host:port for a secure hub"
             android:inputType="textUri"
             android:textColor="?attr/appTextColorPrimary"
             android:textColorHint="?attr/appTextColorSecondary"
