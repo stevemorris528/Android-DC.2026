@@ -54,6 +54,12 @@ public interface HubEventListener {
      */
     void onUserCommand(String name, String command, int context, boolean remove, boolean separator);
 
+    /**
+     * A peer answered our transfer request with a status (ADC DSTA), e.g. code "241" + protocol "ADC/1.0":
+     * it doesn't accept that protocol. {@code token} is the request's token (may be null).
+     */
+    void onPeerStatus(DCUser from, String code, String text, String protocol, String token);
+
     /** A status or error message from the hub, worth showing in the hub chat. */
     void onStatus(String message);
 

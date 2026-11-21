@@ -90,7 +90,9 @@ final class AdcTransfers {
         boolean weActive = canAccept(session);
         if (!weActive && !peer.active) return "both passive";
         // TLS when both sides support it (some clients refuse unencrypted transfers on secure hubs).
-        String proto = tlsAvailable() && peer.features.contains("ADCS") ? PROTO_TLS : PROTO;
+        boolean wantsTls = peer.features.contains("ADCS") || (peer.cid != null && tlsOnlyPeers.contains(peer.cid));
+        String proto = tlsAvailable() && wantsTls ? PROTO_TLS : PROTO;
+        Log.d("andcpp", "[CC] " + peer.nick + " SU=" + peer.features + (peer.kp != null ? " KP" : "") + " -> " + proto);
         String token = newToken();
         // DC++ / AirDC++ serve files by TTH only (a path gets "151 File Not Available"): use the TTH from the
         // peer's saved file list when we have it, else the path.
@@ -128,6 +130,28 @@ final class AdcTransfers {
             p.entity.status = DCConstants.DownloadStatus.FAILED;
             Log.i("andcpp", "[CC] Hub refused the transfer of " + p.identifier + " from " + p.peerNick + ": " + reason);
         }
+    }
+
+    /** Peers (CID) that refused plain ADC/1.0 ("241 Protocol unknown"): always ask them for ADCS/0.10. */
+    private final java.util.Set<String> tlsOnlyPeers = java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+
+    /**
+     * A peer answered a transfer request with DSTA. "x41" (transfer protocol unsupported) for ADC/1.0 from a
+     * TLS-only client: remember it and re-send the same request (same token) as ADCS/0.10.
+     */
+    void onPeerStatus(DCPPService.HubSession session, AdcHubConnection hub, DCUser from, String code, String text,
+                      String proto, String token) {
+        Log.i("andcpp", "[CC] " + from.nick + " answered " + code + " " + text + (proto != null ? " (" + proto + ")" : ""));
+        if (code == null || !code.endsWith("41") || !PROTO.equals(proto) || !tlsAvailable()) return;
+        if (from.cid != null) tlsOnlyPeers.add(from.cid);
+        Pending p = token != null ? pending.get(token) : null;
+        if (p == null) return;
+        if (canAccept(session)) {
+            hub.sendConnectToMe(from.sid, PROTO_TLS, service.getUploadManager().getPort(), token);
+        } else {
+            hub.sendRevConnectToMe(from.sid, PROTO_TLS, token);
+        }
+        Log.i("andcpp", "[CC] " + from.nick + " only accepts encrypted transfers: asked again with " + PROTO_TLS);
     }
 
     /** Drops a waiting request for this download (abandoned attempt, cancel). */

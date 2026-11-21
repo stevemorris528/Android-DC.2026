@@ -311,6 +311,11 @@ public final class AdcHubConnection implements HubConnection {
             case "DRES":
                 handleResult(c);
                 break;
+            case "DSTA":
+                if (mySid != null && mySid.equals(c.toSid) && users.get(c.fromSid) != null) {
+                    listener.onPeerStatus(users.get(c.fromSid), c.param(0), c.param(1), c.named("PR", 2), c.named("TO", 2));
+                }
+                break;
             case "ICMD":
                 handleUserCommand(c);
                 break;
