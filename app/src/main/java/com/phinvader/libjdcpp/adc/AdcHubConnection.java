@@ -39,8 +39,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * VERIFY    only if the hub sends IGPA &lt;data&gt;: we send HPAS Base32(Tiger(password + data))
  * NORMAL    hub sends every user's BINF, ours last (= logged in); then BINF/IQUI/BMSG/EMSG/ISTA ...
  * </pre>
- * Still to come: searches (phase 9), BLOM (phase 7), client-to-client transfers (phase 8), hub menu commands
- * (phase 9). Until transfers exist we advertise no TCP4/UDP4, so peers treat us as passive.
+ * Also handled: searches (BSCH/DSCH/FSCH, DRES), BLOM (IGET blom), hub menus (ICMD), and transfer requests
+ * (DCTM/DRCM/DSTA, passed to the app). Our INF has TCP4 + I4 when we're active and ADCS + KP when encrypted
+ * transfers are possible; no UDP4 (search results come back through the hub).
  */
 public final class AdcHubConnection implements HubConnection {
 
@@ -323,7 +324,7 @@ public final class AdcHubConnection implements HubConnection {
                 if ("blom".equals(c.param(0))) sendBloomLater(c);
                 break;
             default:
-                // BSCH/DSCH/FSCH (phase 9), ICMD (phase 9), IGET blom (phase 7), DSTA, ...: not handled yet
+                // anything else (e.g. ISUP updates without features we use, unknown extensions): ignored
                 break;
         }
     }

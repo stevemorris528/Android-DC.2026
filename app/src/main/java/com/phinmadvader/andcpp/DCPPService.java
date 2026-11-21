@@ -2749,9 +2749,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	/**
-	 * The hub a download goes through: its own hub if that's an NMDC hub with a client, else (as before) another
-	 * connected NMDC hub. Never an ADC hub: downloads there need ADC client-to-client transfers (phase 8), and
-	 * the old "first session" fallback moved queued NMDC downloads onto an ADC hub, where they got stuck.
+	 * The hub an NMDC download goes through: its own hub if that's an NMDC hub with a client, else (as before)
+	 * another connected NMDC hub. Never an ADC hub: ADC downloads take startAdcDownload() instead, and the old
+	 * "first session" fallback moved queued NMDC downloads onto an ADC hub, where they got stuck.
 	 */
 	HubSession downloadSession(String hubIp) {
 		HubSession own = hubIp != null ? sessionForUi(hubIp) : null;
@@ -3926,8 +3926,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	/**
 	 * ADC / ADCS login. The connection reports users, chat and PMs through {@link AdcEvents}, which hands them
-	 * to the same handlers as NMDC, so the user list, chat and PM screens work unchanged.
-	 * Not on ADC yet: search (phase 9), transfers (phase 8), hub menus (phase 9).
+	 * to the same handlers as NMDC, so the user list, chat and PM screens work unchanged. Searches, search
+	 * results, hub menus and transfer requests arrive the same way (AdcEvents); transfers run in AdcTransfers.
 	 */
 	private void connectAdc(String hubKey, HubSession session) throws Exception {
 		session.client = null; // no NMDC client on ADC hubs

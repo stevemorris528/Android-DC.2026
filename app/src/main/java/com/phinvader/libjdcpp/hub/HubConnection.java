@@ -8,11 +8,11 @@ import java.util.List;
 /**
  * Protocol-neutral link to one hub. DCPPService sends everything that goes to a hub through this interface,
  * so it never builds protocol text itself: {@link NmdcHubConnection} turns these calls into NMDC commands,
- * and the ADC implementation (phase 5) will turn them into ADC commands.
+ * and {@link com.phinvader.libjdcpp.adc.AdcHubConnection} into ADC commands.
  * <p>
- * Still NMDC-only for now, and reached through {@code HubSession.client}: login, incoming-message handlers,
- * and client-to-client transfers. Those move behind this interface with the ADC hub (phase 5) and the ADC
- * transfers (phase 8).
+ * NMDC login, incoming-message handlers and client-to-client transfers still go through
+ * {@code HubSession.client} (DCClient). ADC reports its events through {@link HubEventListener}, and ADC
+ * transfers run in the app's AdcTransfers.
  */
 public interface HubConnection {
 

@@ -800,8 +800,9 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	/**
-	 * Connects to a hub given by its parsed address. Hubs whose protocol this build can't speak yet
-	 * (ADC, ADCS, NMDCS) are refused with a message instead of being treated as NMDC.
+	 * Connects to a hub given by its parsed address (NMDC, NMDCS, ADC or ADCS); the protocol and any ?kp=
+	 * keyprint go to the service. A protocol this build couldn't speak would be refused with a message rather
+	 * than tried as NMDC (HubAddress.isSupported(); all four are supported).
 	 * Returns true if the connection was started.
 	 */
 	public boolean startBackgroundService(String nick, HubAddress addr, boolean showDialog) {

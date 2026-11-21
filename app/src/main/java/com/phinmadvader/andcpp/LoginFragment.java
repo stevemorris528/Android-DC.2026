@@ -145,7 +145,7 @@ public class LoginFragment extends Fragment {
 		editor.putString(Constants.SETTINGS_IP_KEY, ip_original);
 		editor.commit();
 
-		// Connect (refused with a message for protocols not supported yet)
+		// Connect (NMDC, NMDCS, ADC or ADCS, from the address)
 		if (mainActivity != null) {
 			mainActivity.startBackgroundService(nick, addr, true);
 		}
