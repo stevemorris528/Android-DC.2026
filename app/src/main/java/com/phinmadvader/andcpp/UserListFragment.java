@@ -51,6 +51,10 @@ public class UserListFragment extends Fragment {
 		applyFilter();
 	};
 
+	public String getHubIp() {
+		return currentHubIp;
+	}
+
 	public void setHubIp(String hubIp) {
 		this.currentHubIp = hubIp;
 		if (is_ready) {
@@ -339,6 +343,8 @@ public class UserListFragment extends Fragment {
 					}
 				}
 
+				android.util.Log.d("andcpp", "[USERLIST] Users tab showing " + currentHubIp + ": "
+						+ (nicks != null ? nicks.size() : 0) + " users");
 				if (nicks != null) {
 					for (DCUser u : nicks) {
 						if (u != null && u.nick != null) {

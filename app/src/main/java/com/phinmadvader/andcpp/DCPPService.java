@@ -2544,17 +2544,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			String data = msg.msg_s != null ? msg.msg_s : "";
 			if (data.isEmpty()) return;
 			
-			String[] parts = data.trim().split(" ");
+			// $UserIP is a "$$"-separated list ("nick ip$$nick2 ip2$$"); many hubs end even a single
+			// entry with "$$", which used to end up in our IP ("1.2.3.4$$").
 			String detectedIp = null;
-			if (parts.length >= 2) {
-				String nick = parts[0];
-				String ip = parts[1];
-				HubSession session = getSession(hubKey);
-				if (session != null && session.myuser != null && nick.equals(session.myuser.nick)) {
-					detectedIp = ip;
+			HubSession me = getSession(hubKey);
+			String[] entries = data.trim().split("\\$\\$");
+			for (String entry : entries) {
+				String[] parts = entry.trim().split(" ");
+				if (parts.length >= 2) {
+					if (me != null && me.myuser != null && parts[0].equals(me.myuser.nick)) {
+						detectedIp = parts[1].trim();
+						break;
+					}
+				} else if (parts.length == 1 && entries.length == 1 && !parts[0].isEmpty()) {
+					detectedIp = parts[0].trim();
 				}
-			} else if (parts.length == 1) {
-				detectedIp = parts[0];
 			}
 
 			if (detectedIp != null && !detectedIp.isEmpty()) {
@@ -3658,6 +3662,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 				clearBackoffsAfterReconnect();
 				retryPendingDownloads();
+
+				// Diagnostic: how many users the hub has sent us (user list = one $MyINFO per user).
+				final DCClient clientAtLogin = session.client;
+				new Handler(Looper.getMainLooper()).postDelayed(() -> {
+					if (session.client == clientAtLogin && clientAtLogin != null) {
+						List<DCUser> nl = clientAtLogin.get_nick_list();
+						Log.i("andcpp", "[USERLIST] " + hubKey + ": " + (nl != null ? nl.size() : -1)
+								+ " users 15 s after login");
+					}
+				}, 15000);
 			} catch (Exception e) {
 				Log.e("andcpp", "Connection failed for " + session.hubIp + ":" + session.hubPort, e);
 				handleConnectionFailure(hubKey, session, e.getMessage() != null ? e.getMessage() : e.toString());

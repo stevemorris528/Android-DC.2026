@@ -983,14 +983,17 @@ public class MainActivity extends FragmentActivity implements
 			login_fragment.setViewState(true);
 		}
 		
-		// Add tabs if they aren't already visible (do not automatically jump/switch to them)
-		if (messageboard_fragment != null) {
+		// Add tabs if they aren't already visible (do not automatically jump/switch to them).
+		// Chat and Users keep showing the hub the user picked: this runs for every status broadcast
+		// of every hub (connect, reconnect, hub name), so with two hubs connected the last hub to
+		// broadcast used to take over both tabs. Only follow the new hub if no live hub is shown yet.
+		if (messageboard_fragment != null && !isShowingConnectedHub(messageboard_fragment.getHubIp())) {
 			messageboard_fragment.setHubIp(hubIp);
 		}
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_HUBCHAT,
 				messageboard_fragment, "Chat", false);
-				
-		if (userlist_fragment != null) {
+
+		if (userlist_fragment != null && !isShowingConnectedHub(userlist_fragment.getHubIp())) {
 			userlist_fragment.setHubIp(hubIp);
 		}
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_USERLIST,
@@ -1026,6 +1029,15 @@ public class MainActivity extends FragmentActivity implements
 		}
 
 		refreshWelcomeFragment();
+	}
+
+	/** True if a tab is already showing a hub that has a connected session (exact host match, no fallback). */
+	private boolean isShowingConnectedHub(String shownHubIp) {
+		if (shownHubIp == null || mService == null) return false;
+		for (DCPPService.HubSession s : mService.getActiveSessions()) {
+			if (s.status == DCPPService.DCClientStatus.CONNECTED && shownHubIp.equals(s.hubIp)) return true;
+		}
+		return false;
 	}
 
 	public void onConnectUIChanges() {

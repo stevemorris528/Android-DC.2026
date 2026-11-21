@@ -24,6 +24,10 @@ public class MessageBoardFragment extends Fragment {
 	public boolean is_ready = false;
 	private String currentHubIp = null;
 
+	public String getHubIp() {
+		return currentHubIp;
+	}
+
 	public void setHubIp(String hubIp) {
 		this.currentHubIp = hubIp;
 		if (is_ready) {
