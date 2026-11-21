@@ -20,7 +20,9 @@ public class Constants {
     public static String SETTINGS_WIFI_ONLY_DOWNLOADS_KEY = "dcwifionlydownloads";
     /** Port the VPN provider forwards to us (0 = none). Used for active mode while a VPN is on. */
     public static String SETTINGS_VPN_PORT_KEY = "dcvpnforwardedport";    public static int DEFAULT_PORT = 4111;
-    public static int DEFAULT_UPLOAD_SLOTS = 2;
+    /** Many hubs refuse users with fewer than 3 upload slots, so 3 is both the default and the minimum. */
+    public static int MIN_UPLOAD_SLOTS = 3;
+    public static int DEFAULT_UPLOAD_SLOTS = 3;
     public static int DEFAULT_DOWNLOAD_WORKERS = 3;
     public static String SETTINGS_DOWNLOAD_WORKERS_KEY = "dc_download_workers";
     public static int MAX_DOWNLOAD_Q = 1024;

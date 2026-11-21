@@ -284,10 +284,16 @@ public class Settings extends Activity{
 	public void changeUploadSlots() {
 		final EditText input = new EditText(this);
 		input.setText(String.valueOf(getUploadSlots(this)));
-		DisplayAlert("Change Upload Slots", "Enter max simultaneous uploads:", "Save", (dialog, which) -> {
+		DisplayAlert("Change Upload Slots", "Enter max simultaneous uploads (at least "
+				+ Constants.MIN_UPLOAD_SLOTS + "; many hubs require it):", "Save", (dialog, which) -> {
 			try {
-				int slots = Integer.parseInt(input.getText().toString());
-				if (slots < 1 || slots > 50) throw new NumberFormatException();
+				int slots = Integer.parseInt(input.getText().toString().trim());
+				if (slots > 50) throw new NumberFormatException();
+				if (slots < Constants.MIN_UPLOAD_SLOTS) {
+					Toast.makeText(Settings.this, "At least " + Constants.MIN_UPLOAD_SLOTS
+							+ " slots: many hubs refuse users with fewer", Toast.LENGTH_LONG).show();
+					return;
+				}
 				putUploadSlots(slots, Settings.this);
 				Toast.makeText(Settings.this, "Slots saved.", Toast.LENGTH_SHORT).show();
 			} catch (NumberFormatException e) {
@@ -529,7 +535,9 @@ public class Settings extends Activity{
 
 	public static int getUploadSlots(Context c) {
 		SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, 0);
-		return prefs.getInt(Constants.SETTINGS_UPLOAD_SLOTS_KEY, Constants.DEFAULT_UPLOAD_SLOTS);
+		// Older builds allowed fewer (the default was 2); a saved value below the minimum counts as the minimum.
+		return Math.max(Constants.MIN_UPLOAD_SLOTS,
+				prefs.getInt(Constants.SETTINGS_UPLOAD_SLOTS_KEY, Constants.DEFAULT_UPLOAD_SLOTS));
 	}
 
 	public static void putUploadSlots(int slots, Context c) {
