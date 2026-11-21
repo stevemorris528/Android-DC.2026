@@ -90,7 +90,9 @@ final class AdcTransfers {
         boolean weActive = canAccept(session);
         if (!weActive && !peer.active) return "both passive";
         // TLS when both sides support it (some clients refuse unencrypted transfers on secure hubs).
-        boolean wantsTls = peer.features.contains("ADCS") || (peer.cid != null && tlsOnlyPeers.contains(peer.cid));
+        // ADCS in SU, or a published keyprint (AirDC++ may list only ADC0 but publish KP and require TLS).
+        boolean wantsTls = peer.features.contains("ADCS") || peer.kp != null
+                || (peer.cid != null && tlsOnlyPeers.contains(peer.cid));
         String proto = tlsAvailable() && wantsTls ? PROTO_TLS : PROTO;
         Log.d("andcpp", "[CC] " + peer.nick + " SU=" + peer.features + (peer.kp != null ? " KP" : "") + " -> " + proto);
         String token = newToken();
