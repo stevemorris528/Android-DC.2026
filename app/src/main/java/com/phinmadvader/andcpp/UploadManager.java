@@ -579,6 +579,14 @@ public class UploadManager {
     }
 
     /**
+     * If the TTH index is still empty (e.g. just after a reinstall: the first warm-up ran before storage
+     * permission, so the hash-cache backup couldn't be read), fill it from the hash cache now. Cheap: no hashing.
+     */
+    public void warmIndexIfEmpty() {
+        if (fileByTth.isEmpty()) warmIndexFromCache();
+    }
+
+    /**
      * Fills the TTH -> file table from the persisted hash cache, keeping only files that still exist with
      * the same size and modification time. Cheap (no hashing); the full refresh replaces it later.
      */

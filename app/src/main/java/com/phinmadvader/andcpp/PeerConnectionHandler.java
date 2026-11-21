@@ -67,6 +67,8 @@ public class PeerConnectionHandler implements Runnable {
 
     private static final long FIRST_REQUEST_TIMEOUT_MS = 15000;
     private static final long IDLE_REQUEST_TIMEOUT_MS = 60000;
+    /** How long a request waits for the share index after start before we answer "busy". */
+    private static final long SHARE_INDEX_WAIT_MS = 60000;
     
     /** ADC uploads: the client-to-client connection (handshake already done), else null (NMDC). */
     private AdcClientConnection adc = null;
@@ -647,6 +649,11 @@ public class PeerConnectionHandler implements Runnable {
         // download a whole folder (e.g. from search results). Uncompressed XML; no slot needed.
         if (adc && "list".equals(req.adc_type)) {
             byte[] xml = uploadManager.buildPartialFileList(requestedFile, req.adc_recursive);
+            long listDeadline = System.currentTimeMillis() + SHARE_INDEX_WAIT_MS;
+            while (xml == null && !uploadManager.isShareIndexReady() && System.currentTimeMillis() < listDeadline) {
+                Thread.sleep(1000); // the folder tree only exists after the first scan: wait for it
+                xml = uploadManager.buildPartialFileList(requestedFile, req.adc_recursive);
+            }
             if (xml == null && !uploadManager.isShareIndexReady()) {
                 return replyNotReadyYet(handler, requestedFile);
             }
@@ -665,6 +672,21 @@ public class PeerConnectionHandler implements Runnable {
         }
 
         File fileToUpload = (requestedFile != null) ? uploadManager.resolveSharedFile(requestedFile) : null;
+        if ((fileToUpload == null || !fileToUpload.exists()) && !uploadManager.isShareIndexReady()) {
+            // Just after start (or a reinstall) the share index may not know the file yet. Answering "busy" made
+            // DC++ put us on hold for a long time, so wait for it (up to 60 s) and serve the request then.
+            Log.i("andcpp", "Share index not ready yet; holding " + hisNick + "'s request for " + requestedFile);
+            long deadline = System.currentTimeMillis() + SHARE_INDEX_WAIT_MS;
+            while ((fileToUpload == null || !fileToUpload.exists()) && !uploadManager.isShareIndexReady()
+                    && System.currentTimeMillis() < deadline) {
+                uploadManager.warmIndexIfEmpty();
+                Thread.sleep(1000);
+                fileToUpload = uploadManager.resolveSharedFile(requestedFile);
+            }
+            if (fileToUpload != null && fileToUpload.exists()) {
+                Log.i("andcpp", "Share index ready: serving " + hisNick + "'s held request for " + requestedFile);
+            }
+        }
         if ((fileToUpload == null || !fileToUpload.exists()) && !uploadManager.isShareIndexReady()) {
             return replyNotReadyYet(handler, requestedFile);
         }
