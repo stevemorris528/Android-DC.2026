@@ -575,12 +575,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			activeRc = null;
 			myrc = null;
 
-			HubSession session = getSession(hubIp);
-			if (session == null && !sessions.isEmpty()) {
-				session = sessions.values().iterator().next();
-				if (session != null) {
-					this.hubIp = session.hubIp;
-				}
+			HubSession session = downloadSession(hubIp);
+			if (session != null && !session.hubIp.equals(this.hubIp)) {
+				this.hubIp = session.hubIp; // our hub isn't up: try through another NMDC hub (old behaviour)
 			}
 			if (session == null || session.client == null || session.prefs == null
 					|| session.status != DCClientStatus.CONNECTED) {
@@ -676,16 +673,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			updateFolderStatus(this, DCConstants.DownloadStatus.STARTED);
 			set_start_download_time();
 
-			HubSession session = getSession(hubIp);
-			if (session == null || session.client == null) {
-				Log.w("andcpp", "Hub session not ready for " + (hubIp != null ? hubIp : "any hub") + ". Retrying download.");
-				if (!sessions.isEmpty()) {
-					// Fallback to first available session
-					session = sessions.values().iterator().next();
-					if (session != null) {
-						this.hubIp = session.hubIp;
-					}
-				}
+			HubSession session = downloadSession(hubIp);
+			if (session == null) {
+				Log.w("andcpp", "No NMDC hub connected for " + (hubIp != null ? hubIp : "any hub") + " yet. Retrying download.");
+			} else if (!session.hubIp.equals(this.hubIp)) {
+				this.hubIp = session.hubIp; // our hub isn't up: try through another NMDC hub (old behaviour)
 			}
 
 			initialize_download_connection(); // every attempt: peer state and our address can change
@@ -695,7 +687,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 
 			if (session == null) {
-				session = getSession(hubIp);
+				session = downloadSession(hubIp);
 			}
 			if (session == null || session.client == null) {
 				return;
@@ -2702,6 +2694,23 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (s != null) return s;
 		for (HubSession x : sessions.values()) {
 			if (x.hubIp.equals(hubIp)) return x;
+		}
+		return null;
+	}
+
+	/**
+	 * The hub a download goes through: its own hub if that's an NMDC hub with a client, else (as before) another
+	 * connected NMDC hub. Never an ADC hub: downloads there need ADC client-to-client transfers (phase 8), and
+	 * the old "first session" fallback moved queued NMDC downloads onto an ADC hub, where they got stuck.
+	 */
+	HubSession downloadSession(String hubIp) {
+		HubSession own = hubIp != null ? sessionForUi(hubIp) : null;
+		if (own != null && own.client != null) return own;
+		for (HubSession s : sessions.values()) {
+			if (s.client != null && s.status == DCClientStatus.CONNECTED) return s;
+		}
+		for (HubSession s : sessions.values()) {
+			if (s.client != null) return s;
 		}
 		return null;
 	}
