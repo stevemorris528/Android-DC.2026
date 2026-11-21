@@ -502,7 +502,7 @@ public class MainActivity extends FragmentActivity implements
 				+ "<p>Developed further by the Android DC++ project.</p>"
 				+ "<p>GitHub Source Code: <a href=\"https://github.com/stevemorris528/Android-DC.2026/blob/master/README.md\">&#x2B07;&#xFE0F;</a></p>"
 				// Filled in by Gradle on every build (see app/build.gradle)
-				+ "<p>Build " + BuildConfig.BUILD_NUMBER + " &middot; " + BuildConfig.BUILD_DATE + "</p>"
+				+ "<p>Version " + BuildConfig.VERSION_NAME + " &middot; " + BuildConfig.BUILD_DATE + "</p>"
 				// Our identity on ADC / secure hubs (long-press the text to copy it)
 				+ "<p><b>Your ADC CID</b><br/><small>" + AdcIdentityStore.cid(this) + "</small><br/>"
 				+ "<b>Your TLS keyprint</b><br/><small>" + aboutKeyprint() + "</small></p>";

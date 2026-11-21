@@ -19,6 +19,8 @@ int lastBuildNumber = readLastBuildNumber()
 // Count only actual builds, not Android Studio project syncs.
 boolean isRealBuild = gradle.startParameter.taskNames.any { it =~ /(?i)(assemble|install|bundle)/ }
 int buildNumber = isRealBuild ? lastBuildNumber + 1 : lastBuildNumber
+// The release you choose; the build number is added as a 4th part (versionName 2.1.0.436).
+def releaseVersion = '2.1.0'
 def buildDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern('dd.MM.yyyy'))
 
 if (isRealBuild) {
@@ -51,7 +53,8 @@ android {
         minSdk 16 // TLS 1.2 for secure hubs (NMDCS/ADCS) needs Android 4.1+
         targetSdk 28
         versionCode buildNumber // = build number, so the in-app updater can compare builds
-        versionName '2.1.0'
+        // Release number = release (set here) + build number, e.g. 2.1.0.436: goes up with every build.
+        versionName "${releaseVersion}.${buildNumber}"
 
         buildConfigField 'int', 'BUILD_NUMBER', "${buildNumber}"
         buildConfigField 'String', 'BUILD_DATE', "\"${buildDate}\""
