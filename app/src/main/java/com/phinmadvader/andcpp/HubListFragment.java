@@ -23,7 +23,7 @@ import java.util.Set;
 
 public class HubListFragment extends Fragment {
     private ListView listView;
-    private CheckBox autoReconnectCheckBox;
+
     private HubListAdapter adapter;
     private MainActivity mainActivity;
     private static final String FAVORITE_HUBS_PREF = "favorite_hubs";
@@ -48,6 +48,7 @@ public class HubListFragment extends Fragment {
             if (saved.port == addr.port) return false;
         }
         favorites.add(hubId);
+        HubAutoConnect.set(c, hubId, true); // a newly saved hub connects at start (untick to change)
         prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
         android.util.Log.i("andcpp", "Saved hub " + hubId);
         return true;
@@ -66,6 +67,7 @@ public class HubListFragment extends Fragment {
                 changed = true;
             }
         }
+        HubAutoConnect.set(c, hubId, false);
         if (changed) {
             prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
             android.util.Log.i("andcpp", "Removed saved hub " + hubId);
@@ -108,13 +110,7 @@ public class HubListFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         mainActivity = (MainActivity) getActivity();
         View view = inflater.inflate(R.layout.hub_list_layout, container, false);
-        autoReconnectCheckBox = (CheckBox) view.findViewById(R.id.checkbox_auto_reconnect);
-        if (autoReconnectCheckBox != null) {
-            autoReconnectCheckBox.setChecked(Settings.getAutoReconnectHubs(mainActivity));
-            autoReconnectCheckBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                Settings.putAutoReconnectHubs(isChecked, mainActivity);
-            });
-        }
+        HubAutoConnect.migrateIfNeeded(mainActivity); // the boxes on each row start from the old global setting
         listView = (ListView) view.findViewById(R.id.hub_list_view);
         listView.setOnTouchListener((v, event) -> {
             v.getParent().requestDisallowInterceptTouchEvent(true);
@@ -211,6 +207,7 @@ public class HubListFragment extends Fragment {
                                 delFavorites.remove(entry.session.address().id());
                             }
                             delPrefs.edit().putStringSet(FAVORITE_HUBS_PREF, delFavorites).apply();
+                            HubAutoConnect.set(mainActivity, entry.hubIp, false);
                             refresh();
                             Toast.makeText(getActivity(), "Hub deleted", Toast.LENGTH_SHORT).show();
                             break;
@@ -362,9 +359,6 @@ public class HubListFragment extends Fragment {
     }
 
     public void refresh() {
-        if (autoReconnectCheckBox != null && mainActivity != null) {
-            autoReconnectCheckBox.setChecked(Settings.getAutoReconnectHubs(mainActivity));
-        }
         if (adapter != null) {
             adapter.updateEntries();
             adapter.notifyDataSetChanged();
@@ -450,6 +444,21 @@ public class HubListFragment extends Fragment {
             TextView address = (TextView) convertView.findViewById(R.id.hub_address);
             TextView status = (TextView) convertView.findViewById(R.id.hub_status);
             TextView info = (TextView) convertView.findViewById(R.id.hub_info);
+
+            // Auto-connect at app start, per hub. Only saved hubs can auto-connect.
+            CheckBox auto = (CheckBox) convertView.findViewById(R.id.hub_autoconnect);
+            if (auto != null) {
+                final String hubId = entry.hubIp;
+                boolean saved = entry.isFavorite;
+                auto.setOnCheckedChangeListener(null); // the row view is reused: don't fire for the old hub
+                auto.setVisibility(saved ? View.VISIBLE : View.GONE);
+                auto.setChecked(saved && HubAutoConnect.isOn(mainActivity, hubId));
+                auto.setOnCheckedChangeListener((b, on) -> {
+                    HubAutoConnect.set(mainActivity, hubId, on);
+                    Toast.makeText(mainActivity, on ? "Will connect automatically at start" : "Won't connect automatically",
+                            Toast.LENGTH_SHORT).show();
+                });
+            }
 
             String favIndicator = entry.isFavorite ? " ✓" : "";
 
@@ -537,12 +546,16 @@ public class HubListFragment extends Fragment {
         private void toggleFavorite(String hubIp) {
             SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
             Set<String> favorites = new HashSet<>(prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
+            boolean nowSaved;
             if (favorites.contains(hubIp)) {
                 favorites.remove(hubIp);
+                nowSaved = false;
             } else {
                 favorites.add(hubIp);
+                nowSaved = true;
             }
             prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
+            HubAutoConnect.set(mainActivity, hubIp, nowSaved); // saved: on by default; removed: off
         }
     }
 }

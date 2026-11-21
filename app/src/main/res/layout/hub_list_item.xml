@@ -2,33 +2,54 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
     android:padding="16dp"
     android:descendantFocusability="blocksDescendants">
 
-    <TextView
-        android:id="@+id/hub_address"
-        android:layout_width="match_parent"
+    <LinearLayout
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="127.0.0.1"
-        android:textAppearance="?android:attr/textAppearanceMedium"
-        android:textColor="?attr/appTextColorPrimary"
-        android:textStyle="bold" />
+        android:layout_weight="1"
+        android:orientation="vertical">
 
-    <TextView
-        android:id="@+id/hub_status"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Connected"
-        android:textAppearance="?android:attr/textAppearanceSmall"
-        android:textColor="?attr/appTextColorSecondary" />
+        <TextView
+            android:id="@+id/hub_address"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="127.0.0.1"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textColor="?attr/appTextColorPrimary"
+            android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/hub_info"
-        android:layout_width="match_parent"
+        <TextView
+            android:id="@+id/hub_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Connected"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?attr/appTextColorSecondary" />
+
+        <TextView
+            android:id="@+id/hub_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Users: 0 | Tag: [AnDCpp V1]"
+            android:textAppearance="?android:attr/textAppearanceSmall"
+            android:textColor="?attr/appTextColorSecondary" />
+
+    </LinearLayout>
+
+    <!-- Connect this saved hub automatically when the app starts. Not focusable: the row stays tappable. -->
+    <CheckBox
+        android:id="@+id/hub_autoconnect"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Users: 0 | Tag: [AnDCpp V1]"
-        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:layout_marginStart="8dp"
+        android:layout_marginLeft="8dp"
+        android:focusable="false"
+        android:text="Auto-\nconnect"
+        android:textSize="11sp"
         android:textColor="?attr/appTextColorSecondary" />
 
 </LinearLayout>

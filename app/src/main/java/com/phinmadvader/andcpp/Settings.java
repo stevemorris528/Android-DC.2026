@@ -76,8 +76,9 @@ public class Settings extends Activity{
 		addRow(card, "Upload slots", () -> getUploadSlots(this) + " at a time", this::changeUploadSlots);
 
 		card = addSection(root, "Hubs");
-		addRow(card, "Auto-reconnect saved hubs", () -> getAutoReconnectHubs(this) ? "On at startup" : "Off",
-				this::changeAutoReconnectHubs);
+		addRow(card, "Auto-connect saved hubs", () -> HubAutoConnect.countOn(this) + " of "
+				+ getSharedPreferences(Constants.PREFS_NAME, 0).getStringSet("favorite_hubs", new java.util.HashSet<String>()).size()
+				+ " saved hubs (set per hub in the Hubs tab)", this::changeAutoReconnectHubs);
 
 		card = addSection(root, "Connection");
 		addRow(card, "VPN forwarded port", () -> {
@@ -424,16 +425,14 @@ public class Settings extends Activity{
 				}, "Cancel", null, input);
 	}
 
+	/** Auto-connect is chosen per saved hub now: explain where. */
 	public void changeAutoReconnectHubs() {
-		final String[] options = {"Disabled", "Enabled"};
-		int current = getAutoReconnectHubs(this) ? 1 : 0;
 		new AlertDialog.Builder(this)
-				.setTitle("Auto-Reconnect Saved Hubs on Startup")
-				.setSingleChoiceItems(options, current, (dialog, which) -> {
-					putAutoReconnectHubs(which == 1, Settings.this);
-					Toast.makeText(Settings.this, "Auto-reconnect " + options[which], Toast.LENGTH_SHORT).show();
-					dialog.dismiss();
-				}).show();
+				.setTitle("Auto-connect saved hubs")
+				.setMessage("Each saved hub in the Hubs tab has its own Auto-connect box. Tick the hubs you want "
+						+ "the app to connect to when it starts.")
+				.setPositiveButton("OK", null)
+				.show();
 	}
 
 	public String DisplayAlert(String title, //Title for the alert

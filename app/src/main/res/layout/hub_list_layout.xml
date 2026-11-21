@@ -5,14 +5,14 @@
     android:orientation="vertical"
     android:background="?attr/appSurfaceColor">
 
-    <CheckBox
-        android:id="@+id/checkbox_auto_reconnect"
+    <!-- Auto-connect is chosen per saved hub (the checkbox on each row). -->
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:padding="12dp"
-        android:text="@string/auto_reconnect_hubs"
-        android:textColor="?attr/appTextColorPrimary"
-        android:textSize="14sp" />
+        android:text="Tick Auto-connect on a saved hub to connect to it when the app starts."
+        android:textColor="?attr/appTextColorSecondary"
+        android:textSize="13sp" />
 
     <View
         android:layout_width="match_parent"

@@ -914,18 +914,19 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	private void checkAutoReconnectSavedHubs() {
-		Log.i("andcpp", "Auto-reconnect check: alreadyDone=" + hasAutoReconnected
-				+ " enabled=" + Settings.getAutoReconnectHubs(this));
+		Log.i("andcpp", "Auto-reconnect check: alreadyDone=" + hasAutoReconnected);
 		if (hasAutoReconnected) return;
 		hasAutoReconnected = true;
 
-		if (!Settings.getAutoReconnectHubs(this)) return;
-
+		// Auto-connect is chosen per saved hub (checkbox on each saved hub in the Hubs tab).
+		HubAutoConnect.migrateIfNeeded(this);
 		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-
-		Set<String> favorites = prefs.getStringSet("favorite_hubs", new HashSet<String>());
-		Log.i("andcpp", "Auto-reconnect saved hubs: " + favorites);
-		if (favorites == null || favorites.isEmpty()) return;
+		Set<String> favorites = new HashSet<>();
+		for (String hub : prefs.getStringSet("favorite_hubs", new HashSet<String>())) {
+			if (HubAutoConnect.isOn(this, hub)) favorites.add(hub);
+		}
+		Log.i("andcpp", "Auto-connect saved hubs: " + favorites);
+		if (favorites.isEmpty()) return;
 
 		// Connect only once active/passive is known, so each hub is told the right mode from the start
 		// (no passive login followed by a switch to active). Never waits more than 30 s.
