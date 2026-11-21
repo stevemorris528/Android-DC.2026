@@ -53,6 +53,25 @@ public class HubListFragment extends Fragment {
         return true;
     }
 
+    /** Removes a hub from the saved hubs (every saved form of the same protocol, host and port). */
+    public static void removeSavedHub(Context c, String hubId) {
+        HubAddress addr = HubAddress.tryParse(hubId);
+        if (addr == null) return;
+        SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+        Set<String> favorites = new HashSet<>(prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
+        boolean changed = false;
+        for (String f : new ArrayList<>(favorites)) {
+            if (addr.sameHub(HubAddress.tryParse(f))) {
+                favorites.remove(f);
+                changed = true;
+            }
+        }
+        if (changed) {
+            prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
+            android.util.Log.i("andcpp", "Removed saved hub " + hubId);
+        }
+    }
+
     /** Reads a per-hub string pref ("favorite_nicks_", "favorite_passwords_", "hub_name_"); "" if not set. */
     static String getHubPref(SharedPreferences prefs, String prefix, String hubId) {
         HubAddress addr = HubAddress.tryParse(hubId);

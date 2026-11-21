@@ -41,6 +41,21 @@ public class PrivateChatManager {
         chat_stack = new ArrayList<>();
     }
 
+    /**
+     * An incoming PM: make sure its chat tab exists, without switching to it or reordering tabs (that pulled
+     * the user away from whatever they were doing, on every hub bot's welcome PM). True if a tab was added.
+     */
+    public boolean addChatQuietly(String hubIp, String nick) {
+        if (nick == null || nick.trim().isEmpty()) return false;
+        PrivateChatEntry entry = new PrivateChatEntry(hubIp, nick);
+        if (chat_stack.contains(entry)) return false;
+        chat_stack.add(entry);
+        if (mainActivity != null && mainActivity.tab_page_adapter != null) {
+            mainActivity.tab_page_adapter.notifyDataSetChanged();
+        }
+        return true;
+    }
+
     public void openChat(String hubIp, String nick) {
         if (nick == null || nick.trim().isEmpty()) return;
         PrivateChatEntry entry = new PrivateChatEntry(hubIp, nick);

@@ -2332,8 +2332,34 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (session != null) session.search_handler = handler;
 	}
 
+	/** The UI's PM handler, also used for sessions that don't have their own yet (see handleIncomingPrivateMessage). */
+	private volatile DCCommand defaultPrivateMessageHandler = null;
+
+	/** A PM while no UI is listening: a notification that opens the chat when tapped (no window pops up). */
+	void showPrivateMessageNotification(String hubIp, String sender, String text) {
+		try {
+			Intent open = new Intent(this, PrivateChatActivity.class);
+			open.putExtra(PrivateChatActivity.EXTRA_HUB_IP, hubIp);
+			open.putExtra(PrivateChatActivity.EXTRA_TARGET_NICK, sender);
+			open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+			int id = 50000 + ((hubIp + "#" + sender).toLowerCase(Locale.US).hashCode() & 0xFFFF);
+			int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+			NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL_ID)
+					.setSmallIcon(R.drawable.ic_launcher)
+					.setContentTitle("PM from " + sender)
+					.setContentText(text)
+					.setAutoCancel(true)
+					.setContentIntent(PendingIntent.getActivity(this, id, open, flags));
+			if (mNotifyManager2 != null) mNotifyManager2.notify(id, b.build());
+		} catch (Exception e) {
+			Log.w("andcpp", "Could not show PM notification", e);
+		}
+	}
+
 	public void setPrivate_message_handler(String hubKey, DCCommand handler) {
 		if (hubKey == null) {
+			defaultPrivateMessageHandler = handler;
 			for (HubSession session : sessions.values()) {
 				session.private_message_handler = handler;
 			}
@@ -2502,8 +2528,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override
 		public void onCommand(DCMessage dcMessage) {
 			Log.d("andcpp", "Hub connection lost for " + hubKey + ": " + dcMessage.quit_s);
-			HubSession session = getSession(hubKey);
-			if (session != null) {
+			// Exact lookup: getSession() falls back to another hub when this one was removed (Delete Hub,
+			// or replaced by its secure/plain twin), and that other hub would then be "reconnected".
+			HubSession session = sessions.get(hubKey);
+			if (session != null && session.status != DCClientStatus.DISCONNECTED) {
 				handleConnectionFailure(hubKey, session, dcMessage.quit_s);
 			}
 		}
@@ -2807,16 +2835,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		ChatMessage incomingMsg = new ChatMessage(sender, text, true);
 		list.add(incomingMsg);
 
-		// If a private message handler is registered (e.g. MainActivity or active chat), dispatch to it
-		if (session.private_message_handler != null) {
-			session.private_message_handler.onCommand(dcMessage);
+		// Hand it to the UI (MainActivity adds the PM tab without switching to it). A session that only just
+		// logged in may not have its own handler yet (hub bots PM right after login), so use the UI's
+		// general one. Never start an activity from here: it took over the screen on every hub (re)login.
+		DCCommand handler = session.private_message_handler != null
+				? session.private_message_handler : defaultPrivateMessageHandler;
+		if (handler != null) {
+			handler.onCommand(dcMessage);
 		} else {
-			// If app is running in background or another activity, launch PrivateChatActivity directly
-			Intent pmIntent = new Intent(this, PrivateChatActivity.class);
-			pmIntent.putExtra(PrivateChatActivity.EXTRA_HUB_IP, session.hubIp);
-			pmIntent.putExtra(PrivateChatActivity.EXTRA_TARGET_NICK, sender);
-			pmIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-			startActivity(pmIntent);
+			showPrivateMessageNotification(session.hubIp, sender, text);
 		}
 
 		// Also send broadcast so PrivateChatActivity or MainActivity / tab list update immediately
@@ -3570,6 +3597,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			return START_STICKY;
 		}
 		String hubKey = HubAddress.of(protocol, ip, port).sessionKey(); // NMDC: ip:port, as always
+		replaceTwinSessions(hubKey, protocol, ip, port);
 
 		// Establish foreground status to satisfy Android 8.0+ requirements
 		ensureForeground(ip);
@@ -3634,6 +3662,33 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 
 		return START_STICKY;
+	}
+
+	/**
+	 * The same hub (host:port) reached over the other protocol, e.g. nmdcs://hub:411 while hub:411 runs plain:
+	 * the hub allows our nick once, so the two logins kick each other forever (and the hub bot's welcome PM
+	 * arrives on every login). Connecting one replaces the other: its session is closed, its saved entry
+	 * removed, and its saved nick/password carried over when the new address has none.
+	 */
+	private void replaceTwinSessions(String hubKey, HubAddress.Protocol protocol, String ip, int port) {
+		HubAddress target = HubAddress.of(protocol, ip, port);
+		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, 0);
+		for (Map.Entry<String, HubSession> e : new ArrayList<>(sessions.entrySet())) {
+			HubSession twin = e.getValue();
+			if (e.getKey().equals(hubKey) || twin.protocol == protocol || twin.hubPort != port
+					|| !twin.hubIp.equalsIgnoreCase(ip)) continue;
+			Log.i("andcpp", "Replacing " + twin.address().id() + " with " + target.id() + " (same hub; it allows our nick once)");
+			SharedPreferences.Editor ed = prefs.edit();
+			for (String prefix : new String[] {"favorite_nicks_", "favorite_passwords_"}) {
+				String v = twin.hubPref(prefs, prefix);
+				if (!v.isEmpty() && prefs.getString(prefix + target.prefKey(), "").isEmpty()) {
+					for (String k : target.prefKeysToWrite()) ed.putString(prefix + k, v);
+				}
+			}
+			ed.apply();
+			HubListFragment.removeSavedHub(this, twin.address().id());
+			shutdownSession(e.getKey());
+		}
 	}
 
 	private void connectToHub(final String hubKey, final HubSession session) {

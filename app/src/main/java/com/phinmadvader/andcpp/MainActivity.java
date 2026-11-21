@@ -231,7 +231,7 @@ public class MainActivity extends FragmentActivity implements
 					break;
 				case "To:":
 					if (msg.pm_from != null) {
-						open_private_chat(msg.hubname_s, msg.pm_from);
+						show_incoming_private_chat(msg.hubname_s, msg.pm_from, msg.pm_text);
 					}
 					break;
 				case "CLOSE_UI":
@@ -246,6 +246,9 @@ public class MainActivity extends FragmentActivity implements
 	public SharedPreferences getprefs() {
 		return getSharedPreferences(Constants.PREFS_NAME, 0);
 	}
+
+	/** True between onResume and onPause: incoming PMs then just add their tab, else they also notify. */
+	private boolean inForeground = false;
 
 	private boolean currentIsDark;
 	private String currentAccent;
@@ -728,6 +731,7 @@ public class MainActivity extends FragmentActivity implements
 
 	@Override
 	protected void onPause() {
+		inForeground = false;
 		UpdateChecker.setForeground(null);
 		if (poller != null) {
 			poller.stop();
@@ -739,6 +743,7 @@ public class MainActivity extends FragmentActivity implements
 	@Override
 	protected void onResume() {
 		super.onResume();
+		inForeground = true;
 		boolean darkNow = ThemeUtils.isDarkMode(this);
 		String accentNow = ThemeUtils.getColorAccent(this);
 		if (darkNow != currentIsDark || !accentNow.equals(currentAccent)) {
@@ -1087,6 +1092,19 @@ public class MainActivity extends FragmentActivity implements
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_HUBCHAT);
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_USERLIST);
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_SEARCHLIST);
+	}
+
+	/** An incoming PM: add its tab (if new) without leaving the current tab; notify if the app is in the background. */
+	private void show_incoming_private_chat(String hubIp, String senderNick, String text) {
+		if (privatechat_manager != null && tab_page_adapter != null) {
+			if (privatechat_manager.addChatQuietly(hubIp, senderNick)) {
+				tab_page_adapter.add_tab(TabPagerAdapter.TAB_PRIVATECHAT, null, "PM: " + senderNick, false);
+				tab_page_adapter.notifyDataSetChanged(); // add_tab(notify=false) leaves this to us
+			}
+		}
+		if (!inForeground && mService != null) {
+			mService.showPrivateMessageNotification(hubIp, senderNick, text);
+		}
 	}
 
 	public void open_private_chat(String hubIp, String targetNick) {
