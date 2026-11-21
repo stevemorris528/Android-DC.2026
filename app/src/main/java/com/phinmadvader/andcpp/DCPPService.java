@@ -61,6 +61,10 @@ import com.phinvader.libjdcpp.DCFileList;
 import com.phinvader.libjdcpp.DCMessage;
 import com.phinvader.libjdcpp.DCPreferences;
 import com.phinvader.libjdcpp.DCUser;
+import com.phinvader.libjdcpp.hub.HubAddress;
+import com.phinvader.libjdcpp.hub.HubConnection;
+import com.phinvader.libjdcpp.hub.NmdcHubConnection;
+import com.phinvader.libjdcpp.hub.SearchResult;
 import com.phinmadvader.andcpp.pia.PIAPortForwardingManager;
 
 /**
@@ -129,6 +133,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public String hubName;
 		public DCClientStatus status = DCClientStatus.DISCONNECTED;
 		public DCClient client = null;
+		/**
+		 * Protocol-neutral link to the hub: everything we send to the hub goes through this. Set and cleared
+		 * together with {@link #client} (NMDC: wraps it). Read it into a local before use; it changes on reconnect.
+		 */
+		public volatile HubConnection hub = null;
 		public DCCommand board_message_handler = null;
 		public DCCommand user_handler = null;
 		public DCCommand search_handler = null;
@@ -1754,7 +1763,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 				if (s.status == DCClientStatus.CONNECTED && s.client != null && s.myuser != null) {
 					try {
-						s.client.sendMyInfo(s.myuser, s.prefs);
+						sendMyInfo(s);
 					} catch (Exception e) {
 						Log.w("andcpp", "Could not re-send MyINFO to " + s.hubIp, e);
 					}
@@ -2397,27 +2406,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (hits.isEmpty()) return;
 		Log.d("andcpp", "Search from " + target + " for '" + pattern + "' (type " + type + "): " + hits.size() + " result(s)");
 
-		String slots = uploadManager.getFreeSlots() + "/" + uploadManager.getMaxSlots();
-		String hubAddr = session.hubIp + ":" + session.hubPort;
-		String hubName = (session.hubName != null && !session.hubName.trim().isEmpty()) ? session.hubName.trim() : hubAddr;
-
+		HubConnection hub = session.hub;
+		if (hub == null) return;
+		int freeSlots = uploadManager.getFreeSlots();
+		int maxSlots = uploadManager.getMaxSlots();
 		for (UploadManager.SearchHit h : hits) {
-			String sr;
-			if (h.dir) {
-				sr = "$SR " + myNick + " " + h.path + " " + slots + "\u0005" + hubName + " (" + hubAddr + ")";
-			} else {
-				sr = "$SR " + myNick + " " + h.path + "\u0005" + h.size + " " + slots + "\u0005TTH:" + h.tth
-						+ " (" + hubAddr + ")";
-			}
+			SearchResult r = new SearchResult(h.path, h.size, h.tth, h.dir, freeSlots, maxSlots);
 			if (passiveSearcher) {
-				session.client.sendRaw(sr + "\u0005" + searcherNick); // the hub routes it to the searcher
+				hub.sendSearchResultViaHub(session.myuser, r, session.hubName, searcherNick); // the hub routes it
 			} else {
-				sendSearchResultUdp(target, sr + "|");
+				sendSearchResultUdp(target, hub.searchResultDatagram(session.myuser, r, session.hubName));
 			}
 		}
 	}
 
-	private void sendSearchResultUdp(String ipPort, String sr) {
+	private void sendSearchResultUdp(String ipPort, byte[] data) {
 		int colon = ipPort.lastIndexOf(':');
 		if (colon <= 0) return;
 		try {
@@ -2427,7 +2430,6 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				if (searchUdpSocket == null || searchUdpSocket.isClosed()) {
 					searchUdpSocket = new java.net.DatagramSocket();
 				}
-				byte[] data = sr.getBytes("ISO-8859-1"); // same encoding as hub messages
 				searchUdpSocket.send(new java.net.DatagramPacket(data, data.length, addr, port));
 			}
 		} catch (Exception e) {
@@ -2487,10 +2489,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					if (session.prefs.active && uploadManager.isListening() && resolveAdvertiseIp(session) != null) {
 						String ourIp = resolveAdvertiseIp(session);
 						int ourPort = uploadManager.getPort();
-						String connectStr = "$ConnectToMe " + msg.revconnect_from + " " + ourIp + ":" + ourPort;
-						Log.d("andcpp", "Sending " + connectStr + " in response to RevConnectToMe (Active Mode)");
+						Log.d("andcpp", "Sending $ConnectToMe " + msg.revconnect_from + " " + ourIp + ":" + ourPort
+								+ " in response to RevConnectToMe (Active Mode)");
 						try {
-							session.client.sendRaw(connectStr);
+							HubConnection hub = session.hub;
+							if (hub != null) hub.sendConnectToMe(msg.revconnect_from, ourIp, ourPort);
 						} catch (Exception e) {
 							Log.e("andcpp", "Failed to send ConnectToMe", e);
 						}
@@ -2594,7 +2597,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					session.myuser.tag = null; // Force tag regeneration in sendMyInfo
 					
 					// Re-send MyINFO to confirm active status with updated IP
-					session.client.sendMyInfo(session.myuser, session.prefs);
+					sendMyInfo(session);
 					Log.d("andcpp", "Sent updated $MyINFO to hub with detected IP");
 				}
 			}
@@ -2670,13 +2673,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (session == null && !sessions.isEmpty()) {
 			session = sessions.values().iterator().next();
 		}
-		if (session != null && session.client != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
-			String myNick = session.myuser.nick;
-			String formatted = "<" + myNick + "> " + text.trim();
-			final HubSession activeSession = session;
+		final HubConnection hub = session != null ? session.hub : null;
+		if (hub != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
+			final DCUser me = session.myuser;
 			new Thread(() -> {
 				try {
-					activeSession.client.sendRaw(formatted);
+					hub.sendMainChat(me, text);
 				} catch (Exception e) {
 					Log.e("andcpp", "Failed to send chat message: " + e.getMessage(), e);
 				}
@@ -2726,17 +2728,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (session == null && !sessions.isEmpty()) {
 			session = sessions.values().iterator().next();
 		}
-		if (session != null && session.client != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
+		final HubConnection hub = session != null ? session.hub : null;
+		if (hub != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
 			String myNick = session.myuser.nick;
-			// Escape '|' and '$' in the text body according to NMDC standards
-			String sanitizedText = text.trim().replace("|", "&#124;").replace("$", "&#36;");
-			// Standard DC++ NMDC Private message format:
-			// $To: <targetNick> From: <myNick> $<myNick> <sanitizedText>
-			String rawPm = "$To: " + targetNick + " From: " + myNick + " $<" + myNick + "> " + sanitizedText;
-			final HubSession activeSession = session;
+			final DCUser me = session.myuser;
 			new Thread(() -> {
 				try {
-					activeSession.client.sendRaw(rawPm);
+					hub.sendPrivate(me, targetNick, text); // NMDC: $To: ... with '|' and '$' escaped
 				} catch (Exception e) {
 					Log.e("andcpp", "Failed to send private message: " + e.getMessage(), e);
 				}
@@ -3304,7 +3302,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			s.myuser.share_size = size;
 			if (s.status == DCClientStatus.CONNECTED && s.client != null) {
 				try {
-					s.client.sendMyInfo(s.myuser, s.prefs);
+					sendMyInfo(s);
 					Log.i("andcpp", "Share size now " + size + " bytes; MyINFO re-sent to " + s.hubIp);
 				} catch (Exception e) {
 					Log.w("andcpp", "Could not re-send MyINFO to " + s.hubIp, e);
@@ -3370,9 +3368,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				for (Map.Entry<String, HubSession> entry : sessions.entrySet()) {
 					HubSession session = entry.getValue();
-					if (session.status != DCClientStatus.CONNECTED || session.client == null) continue;
+					HubConnection hub = session.hub;
+					if (session.status != DCClientStatus.CONNECTED || hub == null) continue;
 					String key = entry.getKey();
-					long silent = session.client.getMillisSinceLastReceived();
+					long silent = hub.millisSinceLastReceived();
 					Long probeAt = hubProbeSentAt.get(key);
 					if (probeAt != null && probeAt > 0) {
 						long sinceProbe = now - probeAt;
@@ -3391,13 +3390,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						boolean probeOutstanding = probeAt != null && probeAt > 0;
 						if (!probeOutstanding && silent > HUB_PROBE_AFTER_MILLIS
 								&& now - lastProbe > HUB_PROBE_MIN_INTERVAL_MILLIS) {
-							// One liveness check: every NMDC hub answers $GetNickList, even an empty one.
+							// One liveness check the hub must answer (NMDC: $GetNickList).
 							Log.d("andcpp", "[DLTRACE] tick(" + source + "): hub " + session.hubIp + " quiet for "
 									+ (silent / 1000) + "s; sending one liveness check");
 							hubProbeSentAt.put(key, now);
-							session.client.sendRaw("$GetNickList");
+							hub.sendLivenessProbe();
 						} else {
-							session.client.sendRaw(""); // standard keep-alive "|"
+							hub.sendKeepAlive(); // NMDC: a lone "|"
 						}
 					} catch (Exception e) {
 						Log.e("andcpp", "Failed to send keep-alive to " + session.hubIp);
@@ -3625,6 +3624,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				}
 				session.client = new DCClient();
+				session.hub = new NmdcHubConnection(
+						HubAddress.of(HubAddress.Protocol.NMDC, session.hubIp, session.hubPort), session.client);
 				session.client.adoptDownloadHandler(session.keptDownloads); // build m: keep pending download requests
 				session.client.connect(session.hubIp, session.hubPort, session.prefs);
 				
@@ -3693,6 +3694,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.client.close();
 			} catch (Exception ignored) {}
 			session.client = null;
+			session.hub = null;
 		}
 
 		if (session.status == DCClientStatus.RECONNECTING) {
@@ -3939,8 +3941,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		Log.i("andcpp", "Running hub command '" + uc.title + "' for " + nick + " on " + session.hubIp);
 		userCommandExecutor.execute(() -> {
 			try {
+				HubConnection hub = session.hub;
+				if (hub == null) return;
 				for (String p : parts) {
-					session.client.sendRaw(p);
+					hub.sendHubCommand(p);
 				}
 			} catch (Exception e) {
 				Log.e("andcpp", "Failed to send hub command '" + uc.title + "'", e);
@@ -3955,19 +3959,26 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public void make_search(String hubKey, String searchtext) {
 		final HubSession session = getSession(hubKey);
-		if (session != null && session.client != null) {
+		if (session != null && session.hub != null) {
 			session.search_results.clear();
 			Log.d("andcpp", "dcpp_service Making search request to " + session.hubIp + ":" + session.hubPort + ": " + searchtext);
 			searchSendExecutor.execute(() -> {
 				try {
-					if (session.client != null) {
-						session.client.searchForFile(searchtext, session.myuser, 1);
-					}
+					HubConnection hub = session.hub;
+					if (hub != null) hub.search(session.myuser, searchtext);
 				} catch (Exception e) {
 					Log.e("andcpp", "Failed to send search to " + session.hubIp, e);
 				}
 			});
 		}
+	}
+
+	/** (Re-)sends our user info to the hub ($MyINFO on NMDC). False if the session has no hub link. */
+	private boolean sendMyInfo(HubSession s) {
+		HubConnection hub = s.hub;
+		if (hub == null || s.myuser == null) return false;
+		hub.updateMyInfo(s.myuser, s.prefs);
+		return true;
 	}
 	
 	
