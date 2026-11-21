@@ -248,6 +248,11 @@ public final class AdcClientConnection implements Closeable {
         }
     }
 
+    /** True for the file list itself ("files.xml" / "files.xml.bz2"). */
+    public static boolean isFileListName(String remotePath) {
+        return remotePath != null && (remotePath.equalsIgnoreCase("files.xml") || remotePath.equalsIgnoreCase("files.xml.bz2"));
+    }
+
     /** ADC path for a file-list path ("dir\sub\file" -> "/dir/sub/file"); the file list itself is "files.xml". */
     public static String identifierFor(String remotePath) {
         if (remotePath == null) return null;

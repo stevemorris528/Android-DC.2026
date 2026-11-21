@@ -2115,7 +2115,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		saveDownloadsState();
 	}
 
-	private File getFileListDir() {
+	File getFileListDir() {
 		String downloadDir = Settings.getDCDownloadsDirectory(this);
 		File fileListDir = new File(downloadDir, "FileLists");
 		if (!fileListDir.exists()) {
@@ -4029,6 +4029,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			m.file_signature = tth != null ? "TTH:" + tth : null;
 			m.hisinfo = new DCUser();
 			m.hisinfo.nick = from.nick;
+			if (!m.is_dir_result) adcTransfers.rememberTth(from.nick, m.file_path, tth); // ADC peers serve by TTH
 			new MySearchHandler(hubKey).onCommand(m);
 		}
 

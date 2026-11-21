@@ -83,7 +83,15 @@ final class AdcTransfers {
         boolean weActive = canAccept(session);
         if (!weActive && !peer.active) return "both passive";
         String token = newToken();
-        Pending p = new Pending(peer.cid, peer.nick, entity, AdcClientConnection.identifierFor(remotePath));
+        // DC++ / AirDC++ serve files by TTH only (a path gets "151 File Not Available"): use the TTH from the
+        // peer's saved file list when we have it, else the path.
+        String tth = null;
+        if (!AdcClientConnection.isFileListName(remotePath)) {
+            tth = tthFromSavedList(peer.nick, remotePath);
+            if (tth == null) tth = rememberedTth(peer.nick, remotePath); // e.g. a search result
+        }
+        String identifier = tth != null ? "TTH/" + tth : AdcClientConnection.identifierFor(remotePath);
+        Pending p = new Pending(peer.cid, peer.nick, entity, identifier);
         p.hub = hub;
         pending.put(token, p);
         entity.status = DCConstants.DownloadStatus.QUEUED;
@@ -255,6 +263,73 @@ final class AdcTransfers {
             e.adcConnection = null;
             conn.close();
         }
+    }
+
+    // ---- TTHs from search results (a download may start from one without the user's file list) ----
+
+    private final Map<String, String> resultTths = new java.util.LinkedHashMap<String, String>(256, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > 2000;
+        }
+    };
+
+    /** Remembers the TTH of a search result ("nick" + NMDC-style path). */
+    void rememberTth(String nick, String remotePath, String tth) {
+        if (nick == null || remotePath == null || tth == null || tth.isEmpty()) return;
+        synchronized (resultTths) {
+            resultTths.put(nick.toLowerCase(java.util.Locale.ROOT) + "\u0000" + remotePath, tth);
+        }
+    }
+
+    private String rememberedTth(String nick, String remotePath) {
+        synchronized (resultTths) {
+            return resultTths.get(nick.toLowerCase(java.util.Locale.ROOT) + "\u0000" + remotePath);
+        }
+    }
+
+    // ---- TTH from the peer's saved file list ----
+
+    /** Parsed saved file lists by nick, with the file time they were parsed from (a few, most recent). */
+    private final Map<String, Object[]> listCache = new java.util.LinkedHashMap<String, Object[]>(4, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
+            return size() > 3;
+        }
+    };
+
+    /** The TTH of "dir\sub\file" in this user's saved file list (FileLists/&lt;nick&gt;.xml), or null. */
+    String tthFromSavedList(String nick, String remotePath) {
+        if (nick == null || remotePath == null) return null;
+        File f = new File(service.getFileListDir(), nick + ".xml");
+        if (!f.isFile()) return null;
+        com.phinvader.libjdcpp.DCFileList root;
+        synchronized (listCache) {
+            Object[] c = listCache.get(nick);
+            if (c != null && (Long) c[0] == f.lastModified()) {
+                root = (com.phinvader.libjdcpp.DCFileList) c[1];
+            } else {
+                root = com.phinvader.libjdcpp.DCFileList.parseXML(f);
+                if (root == null) return null;
+                listCache.put(nick, new Object[] {f.lastModified(), root});
+            }
+        }
+        com.phinvader.libjdcpp.DCFileList node = root;
+        for (String part : remotePath.replace('/', '\\').split("\\\\")) {
+            if (part.isEmpty()) continue;
+            com.phinvader.libjdcpp.DCFileList next = null;
+            if (node.children != null) {
+                for (com.phinvader.libjdcpp.DCFileList ch : node.children) {
+                    if (part.equals(ch.name)) {
+                        next = ch;
+                        break;
+                    }
+                }
+            }
+            if (next == null) return null;
+            node = next;
+        }
+        return node != root && node.tth != null && !node.tth.isEmpty() ? node.tth : null;
     }
 
     // ---- helpers ----

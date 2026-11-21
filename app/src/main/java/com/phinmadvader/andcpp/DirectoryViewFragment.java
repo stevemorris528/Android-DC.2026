@@ -58,18 +58,22 @@ public class DirectoryViewFragment extends Fragment {
 			public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
 				if (fileList == null || position < 0 || position >= fileList.size()) return false;
 				final DCFileList selectedFile = fileList.get(position);
-				
+				// Work out the path and owner now: if another file list finishes loading while the dialog is
+				// open, the shared folder stack and chosenNick change under us (that crashed the app).
+				final String nickAtPress = mainActivity.chosenNick;
+				StringBuilder dirPath = new StringBuilder();
+				java.util.List<DCFileList> stack = filelist_manager.filelist_stack;
+				for (int j = 1; j <= depth && j < stack.size(); j++) dirPath.append(stack.get(j).name).append('\\');
+				final String remotePathAtPress = dirPath + selectedFile.name;
+
 				if (selectedFile.isDirectory()) {
 					new android.app.AlertDialog.Builder(getActivity())
 							.setTitle("Download Folder")
 							.setMessage("Do you want to download the entire folder '" + selectedFile.name + "' and all its contents?")
 							.setPositiveButton("Download", (dialog, which) -> {
 								if (mainActivity.mService != null && mainActivity.mService.get_status() == DCPPService.DCClientStatus.CONNECTED) {
-									String remotePath = "";
-									for (int j = 1; j <= depth; j++)
-										remotePath += filelist_manager.filelist_stack.get(j).name + "\\";
-									remotePath += selectedFile.name;
-									
+									String remotePath = remotePathAtPress;
+
 									String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + selectedFile.name;
 									
 									// Folder Download with statistics
@@ -82,7 +86,7 @@ public class DirectoryViewFragment extends Fragment {
 										mainActivity.mService.startFolderDownload(groupLabel, selectedFile.name, stats[0], sizeStats[0]);
 									}
 									
-									downloadDirectoryRecursive(mainActivity.chosenNick, localPath, remotePath, selectedFile, groupLabel, selectedFile.name);
+									downloadDirectoryRecursive(nickAtPress, localPath, remotePath, selectedFile, groupLabel, selectedFile.name);
 									Toast.makeText(getActivity(), "Started folder download: " + selectedFile.name + " (" + stats[0] + " files)", Toast.LENGTH_SHORT).show();
 								} else {
 									Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
@@ -102,11 +106,7 @@ public class DirectoryViewFragment extends Fragment {
 								selectedFile.name, fs.fileSize, fs.unit))
 						.setPositiveButton("Download", (dialog, which) -> {
 							if (mainActivity.mService != null && mainActivity.mService.get_status() == DCPPService.DCClientStatus.CONNECTED) {
-								String remotePath = "";
-								for (int j = 1; j <= depth; j++)
-									remotePath += filelist_manager.filelist_stack.get(j).name + "\\";
-								remotePath += selectedFile.name;
-								mainActivity.mService.download_file(mainActivity.chosenNick, localPath, remotePath, selectedFile.size);
+								mainActivity.mService.download_file(nickAtPress, localPath, remotePathAtPress, selectedFile.size);
 								Toast.makeText(getActivity(), "Started download: " + selectedFile.name, Toast.LENGTH_SHORT).show();
 							} else {
 								Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
@@ -145,7 +145,7 @@ public class DirectoryViewFragment extends Fragment {
 							
 							// Download File
 							String path = "";
-							for (int j = 1; j <= depth; j++)
+							for (int j = 1; j <= depth && j < filelist_manager.filelist_stack.size(); j++)
 								path += filelist_manager.filelist_stack.get(j).name + "\\";
 							path +=  selectedFile.name;
 							Log.e("andcpp", path);
