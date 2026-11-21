@@ -38,6 +38,7 @@ import android.support.v4.content.ContextCompat;
 import com.phinvader.libjdcpp.DCCommand;
 import com.phinvader.libjdcpp.DCFileList;
 import com.phinvader.libjdcpp.DCMessage;
+import com.phinvader.libjdcpp.hub.HubAddress;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -772,6 +773,24 @@ public class MainActivity extends FragmentActivity implements
 		startBackgroundService(nick, ip, port, true);
 	}
 
+	/**
+	 * Connects to a hub given by its parsed address. Hubs whose protocol this build can't speak yet
+	 * (ADC, ADCS, NMDCS) are refused with a message instead of being treated as NMDC.
+	 * Returns true if the connection was started.
+	 */
+	public boolean startBackgroundService(String nick, HubAddress addr, boolean showDialog) {
+		if (addr == null) {
+			Toast.makeText(this, "Invalid hub address", Toast.LENGTH_LONG).show();
+			return false;
+		}
+		if (!addr.isSupported()) {
+			Toast.makeText(this, addr.host + ":" + addr.port + ": " + addr.unsupportedReason(), Toast.LENGTH_LONG).show();
+			return false;
+		}
+		startBackgroundService(nick, addr.host, String.valueOf(addr.port), showDialog);
+		return true;
+	}
+
 	public void startBackgroundService(String nick, String ip, String port, boolean showDialog) {
 		if (myBR == null) {
 			myBR = new myBroadcastReceiver();
@@ -849,10 +868,9 @@ public class MainActivity extends FragmentActivity implements
 	 * Nick to use for a saved hub: the one saved with "Edit Nick & Password" for that hub,
 	 * otherwise the Login tab nick. Returns "" if neither is set.
 	 */
-	public String resolveNickForHub(String hubEntry, String ip, String port) {
+	public String resolveNickForHub(HubAddress addr) {
 		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-		String[] keys = {hubEntry, ip + ":" + port, ip};
-		for (String k : keys) {
+		for (String k : addr.prefKeys()) {
 			if (k == null) continue;
 			String n = prefs.getString("favorite_nicks_" + k, "");
 			if (n != null && !n.trim().isEmpty()) return n.trim();
@@ -889,30 +907,30 @@ public class MainActivity extends FragmentActivity implements
 	/** Connects to each saved hub that isn't connected yet (auto-reconnect on startup). */
 	private void reconnectSavedHubs(List<String> favoritesList) {
 		for (String hubStr : favoritesList) {
-			String ip = hubStr;
-			String port = "411";
-			String[] parts = hubStr.split(":");
-			if (parts.length == 2) {
-				ip = parts[0];
-				port = parts[1];
-			} else if (parts.length > 2) {
+			HubAddress addr = HubAddress.tryParse(hubStr);
+			if (addr == null) {
+				Log.w("andcpp", "Auto-reconnect: skipping invalid hub address " + hubStr);
+				continue;
+			}
+			if (!addr.isSupported()) { // e.g. a saved ADC hub: wait for ADC support, don't try it as NMDC
+				Log.i("andcpp", "Auto-reconnect: skipping " + hubStr + ": " + addr.unsupportedReason());
 				continue;
 			}
 
-			String hubKey = ip + ":" + port;
+			String hubKey = addr.host + ":" + addr.port;
 			if (mService != null && mService.getSession(hubKey) != null) {
 				Log.i("andcpp", "Auto-reconnect: " + hubKey + " already has a session");
 				continue;
 			}
 
-			String nick = resolveNickForHub(hubStr, ip, port);
+			String nick = resolveNickForHub(addr);
 			if (nick.isEmpty()) { // no nick saved for this hub or on the Login tab
 				Log.w("andcpp", "Auto-reconnect: no nick for " + hubStr);
 				continue;
 			}
 			Log.i("andcpp", "Auto-reconnect: connecting to " + hubKey + " as " + nick);
 
-			startBackgroundService(nick, ip, port, false);
+			startBackgroundService(nick, addr, false);
 		}
 	}
 

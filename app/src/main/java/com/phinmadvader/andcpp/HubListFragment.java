@@ -15,6 +15,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.app.AlertDialog;
 import com.phinvader.libjdcpp.DCUser;
+import com.phinvader.libjdcpp.hub.HubAddress;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -28,22 +29,60 @@ public class HubListFragment extends Fragment {
     private static final String FAVORITE_HUBS_PREF = "favorite_hubs";
 
     /**
-     * Adds a hub ("host" or "host:port") to the saved hubs unless it is already there (with or without its port).
+     * Adds a hub to the saved hubs unless it is already there. Any address form is accepted; it is stored as
+     * {@link HubAddress#id()} ("host" / "host:port" for NMDC, "adc://host:port" etc. for other protocols).
+     * For NMDC a bare "host" and "host:port" count as the same hub (old behaviour).
      * Returns true when it was added.
      */
     public static boolean saveHub(Context c, String hubId) {
-        if (hubId == null || hubId.trim().isEmpty()) return false;
-        hubId = hubId.trim();
-        String host = hubId.split(":")[0];
+        HubAddress addr = HubAddress.tryParse(hubId);
+        if (addr == null) return false;
+        hubId = addr.id();
         SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
         Set<String> favorites = new HashSet<>(prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
         for (String f : favorites) {
-            if (f.equals(hubId) || f.equals(host) || (!hubId.contains(":") && f.startsWith(host + ":"))) return false;
+            if (f.equals(hubId)) return false;
+            HubAddress saved = HubAddress.tryParse(f);
+            if (saved == null || saved.protocol != addr.protocol || !saved.host.equalsIgnoreCase(addr.host)) continue;
+            if (addr.protocol == HubAddress.Protocol.NMDC && (!saved.portExplicit || !addr.portExplicit)) return false;
+            if (saved.port == addr.port) return false;
         }
         favorites.add(hubId);
         prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
         android.util.Log.i("andcpp", "Saved hub " + hubId);
         return true;
+    }
+
+    /** Reads a per-hub string pref ("favorite_nicks_", "favorite_passwords_", "hub_name_"); "" if not set. */
+    static String getHubPref(SharedPreferences prefs, String prefix, String hubId) {
+        HubAddress addr = HubAddress.tryParse(hubId);
+        if (addr == null) return prefs.getString(prefix + hubId, "");
+        for (String k : addr.prefKeys()) {
+            String v = prefs.getString(prefix + k, "");
+            if (v != null && !v.isEmpty()) return v;
+        }
+        return "";
+    }
+
+    /** Writes a per-hub string pref under the keys {@link HubAddress#prefKeysToWrite()} lists. */
+    static void putHubPref(SharedPreferences.Editor editor, String prefix, String hubId, String value) {
+        HubAddress addr = HubAddress.tryParse(hubId);
+        if (addr == null) {
+            editor.putString(prefix + hubId, value);
+            return;
+        }
+        for (String k : addr.prefKeysToWrite()) editor.putString(prefix + k, value);
+    }
+
+    /**
+     * The running session for a saved hub, or null. Hubs of a protocol the service can't run yet never have
+     * one; without this check getSession()'s "any connected hub" fallback would return an unrelated hub.
+     */
+    private DCPPService.HubSession sessionForHub(String hubId) {
+        if (mainActivity.mService == null) return null;
+        HubAddress addr = HubAddress.tryParse(hubId);
+        if (addr != null && !addr.isSupported()) return null;
+        return mainActivity.mService.getSession(hubId);
     }
 
     @Override
@@ -123,7 +162,9 @@ public class HubListFragment extends Fragment {
                     switch (selected) {
                         case "Open Hub":
                         case "Open Hub Chat":
-                            String targetIp = entry.session != null ? entry.session.hubIp : entry.hubIp.split(":")[0];
+                            HubAddress openAddr = HubAddress.tryParse(entry.hubIp);
+                            String targetIp = entry.session != null ? entry.session.hubIp
+                                    : (openAddr != null ? openAddr.host : entry.hubIp);
                             mainActivity.openChatForHub(targetIp);
                             break;
                         case "Reconnect":
@@ -176,10 +217,7 @@ public class HubListFragment extends Fragment {
         final android.widget.EditText nickInput = new android.widget.EditText(getActivity());
         nickInput.setHint("Enter nickname for this hub");
         SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-        String savedNick = prefs.getString("favorite_nicks_" + hubIp, "");
-        if (savedNick.isEmpty() && hubIp.contains(":")) {
-            savedNick = prefs.getString("favorite_nicks_" + hubIp.split(":")[0], "");
-        }
+        String savedNick = getHubPref(prefs, "favorite_nicks_", hubIp);
         if (savedNick.isEmpty()) {
             savedNick = prefs.getString(Constants.SETTINGS_NICK_KEY, "");
         }
@@ -189,10 +227,7 @@ public class HubListFragment extends Fragment {
         final android.widget.EditText passInput = new android.widget.EditText(getActivity());
         passInput.setHint("Enter hub password");
         passInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        String savedPass = prefs.getString("favorite_passwords_" + hubIp, "");
-        if (savedPass.isEmpty() && hubIp.contains(":")) {
-            savedPass = prefs.getString("favorite_passwords_" + hubIp.split(":")[0], "");
-        }
+        String savedPass = getHubPref(prefs, "favorite_passwords_", hubIp);
         passInput.setText(savedPass);
         layout.addView(passInput);
 
@@ -204,21 +239,14 @@ public class HubListFragment extends Fragment {
                     String pass = passInput.getText().toString();
                     SharedPreferences.Editor editor = prefs.edit();
                     
-                    editor.putString("favorite_nicks_" + hubIp, nick);
-                    if (hubIp.contains(":")) {
-                        editor.putString("favorite_nicks_" + hubIp.split(":")[0], nick);
-                    }
-
-                    editor.putString("favorite_passwords_" + hubIp, pass);
-                    if (hubIp.contains(":")) {
-                        editor.putString("favorite_passwords_" + hubIp.split(":")[0], pass);
-                    }
+                    putHubPref(editor, "favorite_nicks_", hubIp, nick);
+                    putHubPref(editor, "favorite_passwords_", hubIp, pass);
                     editor.apply();
                     saveHub(mainActivity, hubIp); // details saved for a hub = keep the hub in the list
                     refresh();
 
                     if (mainActivity.mService != null) {
-                        DCPPService.HubSession session = mainActivity.mService.getSession(hubIp);
+                        DCPPService.HubSession session = sessionForHub(hubIp);
                         if (session != null) {
                             if (session.prefs != null) {
                                 session.prefs.password = pass;
@@ -240,10 +268,7 @@ public class HubListFragment extends Fragment {
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
 
         SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-        String savedPass = prefs.getString("favorite_passwords_" + hubIp, "");
-        if (savedPass.isEmpty() && hubIp.contains(":")) {
-            savedPass = prefs.getString("favorite_passwords_" + hubIp.split(":")[0], "");
-        }
+        String savedPass = getHubPref(prefs, "favorite_passwords_", hubIp);
         input.setText(savedPass);
 
         new AlertDialog.Builder(getActivity())
@@ -252,13 +277,10 @@ public class HubListFragment extends Fragment {
                 .setPositiveButton("Save", (dialog, which) -> {
                     String pass = input.getText().toString();
                     SharedPreferences.Editor editor = prefs.edit();
-                    editor.putString("favorite_passwords_" + hubIp, pass);
-                    if (hubIp.contains(":")) {
-                        editor.putString("favorite_passwords_" + hubIp.split(":")[0], pass);
-                    }
+                    putHubPref(editor, "favorite_passwords_", hubIp, pass);
                     editor.apply();
                     if (mainActivity.mService != null) {
-                        DCPPService.HubSession session = mainActivity.mService.getSession(hubIp);
+                        DCPPService.HubSession session = sessionForHub(hubIp);
                         if (session != null && session.prefs != null) {
                             session.prefs.password = pass;
                         }
@@ -382,15 +404,19 @@ public class HubListFragment extends Fragment {
             } else {
                 // Try retrieving saved hub name for offline favorite hubs if present
                 SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-                String savedName = prefs.getString("hub_name_" + entry.hubIp, null);
-                if (savedName != null && !savedName.trim().isEmpty()) {
+                HubAddress addr = HubAddress.tryParse(entry.hubIp);
+                String savedName = getHubPref(prefs, "hub_name_", entry.hubIp);
+                // Protocols this build can't run yet (ADC/ADCS/NMDCS) say so instead of "OFFLINE".
+                boolean unsupported = addr != null && !addr.isSupported();
+                String state = unsupported ? addr.unsupportedReason() : "OFFLINE";
+                if (!savedName.trim().isEmpty()) {
                     address.setText(savedName.trim() + favIndicator);
-                    status.setText(entry.hubIp + " (OFFLINE)");
+                    status.setText(entry.hubIp + " (" + state + ")");
                 } else {
                     address.setText(entry.hubIp + favIndicator);
-                    status.setText("OFFLINE (Favorite)");
+                    status.setText(unsupported ? state : "OFFLINE (Favorite)");
                 }
-                info.setText("");
+                info.setText(addr != null ? "Protocol: " + addr.protocol.label : "");
             }
 
             // Color the favorite tick green if it's a favorite
@@ -407,26 +433,25 @@ public class HubListFragment extends Fragment {
         }
 
         private void connectToHub(String hubIp) {
-            String ip = hubIp;
-            String port = "411";
-            String[] parts = hubIp.split(":");
-            if (parts.length == 2) {
-                ip = parts[0];
-                port = parts[1];
-            } else if (parts.length > 2) {
+            HubAddress addr = HubAddress.tryParse(hubIp);
+            if (addr == null) {
                 Toast.makeText(mainActivity, "Invalid Hub Address", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!addr.isSupported()) {
+                Toast.makeText(mainActivity, hubIp + ": " + addr.unsupportedReason(), Toast.LENGTH_LONG).show();
                 return;
             }
 
             // Prefer the nick saved for this hub ("Edit Nick & Password"), else the Login tab nick.
-            String nick = mainActivity.resolveNickForHub(hubIp, ip, port);
+            String nick = mainActivity.resolveNickForHub(addr);
             if (nick.isEmpty()) {
                 Toast.makeText(mainActivity, "Set a nick for this hub (Edit Nick & Password) or on the Login tab", Toast.LENGTH_LONG).show();
                 showEditNickPasswordDialog(hubIp);
                 return;
             }
 
-            mainActivity.startBackgroundService(nick, ip, port);
+            mainActivity.startBackgroundService(nick, addr, true);
         }
 
         private void toggleFavorite(String hubIp) {

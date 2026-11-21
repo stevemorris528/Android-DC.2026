@@ -16,6 +16,8 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.phinvader.libjdcpp.hub.HubAddress;
+
 /**
  * Created by invader on 8/11/13.
  */
@@ -115,19 +117,12 @@ public class LoginFragment extends Fragment {
 	public void connect() {
 		String nick = nickText.getText().toString();
 		String ip_original = ipText.getText().toString();
-		String ip = ip_original;
-		String[] ip_port_raw = ip_original.split(":");
-		String port = "411";
-		if(ip_port_raw.length ==2){
-			ip = ip_port_raw[0];
-			port = ip_port_raw[1];
-			
-		}
-		
-
-		// Check Valid IP
-		if (ip_port_raw.length > 2) {
-			Toast.makeText(mainActivity, "Invalid Address",
+		// Accepts host, host:port, dchub://, nmdc://, nmdcs://, adc:// and adcs:// addresses.
+		HubAddress addr;
+		try {
+			addr = HubAddress.parse(ip_original);
+		} catch (IllegalArgumentException e) {
+			Toast.makeText(mainActivity, e.getMessage() != null ? e.getMessage() : "Invalid Address",
 					Toast.LENGTH_LONG).show();
 			return;
 		}
@@ -150,9 +145,9 @@ public class LoginFragment extends Fragment {
 		editor.putString(Constants.SETTINGS_IP_KEY, ip_original);
 		editor.commit();
 
-		// Connect
+		// Connect (refused with a message for protocols not supported yet)
 		if (mainActivity != null) {
-			mainActivity.startBackgroundService(nick, ip, port);
+			mainActivity.startBackgroundService(nick, addr, true);
 		}
 	}
 	public static class Connectivity {

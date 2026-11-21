@@ -77,17 +77,19 @@ public class HubTestFragment extends Fragment {
             output.setText("Please enter a hub address and a nickname without spaces.");
             return;
         }
-        String host = rawAddress;
-        int port = 411;
-        int colon = rawAddress.lastIndexOf(':');
-        if (colon > 0 && rawAddress.indexOf(':') == colon) {
-            host = rawAddress.substring(0, colon).trim();
-            try { port = Integer.parseInt(rawAddress.substring(colon + 1).trim()); }
-            catch (NumberFormatException e) {
-                output.setText("Invalid port number.");
-                return;
-            }
+        com.phinvader.libjdcpp.hub.HubAddress parsed;
+        try {
+            parsed = com.phinvader.libjdcpp.hub.HubAddress.parse(rawAddress);
+        } catch (IllegalArgumentException e) {
+            output.setText(e.getMessage() + ".");
+            return;
         }
+        if (!parsed.isSupported()) { // the probe speaks plain NMDC only
+            output.setText("This test only supports NMDC hubs. " + parsed.unsupportedReason() + ".");
+            return;
+        }
+        String host = parsed.host;
+        int port = parsed.port;
         if (port < 1 || port > 65535 || host.length() == 0) {
             output.setText("Please check the hub address and port.");
             return;

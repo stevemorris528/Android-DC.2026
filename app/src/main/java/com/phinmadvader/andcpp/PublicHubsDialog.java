@@ -28,6 +28,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DecimalFormat;
+import com.phinvader.libjdcpp.hub.HubAddress;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -346,24 +348,24 @@ public class PublicHubsDialog {
             return;
         }
 
-        String ip = cleanAddress;
-        String port = "411";
-        int colonIdx = cleanAddress.indexOf(':');
-        if (colonIdx != -1) {
-            ip = cleanAddress.substring(0, colonIdx);
-            port = cleanAddress.substring(colonIdx + 1);
+        HubAddress addr;
+        try {
+            addr = HubAddress.parse(cleanAddress);
+        } catch (IllegalArgumentException e) {
+            Toast.makeText(activity, e.getMessage(), Toast.LENGTH_LONG).show();
+            return;
         }
-
-        activity.startBackgroundService(nick, ip, port);
-        activity.switchToHubsTab();
+        if (activity.startBackgroundService(nick, addr, true)) {
+            activity.switchToHubsTab();
+        }
     }
 
     private void addToFavorites(String cleanAddress) {
-        SharedPreferences prefs = activity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-        java.util.Set<String> favorites = new java.util.HashSet<>(prefs.getStringSet("favorite_hubs", new java.util.HashSet<>()));
-        if (!favorites.contains(cleanAddress)) {
-            favorites.add(cleanAddress);
-            prefs.edit().putStringSet("favorite_hubs", favorites).apply();
+        if (HubAddress.tryParse(cleanAddress) == null) {
+            Toast.makeText(activity, "Invalid hub address: " + cleanAddress, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (HubListFragment.saveHub(activity, cleanAddress)) {
             Toast.makeText(activity, "Added to Favorite Hubs", Toast.LENGTH_SHORT).show();
             activity.refreshHubList();
         } else {
@@ -378,15 +380,20 @@ public class PublicHubsDialog {
         Toast.makeText(activity, "Address copied to clipboard", Toast.LENGTH_SHORT).show();
     }
 
+    /**
+     * Normalises a hub list address to the form the app saves: NMDC hubs ({@code dchub://}) lose the scheme
+     * as before ({@code host:port}); ADC, ADCS and NMDCS hubs keep theirs ({@code adcs://host:port}), so
+     * they are no longer mistaken for NMDC hubs.
+     */
     public static String cleanAddress(String rawAddress) {
         if (rawAddress == null) return "";
+        HubAddress parsed = HubAddress.tryParse(rawAddress);
+        if (parsed != null) return parsed.id();
+        // Unparseable (e.g. an ADC address without a port): show it as listed. Only dchub:// is stripped;
+        // an adc:// scheme stays, so it can't be saved or connected to as an NMDC hub.
         String addr = rawAddress.trim();
         if (addr.startsWith("dchub://")) {
             addr = addr.substring("dchub://".length());
-        } else if (addr.startsWith("adc://")) {
-            addr = addr.substring("adc://".length());
-        } else if (addr.startsWith("adcs://")) {
-            addr = addr.substring("adcs://".length());
         }
         if (addr.endsWith("/")) {
             addr = addr.substring(0, addr.length() - 1);
