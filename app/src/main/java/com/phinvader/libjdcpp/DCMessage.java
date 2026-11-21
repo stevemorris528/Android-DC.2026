@@ -142,15 +142,15 @@ public class DCMessage {
 					int poffset = beg + 1, coffset;
 					coffset = DCFunctions.find_next(input, poffset, ' ');
 					lock_s = new String(input, poffset, coffset - poffset);
-					poffset = coffset + 1;
+					// The rest is "Pk=<client>", and newer DC++ appends "Ref=<hub>" ("Pk=DCPLUSPLUS0.880Ref=host:port").
+					// Only the lock is needed (for $Key), so never drop the $Lock over the Pk part: rejecting
+					// "Pk=...Ref=..." made the handshake with those clients wait for a $Lock that was already discarded.
+					poffset = Math.min(coffset + 1, input.length);
 					coffset = DCFunctions.find_next(input, poffset, ' ');
-					String[] key_split = new String(input, poffset, coffset
-							- poffset).split("=");
-					if (key_split.length != 2
-							|| !key_split[0].toLowerCase().equals("pk"))
-						parse_success = false;
-					else
-						key_s = key_split[1];
+					String pk = new String(input, poffset, Math.max(0, coffset - poffset));
+					if (pk.regionMatches(true, 0, "Pk=", 0, 3)) {
+						key_s = pk.substring(3);
+					}
 
 				} else if (command.equals("Key")) {
 					key_s = new String(input, beg + 1, input.length - beg - 1);

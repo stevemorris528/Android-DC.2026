@@ -597,17 +597,72 @@ public class MainActivity extends FragmentActivity implements
 		refreshWelcomeFragment();
 	}
 
+	private boolean shuttingDown = false;
+
 	public void shutdownAppCompletely() {
-		// 4. Ensure MainActivity.java shutdownAppCompletely() does not call System.exit(0), stop the service, or finish until the service shutdown and download pausing/saving process completely finishes.
-		if (mService != null) {
-			mService.onDestroy();
+		if (shuttingDown) return; // Shutdown tapped twice
+		shuttingDown = true;
+
+		// Pausing downloads, closing connections and saving state can take several seconds. It used to run
+		// on the UI thread, so the app just froze; now a window explains the wait while it runs in the background.
+		final AlertDialog closing = showClosingDialog();
+		final DCPPService service = mService;
+		new Thread(() -> {
+			// Don't stop the service or finish until pausing/saving has completely finished.
+			if (service != null) {
+				try {
+					service.onDestroy();
+				} catch (Exception e) {
+					Log.e("andcpp", "Error while shutting down transfers", e);
+				}
+			}
+			runOnUiThread(() -> {
+				try {
+					if (closing.isShowing()) closing.dismiss();
+				} catch (Exception ignored) {}
+				stopBackgroundService();
+				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+					finishAffinity();
+				} else {
+					finish();
+				}
+			});
+		}, "AppShutdown").start();
+	}
+
+	/** "Closing transfers please wait :-)" with a spinner in the accent colour; can't be dismissed. */
+	private AlertDialog showClosingDialog() {
+		float d = getResources().getDisplayMetrics().density;
+		android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+		row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+		row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+		int pad = Math.round(24 * d);
+		row.setPadding(pad, pad, pad, pad);
+
+		android.widget.ProgressBar spinner = new android.widget.ProgressBar(this);
+		spinner.setIndeterminate(true);
+		if (Build.VERSION.SDK_INT >= 21) {
+			spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(ThemeUtils.getAccentColor(this)));
 		}
-		stopBackgroundService();
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-			finishAffinity();
-		} else {
-			finish();
+		row.addView(spinner, new android.widget.LinearLayout.LayoutParams(Math.round(36 * d), Math.round(36 * d)));
+
+		TextView text = new TextView(this);
+		text.setText("Closing transfers please wait :-)");
+		text.setTextSize(16);
+		android.util.TypedValue tv = new android.util.TypedValue();
+		if (getTheme().resolveAttribute(R.attr.appTextColorPrimary, tv, true)) {
+			text.setTextColor(tv.resourceId != 0 ? getResources().getColor(tv.resourceId) : tv.data);
 		}
+		text.setPadding(Math.round(20 * d), 0, 0, 0);
+		row.addView(text);
+
+		AlertDialog dialog = new AlertDialog.Builder(this)
+				.setView(row)
+				.setCancelable(false)
+				.create();
+		dialog.setCanceledOnTouchOutside(false);
+		dialog.show();
+		return dialog;
 	}
 
 	public void open_cached_file_list(String nick) {

@@ -124,7 +124,10 @@ public class MessageRouter implements Runnable {
 				}
 			}
 
-			if ("HubQuit".equals(msg.command) || "Quit".equals(msg.command)) {
+			// Stop only when the connection itself closed ("HubQuit"). "$Quit <nick>" just means another user left
+			// the hub: stopping on it froze the user list (rejoining users stayed "offline") and dropped all later
+			// hub messages, e.g. the $ConnectToMe requests our downloads wait for.
+			if ("HubQuit".equals(msg.command)) {
 				break;
 			}
 		}

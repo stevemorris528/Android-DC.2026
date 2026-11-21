@@ -662,6 +662,7 @@ public class UploadManager {
                 Log.w("andcpp", "File list refresh: no storage permission yet; list may be incomplete");
             }
             if (tthCache.isEmpty()) loadTthCache();
+            mergeTthCacheBackupOnce();
 
             String downloadDir = Settings.getDCDownloadsDirectory(service);
             File root = new File(downloadDir);
@@ -991,8 +992,24 @@ public class UploadManager {
         s.endTag(null, "Directory");
     }
 
+    /**
+     * Copy of the hash cache in shared storage (Download/Android-DC++/.tth_cache). It survives a clean install,
+     * so the share is ready at once afterwards instead of re-hashing everything (minutes during which every
+     * upload request was answered "busy"). Entries are keyed by path|size|mtime, so changed files still re-hash.
+     */
+    private File tthCacheBackupFile() {
+        return new File(SettingsBackup.backupDirectory(service), ".tth_cache");
+    }
+
     private void loadTthCache() {
         File f = tthCacheFile();
+        if (!f.exists() && SettingsBackup.hasStoragePermission(service)) {
+            File backup = tthCacheBackupFile();
+            if (backup.isFile()) {
+                Log.i("andcpp", "No hash cache (clean install?): using the backup " + backup.getPath());
+                f = backup;
+            }
+        }
         if (!f.exists()) return;
         try (java.io.BufferedReader r = new java.io.BufferedReader(
                 new java.io.InputStreamReader(new java.io.FileInputStream(f), "UTF-8"))) {
@@ -1022,6 +1039,57 @@ public class UploadManager {
             return;
         }
         tmp.renameTo(f);
+        backupTthCache(f);
+    }
+
+    private boolean tthBackupChecked = false;
+
+    /**
+     * Once storage access is available: adds hashes from the backup that the cache doesn't have yet (after a clean
+     * install a few files may already have been hashed before the permission was granted, so the cache isn't empty
+     * and loadTthCache() alone would skip the backup). Also creates the backup if there is none yet.
+     */
+    private void mergeTthCacheBackupOnce() {
+        if (tthBackupChecked || !SettingsBackup.hasStoragePermission(service)) return;
+        tthBackupChecked = true;
+        File backup = tthCacheBackupFile();
+        if (!backup.isFile()) {
+            backupTthCache(tthCacheFile()); // existing install: start the backup now
+            return;
+        }
+        int added = 0;
+        try (java.io.BufferedReader r = new java.io.BufferedReader(
+                new java.io.InputStreamReader(new java.io.FileInputStream(backup), "UTF-8"))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                int tab = line.indexOf('\t');
+                if (tab > 0 && ((ConcurrentHashMap<String, String>) tthCache).putIfAbsent(line.substring(tab + 1), line.substring(0, tab)) == null) added++;
+            }
+        } catch (IOException e) {
+            Log.w("andcpp", "Could not read the hash cache backup", e);
+        }
+        if (added > 0) Log.i("andcpp", "Added " + added + " hashes from the hash cache backup");
+    }
+
+    /** Copies the saved hash cache to shared storage (see tthCacheBackupFile()). */
+    private void backupTthCache(File cache) {
+        if (!SettingsBackup.hasStoragePermission(service) || !cache.isFile()) return;
+        File backup = tthCacheBackupFile();
+        File tmp = new File(backup.getPath() + ".tmp");
+        try (java.io.InputStream in = new java.io.FileInputStream(cache);
+             java.io.OutputStream out = new java.io.FileOutputStream(tmp)) {
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+        } catch (IOException e) {
+            Log.w("andcpp", "Could not back up the hash cache: " + e.getMessage());
+            tmp.delete();
+            return;
+        }
+        if (!tmp.renameTo(backup)) {
+            backup.delete();
+            tmp.renameTo(backup);
+        }
     }
 
     public DCPPService getService() {

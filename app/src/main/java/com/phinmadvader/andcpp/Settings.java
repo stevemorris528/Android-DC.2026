@@ -27,64 +27,185 @@ public class Settings extends Activity{
 		ThemeUtils.applyTheme(this);
 		super.onCreate(savedInstanceState);
 
-		//although it's called file list, it's the exact code needed here, so I'm not going to make a new view.
-		setContentView(R.layout.file_list);
-		ListView lv = (ListView)findViewById(R.id.listView);
-		String[] options = new String[]{
-				"Theme: Light / Dark Mode",
-				"Accent Color",
-				"Change Downloads Directory",
-				"Change Upload Slots",
-				"Auto-Reconnect Saved Hubs on Startup",
-				"VPN Forwarded Port (active mode on a VPN)",
-				"PIA Port Forwarding (automatic)",
-				"PIA Login (for port forwarding)",
-				"Check for Updates"
-		};
-		
-		ArrayAdapter<String> myArrayAdapter = new ArrayAdapter<String>(this,
-				R.layout.settings_list_element_layout, R.id.elementString, options);
-		
-		lv.setAdapter(myArrayAdapter);
-		lv.setOnItemClickListener(new OnItemClickListener() {
+		if (getActionBar() != null) getActionBar().setTitle("Settings");
+		buildSettingsScreen();
+	}
 
-			@Override
-			public void onItemClick(AdapterView<?> parentAdapterView, View view, int position,
-					long id) {
-				Log.d("andcpp", "settings item "+id+" clicked , position "+position);
-				switch(position){
-				case 0:
-					changeThemeMode();
-					return;
-				case 1:
-					changeAccentColor();
-					return;
-				case 2:
-					changeDownloadsDirectory();
-					return;
-				case 3:
-					changeUploadSlots();
-					return;
-				case 4:
-					changeAutoReconnectHubs();
-					return;
-				case 5:
-					changeVpnForwardedPort();
-					return;
-				case 6:
-					changePiaPortForwarding();
-					return;
-				case 7:
-					changePiaLogin();
-					return;
-				case 8:
-					UpdateChecker.checkNow(true);
-					return;
-				default:
-					Log.d("andcpp", "this is unimplemented");
-				}
+	// ---- Settings screen: grouped cards in the app's theme (surface colour, accent headings) ----
+
+	/** Value lines under each row, refreshed whenever a dialog closes (see onWindowFocusChanged). */
+	private final java.util.List<Runnable> summaryUpdaters = new java.util.ArrayList<>();
+
+	private int dp(float v) {
+		return Math.round(v * getResources().getDisplayMetrics().density);
+	}
+
+	private int themeColor(int attr, int fallback) {
+		android.util.TypedValue tv = new android.util.TypedValue();
+		if (getTheme().resolveAttribute(attr, tv, true)) {
+			return tv.resourceId != 0 ? getResources().getColor(tv.resourceId) : tv.data;
+		}
+		return fallback;
+	}
+
+	private interface Summary {
+		String get();
+	}
+
+	private void buildSettingsScreen() {
+		boolean dark = ThemeUtils.isDarkMode(this);
+		int bg = themeColor(R.attr.appBackgroundColor, dark ? 0xFF121212 : 0xFFF5F5F5);
+
+		android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+		scroll.setBackgroundColor(bg);
+		scroll.setFillViewport(true);
+		android.widget.LinearLayout root = new android.widget.LinearLayout(this);
+		root.setOrientation(android.widget.LinearLayout.VERTICAL);
+		root.setPadding(dp(16), dp(8), dp(16), dp(24));
+		scroll.addView(root);
+
+		final com.phinmadvader.andcpp.pia.PIAPortForwardingManager pia =
+				com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this);
+
+		android.widget.LinearLayout card = addSection(root, "Appearance");
+		addRow(card, "Theme", () -> ThemeUtils.isDarkMode(this) ? "Dark mode" : "Light mode", this::changeThemeMode);
+		addRow(card, "Accent colour", this::accentName, this::changeAccentColor);
+
+		card = addSection(root, "Transfers");
+		addRow(card, "Downloads folder", () -> getDCDownloadsDirectory(this), this::changeDownloadsDirectory);
+		addRow(card, "Upload slots", () -> getUploadSlots(this) + " at a time", this::changeUploadSlots);
+
+		card = addSection(root, "Hubs");
+		addRow(card, "Auto-reconnect saved hubs", () -> getAutoReconnectHubs(this) ? "On at startup" : "Off",
+				this::changeAutoReconnectHubs);
+
+		card = addSection(root, "Connection");
+		addRow(card, "VPN forwarded port", () -> {
+			int p = getVpnForwardedPort(this);
+			return p > 0 ? "Port " + p : "Not set (for active mode on a VPN)";
+		}, this::changeVpnForwardedPort);
+		addRow(card, "PiA port forwarding", () -> {
+			if (!pia.isEnabled()) return "Off";
+			String port = pia.getCurrentPort();
+			return port != null ? "On, port " + port : "On (automatic)";
+		}, this::changePiaPortForwarding);
+		addRow(card, "PiA login", () -> pia.hasCredentials() ? "Saved: " + pia.getUsername() : "Not set",
+				this::changePiaLogin);
+
+		card = addSection(root, "About");
+		addRow(card, "Check for updates", () -> "Installed build " + BuildConfig.BUILD_NUMBER,
+				() -> UpdateChecker.checkNow(true));
+
+		setContentView(scroll);
+		refreshSummaries();
+	}
+
+	private String accentName() {
+		String c = ThemeUtils.getColorAccent(this);
+		if (ThemeUtils.COLOR_BLUE.equals(c)) return "Blue";
+		if (ThemeUtils.COLOR_GREEN.equals(c)) return "Green";
+		if (ThemeUtils.COLOR_ORANGE.equals(c)) return "Orange";
+		if (ThemeUtils.COLOR_PURPLE.equals(c)) return "Purple";
+		return "Teal (default)";
+	}
+
+	/** Adds an accent-coloured section heading and returns the rounded card that holds its rows. */
+	private android.widget.LinearLayout addSection(android.widget.LinearLayout root, String title) {
+		android.widget.TextView heading = new android.widget.TextView(this);
+		heading.setText(title.toUpperCase(java.util.Locale.US));
+		heading.setTextSize(12);
+		if (android.os.Build.VERSION.SDK_INT >= 21) heading.setLetterSpacing(0.08f);
+		heading.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+		heading.setTextColor(ThemeUtils.getAccentColor(this));
+		heading.setPadding(dp(8), dp(20), dp(8), dp(8));
+		root.addView(heading);
+
+		boolean dark = ThemeUtils.isDarkMode(this);
+		android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+		shape.setColor(themeColor(R.attr.appSurfaceColor, dark ? 0xFF1E1E1E : 0xFFFFFFFF));
+		shape.setCornerRadius(dp(16));
+		shape.setStroke(dp(1), themeColor(R.attr.appDividerColor, dark ? 0xFF333333 : 0xFFEEEEEE));
+
+		android.widget.LinearLayout card = new android.widget.LinearLayout(this);
+		card.setOrientation(android.widget.LinearLayout.VERTICAL);
+		card.setBackgroundDrawable(shape);
+		if (android.os.Build.VERSION.SDK_INT >= 21) {
+			card.setClipToOutline(true); // row ripples stay inside the rounded corners
+			card.setElevation(dp(1));
+		}
+		root.addView(card);
+		return card;
+	}
+
+	/** Adds a row (title + current value) to a card; tapping it runs action. */
+	private void addRow(android.widget.LinearLayout card, String title, Summary summary, Runnable action) {
+		boolean dark = ThemeUtils.isDarkMode(this);
+		if (card.getChildCount() > 0) {
+			View divider = new View(this);
+			divider.setBackgroundColor(themeColor(R.attr.appDividerColor, dark ? 0xFF333333 : 0xFFEEEEEE));
+			android.widget.LinearLayout.LayoutParams lp =
+					new android.widget.LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+			lp.leftMargin = dp(16);
+			card.addView(divider, lp);
+		}
+
+		android.widget.LinearLayout row = new android.widget.LinearLayout(this);
+		row.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+		row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+		row.setPadding(dp(16), dp(14), dp(12), dp(14));
+		row.setMinimumHeight(dp(64));
+		android.util.TypedValue ripple = new android.util.TypedValue();
+		getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
+		row.setBackgroundResource(ripple.resourceId);
+
+		android.widget.LinearLayout texts = new android.widget.LinearLayout(this);
+		texts.setOrientation(android.widget.LinearLayout.VERTICAL);
+		row.addView(texts, new android.widget.LinearLayout.LayoutParams(0,
+				android.view.ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+		android.widget.TextView titleView = new android.widget.TextView(this);
+		titleView.setText(title);
+		titleView.setTextSize(16);
+		titleView.setTextColor(themeColor(R.attr.appTextColorPrimary, dark ? 0xFFEEEEEE : 0xFF212121));
+		texts.addView(titleView);
+
+		final android.widget.TextView valueView = new android.widget.TextView(this);
+		valueView.setTextSize(13);
+		valueView.setTextColor(themeColor(R.attr.appTextColorSecondary, dark ? 0xFFB0B0B0 : 0xFF757575));
+		valueView.setPadding(0, dp(2), 0, 0);
+		valueView.setMaxLines(2);
+		valueView.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+		texts.addView(valueView);
+		summaryUpdaters.add(() -> {
+			String s;
+			try {
+				s = summary.get();
+			} catch (Exception e) {
+				s = null;
 			}
+			valueView.setText(s);
+			valueView.setVisibility(s == null || s.isEmpty() ? View.GONE : View.VISIBLE);
 		});
+
+		android.widget.TextView chevron = new android.widget.TextView(this);
+		chevron.setText("›");
+		chevron.setTextSize(22);
+		chevron.setTextColor(themeColor(R.attr.appTextColorSecondary, dark ? 0xFFB0B0B0 : 0xFF757575));
+		chevron.setPadding(dp(12), 0, dp(4), 0);
+		row.addView(chevron);
+
+		row.setOnClickListener(v -> action.run());
+		card.addView(row);
+	}
+
+	private void refreshSummaries() {
+		for (Runnable r : summaryUpdaters) r.run();
+	}
+
+	@Override
+	public void onWindowFocusChanged(boolean hasFocus) {
+		super.onWindowFocusChanged(hasFocus);
+		if (hasFocus) refreshSummaries(); // a settings dialog just closed: show the new values
 	}
 
 	@Override

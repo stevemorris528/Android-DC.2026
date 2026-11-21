@@ -210,6 +210,31 @@ public class PeerConnectionHandler implements Runnable {
         }
     }
 
+    /** How long the server side waits for $Lock after $MyNick before sending its own $MyNick/$Lock first. */
+    private static final long LOCK_GRACE_MS = 2000;
+    /** Phase-2 messages that arrived while awaitLock() was still waiting for the peer's $Lock. */
+    private boolean earlyKey = false;
+    private DCMessage earlyDirection = null;
+
+    /** Waits for the peer's $Lock (after we sent ours). Throws if it doesn't come before the deadline. */
+    private String awaitLock(MessageHandler handler, long deadline) throws IOException, InterruptedException {
+        while (System.currentTimeMillis() < deadline) {
+            DCMessage m = handler.getNextMessage(1000, TimeUnit.MILLISECONDS);
+            if (m == null) continue;
+            if ("HubQuit".equals(m.command)) throw new IOException("Peer closed connection during handshake");
+            if ("Lock".equals(m.command) && m.lock_s != null) {
+                Log.d("andcpp", "Received $Lock (after our reply): " + m.lock_s);
+                return m.lock_s;
+            }
+            // Keep what phase 2 waits for, in case it arrives before the $Lock.
+            if ("Key".equals(m.command)) earlyKey = true;
+            else if ("Direction".equals(m.command)) earlyDirection = m;
+            else if ("Get".equals(m.command) || "ADCGET".equals(m.command)) earlyRequest = m;
+            Log.d("andcpp", "Handshake: got $" + m.command + " from " + hisNick + " while waiting for $Lock");
+        }
+        throw new IOException("Handshake failed: Peer identity or challenge not received");
+    }
+
     private boolean performHandshake(MessageHandler handler, DCUser myUser) throws IOException, InterruptedException {
         long handshakeTimeout = 15000;
         long startTime = System.currentTimeMillis();
@@ -232,14 +257,22 @@ public class PeerConnectionHandler implements Runnable {
                 sentOrder.append("MyNick, Lock, ");
             }
 
-            // Handshake Phase 1: Identity Exchange
+            // Handshake Phase 1: Identity Exchange.
+            // As the server, some clients send only $MyNick and then wait for OUR $MyNick/$Lock before sending
+            // their $Lock. Waiting for both first deadlocked those connections (each side waiting ~15 s), so once
+            // the nick is in we wait only briefly for $Lock, answer, and collect their $Lock afterwards.
             DCMessage hisNickMsg = null;
+            long nickAt = 0;
             while ((hisNickMsg == null || hisLock == null) && (System.currentTimeMillis() - startTime < handshakeTimeout)) {
-                DCMessage m = handler.getNextMessage(2000, TimeUnit.MILLISECONDS);
+                if (isServer && hisNickMsg != null && System.currentTimeMillis() - nickAt >= LOCK_GRACE_MS) {
+                    break; // nick but no $Lock yet: reply first (below), then wait for their $Lock
+                }
+                DCMessage m = handler.getNextMessage(isServer && hisNickMsg != null ? 250 : 2000, TimeUnit.MILLISECONDS);
                 if (m == null) continue;
                 if ("HubQuit".equals(m.command)) throw new IOException("Peer closed connection during handshake");
                 if ("MyNick".equals(m.command)) {
                     hisNickMsg = m;
+                    nickAt = System.currentTimeMillis();
                     Log.d("andcpp", "Received $MyNick: " + m.hisinfo.nick);
                 }
                 if ("Lock".equals(m.command)) {
@@ -248,7 +281,7 @@ public class PeerConnectionHandler implements Runnable {
                 }
             }
 
-            if (hisNickMsg == null || hisNickMsg.hisinfo == null || hisLock == null) {
+            if (hisNickMsg == null || hisNickMsg.hisinfo == null || (hisLock == null && !isServer)) {
                 throw new IOException("Handshake failed: Peer identity or challenge not received");
             }
             this.hisNick = hisNickMsg.hisinfo.nick;
@@ -273,6 +306,7 @@ public class PeerConnectionHandler implements Runnable {
                     Log.d("andcpp", "Intercepted incoming connection as pending active download for " + hisNick);
                     handler.send_mynick(correctMyUser);
                     handler.send_lock();
+                    if (hisLock == null) hisLock = awaitLock(handler, startTime + handshakeTimeout);
 
                     DCMessage rlockMsg = new DCMessage();
                     rlockMsg.lock_s = hisLock;
@@ -285,6 +319,7 @@ public class PeerConnectionHandler implements Runnable {
                 handler.send_mynick(myUser);
                 handler.send_lock();
                 sentOrder.append("MyNick, Lock, ");
+                if (hisLock == null) hisLock = awaitLock(handler, startTime + handshakeTimeout);
             }
         }
 
@@ -298,8 +333,15 @@ public class PeerConnectionHandler implements Runnable {
         Log.d("andcpp", "Handshake send order with " + hisNick + ": " + sentOrder);
 
         // Wait for Peer's Key and Direction
-        boolean hisKeyReceived = false;
-        boolean hisDirReceived = false;
+        boolean hisKeyReceived = earlyKey;
+        boolean hisDirReceived = earlyRequest != null;
+        if (earlyDirection != null) {
+            hisDirReceived = true;
+            if (!earlyDirection.dir_download) {
+                throw new IOException("Protocol conflict: Peer " + hisNick + " also wants to upload.");
+            }
+        }
+        if (earlyRequest != null) hisKeyReceived = true; // a request means the handshake is done on their side
         startTime = System.currentTimeMillis();
         while ((!hisKeyReceived || !hisDirReceived) && (System.currentTimeMillis() - startTime < handshakeTimeout)) {
             DCMessage m = handler.getNextMessage(2000, TimeUnit.MILLISECONDS);

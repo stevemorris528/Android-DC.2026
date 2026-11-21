@@ -100,4 +100,23 @@ public class ThemeUtils {
         }
         activity.setTheme(themeRes);
     }
+
+    /** Blue used for the connection-mode details when active mode is working. */
+    public static final int COLOR_MODE_ACTIVE = 0xFF2196F3;
+
+    /**
+     * Connection mode text, e.g. "Active (PIA port forwarding, port 47389)": when active mode is working, the
+     * details inside the brackets are shown in blue.
+     */
+    public static CharSequence formatConnectionMode(String prefix, String description, boolean active) {
+        String text = prefix + description;
+        android.text.SpannableString s = new android.text.SpannableString(text);
+        int open = text.indexOf('(');
+        int close = text.lastIndexOf(')');
+        if (active && open >= 0 && close > open + 1) {
+            s.setSpan(new android.text.style.ForegroundColorSpan(COLOR_MODE_ACTIVE), open + 1, close,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        return s;
+    }
 }

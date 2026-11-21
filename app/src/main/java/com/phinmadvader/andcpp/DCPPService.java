@@ -1702,11 +1702,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								pia.ensureRunning(); // no-op while already running
 							}
 							if (pia.getCurrentPort() != null && listening) {
-								r = new ConnectivityDetector.Result(true, null, "PIA port forwarding, port " + pia.getCurrentPort());
+								r = new ConnectivityDetector.Result(true, null, "PiA port forwarding, port " + pia.getCurrentPort());
 							} else if (pia.getLastError() != null) {
-								r = new ConnectivityDetector.Result(false, null, "PIA port forwarding: " + pia.getLastError());
+								r = new ConnectivityDetector.Result(false, null, "PiA port forwarding: " + pia.getLastError().replace("PIA", "PiA"));
 							} else {
-								r = new ConnectivityDetector.Result(false, null, "VPN active, waiting for PIA port forwarding");
+								r = new ConnectivityDetector.Result(false, null, "VPN active, waiting for PiA port forwarding");
 							}
 						} else if (vpnPort > 0 && listening) {
 							r = new ConnectivityDetector.Result(true, null, "VPN port forwarding, port " + vpnPort);
@@ -2507,6 +2507,30 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				// Some hubs send our IP in $MyINFO
 				// The parser doesn't extract IP from MyINFO, but we could check if needed.
 			}
+			if (msg.myinfo != null && msg.myinfo.nick != null) {
+				retryDownloadsOfUserBackOnline(msg.myinfo.nick);
+			}
+		}
+	}
+
+	/**
+	 * A user (re)appeared on a hub: downloads parked as "user offline" for that nick retry now instead of after
+	 * their backoff (which grows to several minutes).
+	 */
+	private void retryDownloadsOfUserBackOnline(String nick) {
+		boolean any = false;
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if ("user offline".equals(obj.waitReason) && obj.target_nick != null
+						&& obj.target_nick.equalsIgnoreCase(nick)) {
+					obj.nextRetryAt = 0;
+					any = true;
+				}
+			}
+		}
+		if (any) {
+			Log.i("andcpp", "[DLTRACE] " + nick + " is online again; retrying their downloads now");
+			new Handler(Looper.getMainLooper()).post(this::retryPendingDownloads);
 		}
 	}
 
@@ -3072,7 +3096,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	/** PIA assigned/kept a forwarded port: re-run detection, which listens on it and goes active. */
 	private void handlePIAPortBound(String portStr) {
 		ConnectivityDetector.Result r = connectivityResult;
-		String expected = "PIA port forwarding, port " + portStr;
+		String expected = "PiA port forwarding, port " + portStr; // must match the reason text set in detection
 		if (r != null && r.active && expected.equals(r.reason)
 				&& uploadManager != null && String.valueOf(uploadManager.getPort()).equals(portStr)) {
 			return; // keep-alive of the port we already use

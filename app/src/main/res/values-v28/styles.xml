@@ -24,6 +24,12 @@
         <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
         <item name="android:dialogTheme">@style/RoundedDialogTheme</item>
         <item name="android:alertDialogTheme">@style/RoundedAlertDialogTheme</item>
+
+        <!-- Rounded ⋮ menu and popup menus -->
+        <item name="android:actionOverflowMenuStyle">@style/RoundedOverflowMenu</item>
+        <item name="android:popupMenuStyle">@style/RoundedPopupMenu</item>
+        <item name="android:textAppearanceLargePopupMenu">@style/PopupMenuText</item>
+        <item name="android:textAppearanceSmallPopupMenu">@style/PopupMenuText</item>
     </style>
 
     <!-- Base Dark Theme for API 28+ -->
@@ -50,6 +56,43 @@
         <item name="android:dialogCornerRadius">@dimen/dialog_corner_radius</item>
         <item name="android:dialogTheme">@style/RoundedDialogThemeDark</item>
         <item name="android:alertDialogTheme">@style/RoundedAlertDialogThemeDark</item>
+
+        <!-- Rounded ⋮ menu and popup menus Dark -->
+        <item name="android:actionOverflowMenuStyle">@style/RoundedOverflowMenuDark</item>
+        <item name="android:popupMenuStyle">@style/RoundedPopupMenuDark</item>
+        <item name="android:textAppearanceLargePopupMenu">@style/PopupMenuTextDark</item>
+        <item name="android:textAppearanceSmallPopupMenu">@style/PopupMenuTextDark</item>
+    </style>
+
+    <!-- ⋮ menu / popup menus: rounded, in the app's dialog colours -->
+    <style name="RoundedOverflowMenu" parent="android:Widget.Material.Light.PopupMenu.Overflow">
+        <item name="android:popupBackground">@drawable/popup_rounded_bg</item>
+        <item name="android:popupElevation">8dp</item>
+        <item name="android:overlapAnchor">false</item>
+        <item name="android:dropDownVerticalOffset">4dp</item>
+    </style>
+    <style name="RoundedPopupMenu" parent="android:Widget.Material.Light.PopupMenu">
+        <item name="android:popupBackground">@drawable/popup_rounded_bg</item>
+        <item name="android:popupElevation">8dp</item>
+    </style>
+    <style name="PopupMenuText" parent="android:TextAppearance.Material.Widget.PopupMenu.Large">
+        <item name="android:textColor">@color/light_text_primary</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="RoundedOverflowMenuDark" parent="android:Widget.Material.PopupMenu.Overflow">
+        <item name="android:popupBackground">@drawable/popup_rounded_bg_dark</item>
+        <item name="android:popupElevation">8dp</item>
+        <item name="android:overlapAnchor">false</item>
+        <item name="android:dropDownVerticalOffset">4dp</item>
+    </style>
+    <style name="RoundedPopupMenuDark" parent="android:Widget.Material.PopupMenu">
+        <item name="android:popupBackground">@drawable/popup_rounded_bg_dark</item>
+        <item name="android:popupElevation">8dp</item>
+    </style>
+    <style name="PopupMenuTextDark" parent="android:TextAppearance.Material.Widget.PopupMenu.Large">
+        <item name="android:textColor">@color/dark_text_primary</item>
+        <item name="android:textSize">15sp</item>
     </style>
 
     <style name="RoundedActionBarTab" parent="android:Widget.Material.Light.ActionBar.TabView">

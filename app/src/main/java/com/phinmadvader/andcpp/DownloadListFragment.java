@@ -147,7 +147,8 @@ public class DownloadListFragment extends Fragment {
         txtDlTotals.setText("DL: " + formatSize(totalDownloaded) + "  (" + formatSize(allTime[0]) + ")");
         txtUlTotals.setText("UL: " + formatSize(stats.totalBytes) + "  (" + formatSize(allTime[1]) + ")");
         if (txtConnectionMode != null) {
-            txtConnectionMode.setText("Mode: " + mainActivity.mService.getConnectionModeDescription());
+            txtConnectionMode.setText(ThemeUtils.formatConnectionMode("Mode: ",
+                    mainActivity.mService.getConnectionModeDescription(), mainActivity.mService.isConnectionActive()));
         }
 
         FileSize totalFs = new FileSize(stats.totalBytes);
