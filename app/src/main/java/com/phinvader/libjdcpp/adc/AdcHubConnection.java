@@ -199,14 +199,15 @@ public final class AdcHubConnection implements HubConnection {
     private void remember(String l) {
         synchronized (recentLines) {
             recentLines.add(l.length() > 200 ? l.substring(0, 200) + "…" : l);
-            while (recentLines.size() > 8) recentLines.removeFirst();
+            while (recentLines.size() > 20) recentLines.removeFirst();
         }
     }
 
     void handleLine(String raw) {
         String l = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
         if (l.isEmpty()) return; // keep-alive
-        if (!l.startsWith("BINF ")) remember(l); // user INFs would crowd out the interesting lines
+        // User INFs and hub menu entries would crowd out the interesting lines.
+        if (!l.startsWith("BINF ") && !l.startsWith("ICMD ")) remember(l);
         AdcCommand c;
         try {
             c = AdcCommand.parse(l);
