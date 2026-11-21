@@ -109,6 +109,9 @@ public class DownloadListFragment extends Fragment {
         List<DownloadItem> newList = mainActivity.mService.get_download_queue();
         downloadList.clear();
         downloadList.addAll(newList);
+        // Fastest first. Items not transferring right now count as 0; the sort is stable, so they keep the
+        // queue order below the active ones.
+        java.util.Collections.sort(downloadList, (a, b) -> Double.compare(currentSpeed(b), currentSpeed(a)));
         adapter.notifyDataSetChanged();
 
         try {
@@ -119,9 +122,18 @@ public class DownloadListFragment extends Fragment {
         }
     }
 
+    /** Download speed shown for sorting: a folder's total, a file that is downloading, else 0. */
+    private static double currentSpeed(DownloadItem item) {
+        if (item == null) return 0;
+        if (item.isFolder() || item.get_status() == DCConstants.DownloadStatus.DOWNLOADING) return item.avg_speed();
+        return 0;
+    }
+
     private void updateUploadStats() {
         UploadManager.UploadStats stats = mainActivity.mService.getUploadStats();
-        List<PeerConnectionHandler> uploads = mainActivity.mService.getActiveUploads();
+        // Fastest upload first (getSpeed() is 0 unless the connection is sending data); stable for the rest.
+        List<PeerConnectionHandler> uploads = new java.util.ArrayList<>(mainActivity.mService.getActiveUploads());
+        java.util.Collections.sort(uploads, (a, b) -> Double.compare(b.getSpeed(), a.getSpeed()));
 
         // Total download speed: sum of everything currently downloading (folders sum their own files).
         double downloadSpeed = 0;
