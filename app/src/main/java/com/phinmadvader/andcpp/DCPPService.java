@@ -3793,6 +3793,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override public int slots() { return uploadManager != null ? uploadManager.getMaxSlots() : 1; }
 		@Override public int freeSlots() { return uploadManager != null ? uploadManager.getFreeSlots() : 1; }
 		@Override public long sharedFiles() { return uploadManager != null ? uploadManager.getSharedFileCount() : 0; }
+		@Override public java.util.Collection<String> sharedTths() {
+			return uploadManager != null ? uploadManager.getSharedTths() : new ArrayList<String>();
+		}
 		@Override public int[] hubCounts() {
 			int normal = 0, registered = 0;
 			for (HubSession s : sessions.values()) {

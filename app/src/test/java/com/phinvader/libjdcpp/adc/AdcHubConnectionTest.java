@@ -36,11 +36,21 @@ public class AdcHubConnectionTest {
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final AdcIdentity ID = AdcIdentity.generate();
 
+    /** One TTH: byte 0 = 0x05, byte 1 = 0x80, rest 0 (see AdcBloomTest for the bit positions). */
+    static final byte[] TTH_BYTES = new byte[24];
+    static final java.util.List<String> TTHS;
+    static {
+        TTH_BYTES[0] = 0x05;
+        TTH_BYTES[1] = (byte) 0x80;
+        TTHS = java.util.Collections.singletonList(Base32.encode(TTH_BYTES));
+    }
+
     private static final AdcHubConnection.MyInfo INFO = new AdcHubConnection.MyInfo() {
         public int slots() { return 3; }
         public int freeSlots() { return 2; }
         public long sharedFiles() { return 42; }
         public int[] hubCounts() { return new int[] {1, 0, 0}; }
+        public java.util.Collection<String> sharedTths() { return TTHS; }
     };
 
     /** Records listener events. */
@@ -139,7 +149,7 @@ public class AdcHubConnectionTest {
         final String gpa = Base32.encode(new byte[24]);
         Events ev = new Events();
         try (FakeHub hub = new FakeHub((in, out) -> {
-            assertEquals("HSUP ADBASE ADTIGR", in.readLine());
+            assertEquals("HSUP ADBASE ADTIGR ADBLO0", in.readLine());
             w(out, "ISUP ADBASE ADTIGR", "ISID AAAB", "IINF CT32 VEADCH++\\s3.1.0 NITest\\sHub DEA\\stopic");
             Map<String, String> inf = fields(in.readLine());
             assertEquals(ID.cid, inf.get("ID"));
@@ -301,6 +311,29 @@ public class AdcHubConnectionTest {
             assertEquals("Disconnected by the hub: Minimum share 10 GiB", ev.disconnected.poll(5, TimeUnit.SECONDS));
             assertEquals("<Hub> Your share is too small,", ev.chat.get(0));
         }
+    }
+
+    /** IGET blom → HSND line echoing the parameters, then exactly m/8 raw filter bytes. */
+    @Test
+    public void answersBloomRequest() throws Exception {
+        AdcHubConnection c = newConn(new Events());
+        java.io.ByteArrayOutputStream wire = new java.io.ByteArrayOutputStream();
+        c.setOutputForTest(wire);
+        c.sendBloom(AdcCommand.parse("IGET blom / 0 32 BK2 BH8"));
+        byte[] head = "HSND blom / 0 32 BK2 BH8\n".getBytes(UTF8);
+        byte[] all = wire.toByteArray();
+        assertEquals(head.length + 32, all.length);
+        assertEquals(new String(head, UTF8), new String(all, 0, head.length, UTF8));
+        byte[] filter = java.util.Arrays.copyOfRange(all, head.length, all.length);
+        assertEquals(0x20, filter[0] & 0xFF);  // hash 0: bits 0-7 of the TTH = 5 -> filter bit 5
+        assertEquals(0x01, filter[16] & 0xFF); // hash 1: bits 8-15 = 128 -> filter bit 128
+        int set = 0;
+        for (byte b : filter) set += Integer.bitCount(b & 0xFF);
+        assertEquals(2, set);
+
+        wire.reset();
+        c.sendBloom(AdcCommand.parse("IGET blom / 0 32 BK9 BH8")); // k too big
+        assertEquals("HSTA 140 Unsupported\\sk\n", new String(wire.toByteArray(), UTF8));
     }
 
     @Test

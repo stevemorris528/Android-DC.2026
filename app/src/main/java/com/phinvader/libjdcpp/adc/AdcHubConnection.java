@@ -61,6 +61,9 @@ public final class AdcHubConnection implements HubConnection {
 
         /** Hubs we're on as normal user / registered / operator (HN/HR/HO). */
         int[] hubCounts();
+
+        /** Base32 TTHs of our shared files, for the BLOM filter. Called off the reader thread. */
+        java.util.Collection<String> sharedTths();
     }
 
     private final HubAddress address;
@@ -127,7 +130,8 @@ public final class AdcHubConnection implements HubConnection {
         reader.setDaemon(true);
         reader.start();
 
-        send(AdcCommand.of('H', "SUP").param("ADBASE").param("ADTIGR").build());
+        // BLO0: we can send the hub a Bloom filter of our TTHs (some hubs require it).
+        send(AdcCommand.of('H', "SUP").param("ADBASE").param("ADTIGR").param("ADBLO0").build());
 
         if (!loginDone.await(timeoutMs, TimeUnit.MILLISECONDS)) {
             closeQuietly();
@@ -270,6 +274,9 @@ public final class AdcHubConnection implements HubConnection {
             case "DCTM":
             case "DRCM":
                 refuseTransfer(c); // phase 8
+                break;
+            case "IGET":
+                if ("blom".equals(c.param(0))) sendBloomLater(c);
                 break;
             default:
                 // BSCH/DSCH/FSCH (phase 9), ICMD (phase 9), IGET blom (phase 7), DSTA, ...: not handled yet
@@ -643,6 +650,70 @@ public final class AdcHubConnection implements HubConnection {
     }
 
     // ---- writing ----
+
+    // ---- BLOM ----
+
+    /**
+     * Hub: {@code IGET blom / 0 <bytes> BK<k> BH<h>}. We answer {@code HSND blom / 0 <bytes> BK<k> BH<h>} plus the
+     * raw filter bytes (as DC++ does), or {@code HSTA} if the parameters are unusable. Built off the reader
+     * thread: a big share takes a moment.
+     */
+    private void sendBloomLater(final AdcCommand get) {
+        Thread t = new Thread(() -> {
+            try {
+                sendBloom(get);
+            } catch (RuntimeException e) {
+                log("BLOM failed: " + e);
+            }
+        }, "adc-blom");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    void sendBloom(AdcCommand get) {
+        long bytes = parseLong(get.param(3));
+        int k = (int) parseLong(get.named("BK", 4));
+        int h = (int) parseLong(get.named("BH", 4));
+        java.util.Collection<String> tths = myInfo.sharedTths();
+        String problem = bytes < 0 || bytes > Integer.MAX_VALUE / 8
+                ? "Unsupported m" : AdcBloom.checkParameters(k, h, bytes * 8, tths.size());
+        if (problem != null) {
+            log("BLOM request refused (" + problem + "): bytes=" + bytes + " k=" + k + " h=" + h);
+            send(AdcCommand.of('H', "STA").param("140").param(problem).build());
+            return;
+        }
+        List<byte[]> raw = new ArrayList<>(tths.size());
+        for (String b32 : tths) {
+            byte[] v = Base32.decode(b32);
+            if (v.length == AdcBloom.TTH_BITS / 8) raw.add(v);
+        }
+        byte[] filter = AdcBloom.build(raw, k, h, bytes * 8);
+        AdcCommand.Builder snd = AdcCommand.of('H', "SND");
+        for (String p : get.params) snd.param(p); // blom / 0 <bytes> BK.. BH.. echoed, as DC++ does
+        sendWithPayload(snd.build().toString(), filter);
+        log("sent BLOM filter: " + raw.size() + " files, " + filter.length + " bytes, k=" + k + " h=" + h);
+    }
+
+    /** Tests only: capture what we would write to the hub. */
+    void setOutputForTest(OutputStream o) {
+        this.out = o;
+    }
+
+    /** A command line immediately followed by raw bytes, with nothing else written in between. */
+    private void sendWithPayload(String line, byte[] payload) {
+        OutputStream o = out;
+        if (o == null) return;
+        try {
+            synchronized (writeLock) {
+                o.write((line + "\n").getBytes(UTF8));
+                o.write(payload);
+                o.flush();
+            }
+        } catch (IOException e) {
+            log("write failed: " + e.getMessage());
+            closeQuietly();
+        }
+    }
 
     private void send(AdcCommand c) {
         sendRawLine(c.toString());

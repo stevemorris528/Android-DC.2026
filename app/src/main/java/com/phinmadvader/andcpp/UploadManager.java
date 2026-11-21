@@ -1096,6 +1096,11 @@ public class UploadManager {
         return service;
     }
 
+    /** Base32 TTHs of the shared files (the ADC BLOM filter is built from these). */
+    public java.util.List<String> getSharedTths() {
+        return new java.util.ArrayList<>(fileByTth.keySet());
+    }
+
     /** Number of shared files we know the TTH of (the ADC SF field). */
     public int getSharedFileCount() {
         return fileByTth.size();
