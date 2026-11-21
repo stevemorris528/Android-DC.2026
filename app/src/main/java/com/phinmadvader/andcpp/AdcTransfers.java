@@ -106,10 +106,10 @@ final class AdcTransfers {
         entity.status = DCConstants.DownloadStatus.QUEUED;
         if (weActive) {
             hub.sendConnectToMe(peer.sid, proto, service.getUploadManager().getPort(), token);
-            Log.d("andcpp", "[CC] DCTM to " + peer.nick + " for " + remotePath + " (token " + token + ")");
+            Log.d("andcpp", "[CC] DCTM to " + peer.nick + " for " + remotePath + " (" + proto + ", port " + service.getUploadManager().getPort() + ", token " + token + ")");
         } else {
             hub.sendRevConnectToMe(peer.sid, proto, token);
-            Log.d("andcpp", "[CC] DRCM to " + peer.nick + " for " + remotePath + " (token " + token + ")");
+            Log.d("andcpp", "[CC] DRCM to " + peer.nick + " for " + remotePath + " (" + proto + ", token " + token + ")");
         }
         return null;
     }

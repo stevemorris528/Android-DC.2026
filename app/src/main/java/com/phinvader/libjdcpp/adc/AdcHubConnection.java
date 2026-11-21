@@ -254,7 +254,8 @@ public final class AdcHubConnection implements HubConnection {
             }
             return;
         }
-        if (c.type == 'I' && (c.cmd.equals("MSG") || c.cmd.equals("STA") || c.cmd.equals("QUI"))) {
+        if ((c.type == 'I' && (c.cmd.equals("MSG") || c.cmd.equals("STA") || c.cmd.equals("QUI")))
+                || (c.type == 'D' && c.cmd.equals("STA") && mySid != null && mySid.equals(c.toSid))) { // a peer refusing our request
             log("hub: " + shorten(l));
         }
         switch (c.name()) {
