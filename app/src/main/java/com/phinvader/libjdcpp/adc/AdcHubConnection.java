@@ -663,8 +663,20 @@ public final class AdcHubConnection implements HubConnection {
     }
 
     private void closeQuietly() {
-        Socket s = socket;
+        final Socket s = socket;
         if (s == null) return;
+        if (s instanceof javax.net.ssl.SSLSocket) {
+            // Closing TLS writes a close_notify (network I/O): never on the caller's thread, which may be
+            // Android's main thread (Delete Hub, Reconnect).
+            Thread t = new Thread(() -> closeSocket(s), "adcs-close");
+            t.setDaemon(true);
+            t.start();
+        } else {
+            closeSocket(s);
+        }
+    }
+
+    private static void closeSocket(Socket s) {
         try {
             s.close();
         } catch (IOException ignored) {

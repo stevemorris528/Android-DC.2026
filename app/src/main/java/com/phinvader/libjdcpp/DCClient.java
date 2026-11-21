@@ -401,11 +401,31 @@ public class DCClient {
 	public void close() {
 		if (mainMessageRouter != null)
 			mainMessageRouter.terminate();
-		if (handler != null)
-			handler.close();
+		// Closing a TLS socket (NMDCS) writes a close_notify to the hub: network I/O, which Android refuses on
+		// the main thread (Delete Hub / Reconnect crashed the app). Close TLS links on a background thread;
+		// plain sockets are closed right here, as before.
+		if (DCConnectionSocket instanceof javax.net.ssl.SSLSocket) {
+			final MessageHandler h = handler;
+			final Socket s = DCConnectionSocket;
+			Thread t = new Thread(new Runnable() {
+				@Override
+				public void run() {
+					closeNow(h, s);
+				}
+			}, "nmdcs-close");
+			t.setDaemon(true);
+			t.start();
+			return;
+		}
+		closeNow(handler, DCConnectionSocket);
+	}
+
+	private static void closeNow(MessageHandler h, Socket s) {
+		if (h != null)
+			h.close();
 		try {
-			if (DCConnectionSocket != null)
-				DCConnectionSocket.close();
+			if (s != null)
+				s.close();
 		} catch (IOException e) {
 		}
 	}
