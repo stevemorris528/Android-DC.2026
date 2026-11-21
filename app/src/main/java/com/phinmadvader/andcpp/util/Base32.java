@@ -37,39 +37,27 @@ public class Base32 {
         return sb.toString();
     }
 
+    /**
+     * Decodes unpadded RFC 4648 Base32 (A-Z, 2-7; lower case accepted). Other characters, such as '='
+     * padding, are skipped. Leftover bits that don't make a whole byte are dropped.
+     */
     public static byte[] decode(String base32) {
-        int i, index, lookup, offset, digit;
         byte[] bytes = new byte[base32.length() * 5 / 8];
-
-        for (i = 0, index = 0, offset = 0; i < base32.length(); i++) {
-            lookup = base32.charAt(i) - '2';
-            if (lookup < 0 || lookup >= 30) {
-                lookup = base32.charAt(i) - 'A';
-                if (lookup < 0 || lookup >= 26) {
-                    continue;
-                }
-                digit = lookup;
-            } else {
-                digit = lookup + 26;
-            }
-
-            if (index <= 3) {
-                index = (index + 5) % 8;
-                if (index == 0) {
-                    bytes[offset] |= digit;
-                    offset++;
-                    if (offset >= bytes.length) break;
-                } else {
-                    bytes[offset] |= digit << (8 - index);
-                }
-            } else {
-                index = (index + 5) % 8;
-                bytes[offset] |= (digit >>> index);
-                offset++;
-                if (offset >= bytes.length) break;
-                bytes[offset] |= digit << (8 - index);
+        int buffer = 0, bits = 0, offset = 0;
+        for (int i = 0; i < base32.length() && offset < bytes.length; i++) {
+            char ch = Character.toUpperCase(base32.charAt(i));
+            int digit;
+            if (ch >= 'A' && ch <= 'Z') digit = ch - 'A';
+            else if (ch >= '2' && ch <= '7') digit = ch - '2' + 26;
+            else continue;
+            buffer = (buffer << 5) | digit;
+            bits += 5;
+            if (bits >= 8) {
+                bits -= 8;
+                bytes[offset++] = (byte) (buffer >> bits);
+                buffer &= (1 << bits) - 1;
             }
         }
-        return bytes;
+        return offset == bytes.length ? bytes : java.util.Arrays.copyOf(bytes, offset);
     }
 }

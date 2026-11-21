@@ -130,22 +130,22 @@ public class UploadManager {
         handshakeFailures.incrementAndGet();
     }
     
-    private String cid = null;
+    /**
+     * Our ADC CID (Base32(Tiger(PID)), 39 chars) for the files.xml CID attribute. Replaces the old random
+     * UUID, which wasn't a valid CID. Read each time a list is built, so a PID restored from the settings
+     * backup after a reinstall is used straight away.
+     */
+    private String currentCid() {
+        return AdcIdentityStore.cid(service);
+    }
 
     public UploadManager(DCPPService service) {
         this.service = service;
         this.maxUploadSlots = Settings.getUploadSlots(service);
         // LibreTorrent-like thread pool management: separate pool for network I/O
         this.uploadSlotManager = Executors.newCachedThreadPool();
-        
-        // Ensure persistent CID
-        android.content.SharedPreferences prefs = service.getSharedPreferences(Constants.PREFS_NAME, 0);
-        cid = prefs.getString("cid", null);
-        if (cid == null) {
-            cid = java.util.UUID.randomUUID().toString().replace("-", "").toUpperCase();
-            prefs.edit().putString("cid", cid).apply();
-            Log.d("andcpp", "Generated new CID: " + cid);
-        }
+
+        AdcIdentityStore.get(service); // create the identity now if this is the first start
 
         startFileListRefresher();
     }
@@ -799,7 +799,7 @@ public class UploadManager {
         s.startDocument("UTF-8", true);
         s.startTag(null, "FileListing");
         s.attribute(null, "Version", "1");
-        s.attribute(null, "CID", cid);
+        s.attribute(null, "CID", currentCid());
         s.attribute(null, "Base", base.toString());
         s.attribute(null, "Generator", "AnDCpp");
         if (dir == null) {
@@ -954,7 +954,7 @@ public class UploadManager {
             s.startDocument("UTF-8", true);
             s.startTag(null, "FileListing");
             s.attribute(null, "Version", "1");
-            s.attribute(null, "CID", cid);
+            s.attribute(null, "CID", currentCid());
             s.attribute(null, "Base", "/");
             s.attribute(null, "Generator", "AnDCpp");
             writeDir(s, tree);

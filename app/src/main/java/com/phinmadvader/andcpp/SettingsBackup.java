@@ -30,7 +30,7 @@ import java.util.Set;
  * storage on uninstall; the shared Download folder is kept.
  *
  * PIA keys are left out: PIAPortForwardingManager keeps its own backup (.pia_settings).
- * Hub passwords are scrambled, not strongly encrypted: no key can survive an uninstall.
+ * Hub passwords and the ADC PID are scrambled, not strongly encrypted: no key can survive an uninstall.
  */
 public final class SettingsBackup {
     private static final String TAG = "andcpp";
@@ -94,7 +94,8 @@ public final class SettingsBackup {
     }
 
     private static boolean isSecret(String key) {
-        return key.startsWith("favorite_passwords_");
+        // The ADC PID is a secret too: whoever has it can claim our CID.
+        return key.startsWith("favorite_passwords_") || key.equals(AdcIdentityStore.KEY_PID);
     }
 
     private static String scramble(String s) {
