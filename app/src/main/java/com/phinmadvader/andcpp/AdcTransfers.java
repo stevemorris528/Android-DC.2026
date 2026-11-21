@@ -22,6 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import javax.net.ssl.SSLSocket;
+
+import com.phinvader.libjdcpp.tls.Keyprint;
+import com.phinvader.libjdcpp.tls.TlsSocketFactory;
+
 /**
  * ADC client-to-client transfers (plain ADC/1.0; TLS "ADCS/0.10" comes later).
  * <ul>
@@ -37,6 +42,8 @@ import java.util.concurrent.Executors;
 final class AdcTransfers {
 
     static final String PROTO = "ADC/1.0";
+    /** Encrypted transfers (ADC-EXT ADCS). */
+    static final String PROTO_TLS = "ADCS/0.10";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int IO_TIMEOUT_MS = 60000;
     /** Download requests the peer never answered are dropped after this long. */
@@ -82,6 +89,8 @@ final class AdcTransfers {
         expireOld();
         boolean weActive = canAccept(session);
         if (!weActive && !peer.active) return "both passive";
+        // TLS when both sides support it (some clients refuse unencrypted transfers on secure hubs).
+        String proto = tlsAvailable() && peer.features.contains("ADCS") ? PROTO_TLS : PROTO;
         String token = newToken();
         // DC++ / AirDC++ serve files by TTH only (a path gets "151 File Not Available"): use the TTH from the
         // peer's saved file list when we have it, else the path.
@@ -96,10 +105,10 @@ final class AdcTransfers {
         pending.put(token, p);
         entity.status = DCConstants.DownloadStatus.QUEUED;
         if (weActive) {
-            hub.sendConnectToMe(peer.sid, PROTO, service.getUploadManager().getPort(), token);
+            hub.sendConnectToMe(peer.sid, proto, service.getUploadManager().getPort(), token);
             Log.d("andcpp", "[CC] DCTM to " + peer.nick + " for " + remotePath + " (token " + token + ")");
         } else {
-            hub.sendRevConnectToMe(peer.sid, PROTO, token);
+            hub.sendRevConnectToMe(peer.sid, proto, token);
             Log.d("andcpp", "[CC] DRCM to " + peer.nick + " for " + remotePath + " (token " + token + ")");
         }
         return null;
@@ -141,16 +150,16 @@ final class AdcTransfers {
     /** The hub passed on a peer's DCTM (it listens) or DRCM (it wants our DCTM). Runs off the hub reader. */
     void onConnectRequest(final DCPPService.HubSession session, final AdcHubConnection hub, final DCUser peer,
                           final String proto, final int port, final String token, final boolean reverse) {
-        if (!PROTO.equals(proto)) {
-            // ADCS/0.10 (TLS) transfers aren't supported yet; we don't advertise ADCS, so peers shouldn't ask.
+        final boolean tls = PROTO_TLS.equals(proto);
+        if (!PROTO.equals(proto) && !(tls && tlsAvailable())) {
             hub.sendDirectStatus(peer.sid, "141", "Transfer protocol not supported", token, proto);
-            Log.i("andcpp", "[CC] " + peer.nick + " asked for " + proto + "; refused (not supported yet)");
+            Log.i("andcpp", "[CC] " + peer.nick + " asked for " + proto + "; refused (not supported here)");
             return;
         }
         if (reverse) {
             if (canAccept(session)) {
-                hub.sendConnectToMe(peer.sid, PROTO, service.getUploadManager().getPort(), token);
-                Log.d("andcpp", "[CC] " + peer.nick + " sent DRCM; answered with DCTM (token " + token + ")");
+                hub.sendConnectToMe(peer.sid, proto, service.getUploadManager().getPort(), token);
+                Log.d("andcpp", "[CC] " + peer.nick + " sent DRCM " + proto + "; answered with DCTM (token " + token + ")");
             } else {
                 Log.d("andcpp", "[CC] " + peer.nick + " sent DRCM but we're passive too; ignored");
             }
@@ -161,20 +170,78 @@ final class AdcTransfers {
             return;
         }
         pool.execute(() -> {
-            Socket s = new Socket();
+            Socket s = null;
             AdcClientConnection conn = null;
             try {
-                s.connect(new InetSocketAddress(peer.ip, port), CONNECT_TIMEOUT_MS);
+                if (tls) {
+                    // ADCS: TLS first, checked against the keyprint the peer published in its hub INF (KP).
+                    s = TlsSocketFactory.connect(peer.ip, port, CONNECT_TIMEOUT_MS, ourKeyManagers(), peer.kp);
+                } else {
+                    s = new Socket();
+                    s.connect(new InetSocketAddress(peer.ip, port), CONNECT_TIMEOUT_MS);
+                }
                 s.setSoTimeout(IO_TIMEOUT_MS);
                 conn = new AdcClientConnection(s, null);
                 conn.handshakeAsConnector(AdcIdentityStore.cid(service), token);
+                Log.d("andcpp", "[CC] Connected to " + peer.nick + " (" + proto + ")");
                 established(conn, peer.nick);
             } catch (Exception e) {
-                Log.w("andcpp", "[CC] Connecting to " + peer.nick + " (" + peer.ip + ":" + port + ") failed: " + e.getMessage());
+                Log.w("andcpp", "[CC] Connecting to " + peer.nick + " (" + peer.ip + ":" + port + ", " + proto + ") failed: " + e.getMessage());
                 if (conn != null) conn.close();
-                else closeQuietly(s);
+                else if (s != null) closeQuietly(s);
             }
         });
+    }
+
+    /**
+     * An incoming connection that starts with a TLS handshake (ADCS): TLS server side with our certificate, then
+     * the ADC acceptor handshake; the peer's certificate must match the KP it published on the hub (if any).
+     */
+    void onIncomingTls(final Socket raw) {
+        pool.execute(() -> {
+            AdcClientConnection conn = null;
+            try {
+                SSLSocket ssl = TlsSocketFactory.acceptOver(raw, IO_TIMEOUT_MS, ourKeyManagers());
+                ssl.setSoTimeout(IO_TIMEOUT_MS);
+                conn = new AdcClientConnection(ssl, null);
+                conn.handshakeAsAcceptor(AdcIdentityStore.cid(service));
+                String theirKp = TlsSocketFactory.peerKeyprintOrNull(ssl);
+                DCUser u = userForCid(conn.peerCid);
+                if (u != null && u.kp != null && !Keyprint.matches(u.kp, theirKp)) {
+                    Log.w("andcpp", "[CC] " + u.nick + ": TLS certificate doesn't match its keyprint on the hub; closing");
+                    conn.close();
+                    return;
+                }
+                Log.d("andcpp", "[CC] Incoming ADCS connection from " + (u != null ? u.nick : conn.peerCid)
+                        + " (" + TlsSocketFactory.describe(ssl) + ")");
+                established(conn, u != null ? u.nick : null);
+            } catch (Exception e) {
+                Log.w("andcpp", "[CC] Incoming ADCS connection from " + raw.getInetAddress() + " failed: " + e.getMessage());
+                if (conn != null) conn.close();
+                else closeQuietly(raw);
+            }
+        });
+    }
+
+    /** We can do TLS transfers here: Android 5+ (to peek at incoming TLS) and our certificate exists. */
+    boolean tlsAvailable() {
+        return SocketPeek.supported() && ClientCertificateStore.peekKeyprint(service) != null;
+    }
+
+    private javax.net.ssl.KeyManager[] ourKeyManagers() throws java.security.GeneralSecurityException {
+        com.phinvader.libjdcpp.tls.SelfSignedCertificate c = ClientCertificateStore.get(service);
+        return c != null ? c.keyManagers() : null;
+    }
+
+    private DCUser userForCid(String cid) {
+        if (cid == null) return null;
+        for (DCPPService.HubSession s : service.getActiveSessions()) {
+            if (s.hub instanceof AdcHubConnection) {
+                DCUser u = ((AdcHubConnection) s.hub).userByCid(cid);
+                if (u != null) return u;
+            }
+        }
+        return null;
     }
 
     // ---- connections to our listening port ----

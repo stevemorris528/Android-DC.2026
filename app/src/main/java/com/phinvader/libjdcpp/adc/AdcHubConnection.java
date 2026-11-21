@@ -67,6 +67,9 @@ public final class AdcHubConnection implements HubConnection {
 
         /** True if peers can connect to us (TCP4 + I4 in our INF, and we send CTMs instead of RCMs). */
         boolean active();
+
+        /** Our TLS keyprint if we can do encrypted (ADCS) transfers, else null. */
+        String keyprint();
     }
 
     private final HubAddress address;
@@ -608,7 +611,11 @@ public final class AdcHubConnection implements HubConnection {
         // Active: TCP4 in SU, and I4 0.0.0.0 asks the hub to fill in the address it sees (our public IP).
         // Passive: both empty, which removes them ("" = not set).
         boolean active = myInfo.active();
-        now.put("SU", active ? "TCP4" : "");
+        // ADCS (encrypted transfers) with our keyprint when the app can do TLS transfers here.
+        String kp = myInfo.keyprint();
+        String su = (active ? "TCP4" : "") + (kp != null ? (active ? "," : "") + "ADCS" : "");
+        now.put("SU", su);
+        now.put("KP", kp != null ? kp : "");
         now.put("I4", active ? "0.0.0.0" : "");
 
         AdcCommand.Builder b = AdcCommand.of('B', "INF").from(sid);

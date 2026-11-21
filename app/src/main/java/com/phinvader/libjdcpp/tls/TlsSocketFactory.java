@@ -98,6 +98,41 @@ public final class TlsSocketFactory {
         }
     }
 
+    /**
+     * The server side of TLS on a connection someone made to us (ADCS transfers): presents our certificate,
+     * asks for (but doesn't require) the peer's, and completes the handshake within timeoutMs. The socket's
+     * first bytes must not have been read yet. The returned socket has no read timeout set.
+     */
+    public static SSLSocket acceptOver(Socket raw, int timeoutMs, KeyManager[] keyManagers) throws IOException {
+        SSLSocket ssl = null;
+        try {
+            String host = raw.getInetAddress() != null ? raw.getInetAddress().getHostAddress() : "peer";
+            ssl = (SSLSocket) context(keyManagers).getSocketFactory().createSocket(raw, host, raw.getPort(), true);
+            enableModernProtocols(ssl);
+            ssl.setUseClientMode(false);
+            ssl.setWantClientAuth(true); // DC clients send their certificate: its keyprint identifies them
+            ssl.setSoTimeout(timeoutMs);
+            ssl.startHandshake();
+            ssl.setSoTimeout(0);
+            return ssl;
+        } catch (IOException e) {
+            closeQuietly(ssl != null ? ssl : raw);
+            throw e;
+        } catch (RuntimeException e) {
+            closeQuietly(ssl != null ? ssl : raw);
+            throw e;
+        }
+    }
+
+    /** The keyprint of the certificate the other side presented, or null if it sent none. */
+    public static String peerKeyprintOrNull(SSLSocket socket) {
+        try {
+            return peerKeyprint(socket);
+        } catch (SSLPeerUnverifiedException e) {
+            return null;
+        }
+    }
+
     /** The keyprint of the certificate the other side presented. */
     public static String peerKeyprint(SSLSocket socket) throws SSLPeerUnverifiedException {
         Certificate[] chain = socket.getSession().getPeerCertificates();

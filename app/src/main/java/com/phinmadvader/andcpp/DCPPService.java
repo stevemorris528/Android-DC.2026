@@ -3907,6 +3907,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override public boolean active() {
 			return isActiveNow() && uploadManager != null && uploadManager.isListening();
 		}
+		@Override public String keyprint() {
+			return adcTransfers.tlsAvailable() ? ClientCertificateStore.peekKeyprint(DCPPService.this) : null;
+		}
 		@Override public java.util.Collection<String> sharedTths() {
 			return uploadManager != null ? uploadManager.getSharedTths() : new ArrayList<String>();
 		}

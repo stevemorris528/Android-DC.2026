@@ -306,7 +306,21 @@ public class PeerConnectionHandler implements Runnable {
             if (preHandler != null) {
                 handler = preHandler;
             } else if (isServer) {
-                // Someone connected to our port: NMDC peers start with '$' ($MyNick), ADC peers with 'C' (CSUP).
+                // Someone connected to our port: NMDC peers start with '$' ($MyNick), ADC peers with 'C' (CSUP),
+                // encrypted ADC (ADCS) peers with a TLS handshake (0x16). TLS needs that byte left in place, so it
+                // is peeked at, not read (Android 5+; older devices don't advertise ADCS, so no TLS arrives).
+                if (SocketPeek.supported()) {
+                    int peeked = SocketPeek.peekFirstByte(peerSocket, 30000);
+                    if (peeked == SocketPeek.NOTHING) {
+                        unidentified = true;
+                        throw new IOException("Peer sent nothing");
+                    }
+                    if (peeked == 0x16) {
+                        intercepted = true; // the ADCS code owns the socket now
+                        uploadManager.getService().getAdcTransfers().onIncomingTls(peerSocket);
+                        return;
+                    }
+                }
                 int first;
                 try {
                     first = peerSocket.getInputStream().read();

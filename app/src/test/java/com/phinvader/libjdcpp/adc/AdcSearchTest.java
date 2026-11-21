@@ -67,6 +67,7 @@ public class AdcSearchTest {
                     public int[] hubCounts() { return new int[] {1, 0, 0}; }
                     public java.util.Collection<String> sharedTths() { return AdcHubConnectionTest.TTHS; }
                     public boolean active() { return false; }
+                    public String keyprint() { return null; }
                 }, ev);
         ByteArrayOutputStream wire = new ByteArrayOutputStream();
         c.setOutputForTest(wire);

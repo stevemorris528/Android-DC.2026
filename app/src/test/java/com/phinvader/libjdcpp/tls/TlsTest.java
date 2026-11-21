@@ -115,6 +115,35 @@ public class TlsTest {
         }
     }
 
+    /** ADCS transfer shape: a plain accepted socket upgraded with acceptOver; both sides present certificates. */
+    @Test
+    public void acceptOverWithClientCertificate() throws Exception {
+        final SelfSignedCertificate clientCert = SelfSignedCertificate.generate("CLIENTCID", 20, new java.security.SecureRandom());
+        try (java.net.ServerSocket plain = new java.net.ServerSocket(0)) {
+            final AtomicReference<Object> serverSaw = new AtomicReference<>();
+            Thread t = new Thread(() -> {
+                try (java.net.Socket raw = plain.accept()) {
+                    SSLSocket s = TlsSocketFactory.acceptOver(raw, 5000, cert.keyManagers());
+                    serverSaw.set(TlsSocketFactory.peerKeyprintOrNull(s));
+                    s.getOutputStream().write('C');
+                    s.getOutputStream().flush();
+                    s.getInputStream().read();
+                } catch (Exception e) {
+                    serverSaw.set(e);
+                }
+            });
+            t.setDaemon(true);
+            t.start();
+            SSLSocket c = TlsSocketFactory.connect("127.0.0.1", plain.getLocalPort(), 5000,
+                    clientCert.keyManagers(), cert.keyprint());
+            assertEquals('C', c.getInputStream().read());
+            assertEquals(cert.keyprint(), TlsSocketFactory.peerKeyprint(c));
+            c.close();
+            t.join(5000);
+            assertEquals(clientCert.keyprint(), serverSaw.get());
+        }
+    }
+
     /** A one-connection TLS echo server presenting {@link #cert}. */
     private static SSLServerSocket startEchoServer() throws Exception {
         final SSLServerSocket server = (SSLServerSocket) TlsSocketFactory.context(cert.keyManagers())
