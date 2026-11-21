@@ -49,6 +49,7 @@ public class MyApplication extends Application {
         super.onCreate();
         installCrashRecorder();
         startTraceLogger();
+        SettingsBackup.init(this); // keep a copy of saved hubs/settings that survives a clean install
         UpdateChecker.start(this);
         new Thread(new Runnable() {
             @Override

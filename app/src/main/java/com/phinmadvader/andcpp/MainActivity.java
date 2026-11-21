@@ -251,6 +251,7 @@ public class MainActivity extends FragmentActivity implements
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
+		SettingsBackup.restoreIfNeeded(this); // after a clean install (if storage permission is already granted)
 		initDefaultPreferences();
 		currentIsDark = ThemeUtils.isDarkMode(this);
 		currentAccent = ThemeUtils.getColorAccent(this);
@@ -770,6 +771,23 @@ public class MainActivity extends FragmentActivity implements
 			editor.putBoolean("initialized_default_hubs", true);
 			editor.apply();
 		}
+		// One-time repair: "Edit Nick & Password" used to save a hub's details without saving the hub itself,
+		// so the hub vanished from the list after a restart. Bring back every hub that has saved details.
+		if (!prefs.getBoolean("repaired_hubs_with_details", false)) {
+			List<String> withPort = new ArrayList<>();
+			List<String> hostOnly = new ArrayList<>();
+			for (String key : prefs.getAll().keySet()) {
+				String id = null;
+				if (key.startsWith("favorite_nicks_")) id = key.substring("favorite_nicks_".length());
+				else if (key.startsWith("favorite_passwords_")) id = key.substring("favorite_passwords_".length());
+				if (id == null || id.trim().isEmpty()) continue;
+				if (id.contains(":")) { if (!withPort.contains(id)) withPort.add(id); }
+				else if (!hostOnly.contains(id)) hostOnly.add(id);
+			}
+			for (String id : withPort) HubListFragment.saveHub(this, id);
+			for (String id : hostOnly) HubListFragment.saveHub(this, id); // skipped when host:port is saved
+			prefs.edit().putBoolean("repaired_hubs_with_details", true).apply();
+		}
 	}
 
 	/**
@@ -789,6 +807,8 @@ public class MainActivity extends FragmentActivity implements
 	}
 
 	private void checkAutoReconnectSavedHubs() {
+		Log.i("andcpp", "Auto-reconnect check: alreadyDone=" + hasAutoReconnected
+				+ " enabled=" + Settings.getAutoReconnectHubs(this));
 		if (hasAutoReconnected) return;
 		hasAutoReconnected = true;
 
@@ -797,6 +817,7 @@ public class MainActivity extends FragmentActivity implements
 		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
 
 		Set<String> favorites = prefs.getStringSet("favorite_hubs", new HashSet<String>());
+		Log.i("andcpp", "Auto-reconnect saved hubs: " + favorites);
 		if (favorites == null || favorites.isEmpty()) return;
 
 		// Connect only once active/passive is known, so each hub is told the right mode from the start
@@ -825,11 +846,16 @@ public class MainActivity extends FragmentActivity implements
 
 			String hubKey = ip + ":" + port;
 			if (mService != null && mService.getSession(hubKey) != null) {
+				Log.i("andcpp", "Auto-reconnect: " + hubKey + " already has a session");
 				continue;
 			}
 
 			String nick = resolveNickForHub(hubStr, ip, port);
-			if (nick.isEmpty()) continue; // no nick saved for this hub or on the Login tab
+			if (nick.isEmpty()) { // no nick saved for this hub or on the Login tab
+				Log.w("andcpp", "Auto-reconnect: no nick for " + hubStr);
+				continue;
+			}
+			Log.i("andcpp", "Auto-reconnect: connecting to " + hubKey + " as " + nick);
 
 			startBackgroundService(nick, ip, port, false);
 		}
@@ -1111,13 +1137,29 @@ public class MainActivity extends FragmentActivity implements
 		if (requestCode == 1) {
 			if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
 				Log.d("andcpp", "Storage permission granted");
+				// Saved hubs and settings from before a clean install: restore, then rebuild the screens with them.
+				boolean settingsRestored = SettingsBackup.restoreIfNeeded(this);
+				if (settingsRestored) {
+					Toast.makeText(this, "Restored saved hubs and settings", Toast.LENGTH_LONG).show();
+					if (mService != null) mService.redetectConnectivity("settings restored");
+				}
 				// Files from a previous install are only visible now: rebuild our file list,
 				// and bring back the PIA login backup (survives clean installs), then re-check active mode.
 				if (mService != null) {
 					mService.refreshMyFileListSoon();
+					mService.restoreDownloadsFromBackupIfNeeded(); // unfinished downloads from before a clean install
 					if (com.phinmadvader.andcpp.pia.PIAPortForwardingManager.getInstance(this).restoreFromBackupIfNeeded()) {
 						mService.redetectConnectivity("PIA login restored");
 					}
+				}
+				if (settingsRestored) {
+					// Start the screen afresh (like opening the app) so the restored hub list, nick etc. show and
+					// saved hubs auto-reconnect. recreate() kept the old pages' saved state, so the list stayed empty.
+					Intent restart = new Intent(this, MainActivity.class);
+					restart.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+					startActivity(restart);
+					finish();
+					overridePendingTransition(0, 0);
 				}
 			} else {
 				Toast.makeText(this, "Storage permission is required to download files.", Toast.LENGTH_LONG).show();

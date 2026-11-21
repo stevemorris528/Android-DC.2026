@@ -3522,6 +3522,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				
 				session.status = DCClientStatus.CONNECTED;
 				session.reconnectAttempts = 0; // Reset on success
+				// A hub we connected to stays in the saved hubs list (until "Delete Hub"), so it survives restarts.
+				HubListFragment.saveHub(DCPPService.this,
+						session.hubIp + (session.hubPort != 411 ? ":" + session.hubPort : ""));
 				ensureForeground(session.hubIp);
 				mySendBroadcast(session.hubIp, false, true);
 				manageWakeLock();
@@ -4164,6 +4167,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			editor.clear(); // drop entries of a longer previous list
 			
 			List<DownloadItem> queue = get_download_queue();
+			org.json.JSONArray backup = new org.json.JSONArray();
 			int count = 0;
 			for (DownloadItem item : queue) {
 				if (item instanceof DownloadObject) {
@@ -4179,6 +4183,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						editor.putString("group_name_" + count, obj.groupName);
 						editor.putLong("bytes_done_" + count, obj.bytes_done());
 						editor.putBoolean("is_paused_" + count, obj.isPaused);
+						backup.put(toBackupJson(obj));
 						count++;
 					}
 				} else if (item instanceof FolderDownloadItem) {
@@ -4194,6 +4199,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							editor.putString("group_name_" + count, obj.groupName);
 							editor.putLong("bytes_done_" + count, obj.bytes_done());
 							editor.putBoolean("is_paused_" + count, obj.isPaused);
+							backup.put(toBackupJson(obj));
 							count++;
 						}
 					}
@@ -4201,6 +4207,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 			editor.putInt("download_count", count);
 			editor.commit();
+			writeDownloadsBackup(backup);
 			Log.d("andcpp", "Saved " + count + " active/queued/incomplete downloads state.");
 		} catch (Exception e) {
 			Log.e("andcpp", "Error saving downloads state", e);
@@ -4247,70 +4254,163 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
-	private void restoreDownloadsState() {
+	// ---- Download queue backup that survives uninstall / clean install ----
+	// Android deletes the app's private storage (and so the saved queue) on uninstall. The queue is also written to
+	// the app's folder in shared storage (Download/Android-DC++/.downloads_state), next to the partly downloaded
+	// files, and read back from there after a reinstall so those downloads continue where they stopped.
+
+	private static final String DOWNLOADS_BACKUP_NAME = ".downloads_state";
+
+	/**
+	 * False until we know the backup file holds nothing we still need: after a clean install it can only be read once
+	 * storage permission is granted, and writing the (still empty) queue over it before then would lose it.
+	 */
+	private volatile boolean downloadsBackupChecked = false;
+
+	private File downloadsBackupFile() {
+		return new File(SettingsBackup.backupDirectory(this), DOWNLOADS_BACKUP_NAME);
+	}
+
+	private boolean hasStoragePermission() {
+		return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+				|| checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+				== android.content.pm.PackageManager.PERMISSION_GRANTED;
+	}
+
+	private static org.json.JSONObject toBackupJson(DownloadObject obj) throws org.json.JSONException {
+		org.json.JSONObject j = new org.json.JSONObject();
+		j.put("hubIp", obj.hubIp);
+		j.put("nick", obj.target_nick);
+		j.put("local", obj.local_file);
+		j.put("remote", obj.remote_file);
+		j.put("size", obj.file_size);
+		j.put("groupLabel", obj.groupLabel);
+		j.put("groupName", obj.groupName);
+		j.put("done", obj.bytes_done());
+		j.put("paused", obj.isPaused);
+		return j;
+	}
+
+	private void writeDownloadsBackup(org.json.JSONArray list) {
+		if (!downloadsBackupChecked || !hasStoragePermission()) return;
+		try {
+			File f = downloadsBackupFile();
+			if (list.length() == 0) {
+				if (f.exists()) f.delete();
+				return;
+			}
+			org.json.JSONObject root = new org.json.JSONObject();
+			root.put("v", 1);
+			root.put("downloads", list);
+			File tmp = new File(f.getPath() + ".tmp");
+			try (java.io.OutputStream os = new java.io.FileOutputStream(tmp)) {
+				os.write(root.toString().getBytes("UTF-8"));
+			}
+			if (!tmp.renameTo(f)) {
+				f.delete();
+				tmp.renameTo(f);
+			}
+		} catch (Exception e) {
+			Log.w("andcpp", "Could not write the downloads backup: " + e.getMessage());
+		}
+	}
+
+	/** One saved download, from the app's own saved state or from the backup file. */
+	private static final class SavedDownload {
+		String hubIp, nick, localFile, remoteFile, groupLabel, groupName;
+		long fileSize, bytesDone;
+	}
+
+	private static String optStr(org.json.JSONObject j, String key) {
+		return j.isNull(key) ? null : j.optString(key, null);
+	}
+
+	private List<SavedDownload> readDownloadsBackup() throws Exception {
+		List<SavedDownload> out = new ArrayList<>();
+		File f = downloadsBackupFile();
+		if (!f.isFile()) return out;
+		byte[] data = new byte[(int) Math.min(f.length(), 32L * 1024 * 1024)];
+		try (java.io.InputStream in = new java.io.FileInputStream(f)) {
+			int off = 0, n;
+			while (off < data.length && (n = in.read(data, off, data.length - off)) > 0) off += n;
+		}
+		org.json.JSONArray arr = new org.json.JSONObject(new String(data, "UTF-8")).optJSONArray("downloads");
+		if (arr == null) return out;
+		for (int i = 0; i < arr.length(); i++) {
+			org.json.JSONObject j = arr.optJSONObject(i);
+			if (j == null) continue;
+			SavedDownload d = new SavedDownload();
+			d.hubIp = optStr(j, "hubIp");
+			d.nick = optStr(j, "nick");
+			d.localFile = optStr(j, "local");
+			d.remoteFile = optStr(j, "remote");
+			d.groupLabel = optStr(j, "groupLabel");
+			d.groupName = optStr(j, "groupName");
+			d.fileSize = j.optLong("size", 0);
+			d.bytesDone = j.optLong("done", 0);
+			out.add(d);
+		}
+		return out;
+	}
+
+	private List<SavedDownload> readDownloadsPrefs() {
 		SharedPreferences prefs = getSharedPreferences("dcpp_downloads_state", Context.MODE_PRIVATE);
 		int count = prefs.getInt("download_count", 0);
-		if (count <= 0) {
-			downloadsStateRestored = true;
-			return;
+		List<SavedDownload> out = new ArrayList<>();
+		for (int i = 0; i < count; i++) {
+			SavedDownload d = new SavedDownload();
+			d.hubIp = prefs.getString("hubIp_" + i, null);
+			d.nick = prefs.getString("target_nick_" + i, null);
+			d.localFile = prefs.getString("local_file_" + i, null);
+			d.remoteFile = prefs.getString("remote_file_" + i, null);
+			d.fileSize = prefs.getLong("file_size_" + i, 0);
+			d.groupLabel = prefs.getString("group_label_" + i, null);
+			d.groupName = prefs.getString("group_name_" + i, null);
+			d.bytesDone = prefs.getLong("bytes_done_" + i, 0);
+			out.add(d);
 		}
+		return out;
+	}
 
-		boolean restoreSuccessful = false;
-		try {
-			Log.d("andcpp", "Restoring " + count + " downloads state...");
-			for (int i = 0; i < count; i++) {
-				String hubIp = prefs.getString("hubIp_" + i, null);
-				String nick = prefs.getString("target_nick_" + i, null);
-				String localFile = prefs.getString("local_file_" + i, null);
-				String remoteFile = prefs.getString("remote_file_" + i, null);
-				long fileSize = prefs.getLong("file_size_" + i, 0);
-				String groupLabel = prefs.getString("group_label_" + i, null);
-				String groupName = prefs.getString("group_name_" + i, null);
-				long bytesDone = prefs.getLong("bytes_done_" + i, 0);
+	/** Adds the saved downloads (paused) to the list; returns how many were added. */
+	private int addSavedDownloads(List<SavedDownload> saved) {
+		int added = 0;
+		for (SavedDownload d : saved) {
+			if (d.localFile == null || d.remoteFile == null || d.nick == null) continue;
+			File f = new File(d.localFile);
+			long existingLength = f.exists() ? Math.max(f.length(), d.bytesDone) : d.bytesDone;
 
-				if (localFile != null && remoteFile != null && nick != null) {
-					File f = new File(localFile);
-					long existingLength = f.exists() ? Math.max(f.length(), bytesDone) : bytesDone;
+			final String targetHubIp = (d.hubIp != null) ? d.hubIp : (!sessions.isEmpty() ? sessions.keySet().iterator().next() : null);
 
-					final String targetHubIp = (hubIp != null) ? hubIp : (!sessions.isEmpty() ? sessions.keySet().iterator().next() : null);
-
-					synchronized (initiated_downloads) {
-						boolean exists = false;
-						for (DownloadObject existing : initiated_downloads) {
-							if (existing.local_file.equals(localFile) && !existing.is_finished()) {
-								exists = true;
-								break;
-							}
-						}
-						if (!exists) {
-							final DownloadObject obj = new DownloadObject(targetHubIp, nick, localFile,
-									remoteFile, DCPPService.this, groupLabel, groupName);
-							obj.set_total_bytes(fileSize);
-							obj.pendingStartOffset = existingLength;
-							// 5. On startup (restoreDownloadsState), restore downloads in paused mode (or queued waiting for startup delay),
-							// wait 10 seconds, then resume using the normal manual unpause implementation (resume_download()).
-							obj.isPaused = true;
-							if (obj.mBuilder2 != null) {
-								obj.mBuilder2.setContentText("Download Paused").setOngoing(false);
-							}
-							
-							initiated_downloads.add(obj);
-							manageWakeLock();
-						}
+			synchronized (initiated_downloads) {
+				boolean exists = false;
+				for (DownloadObject existing : initiated_downloads) {
+					if (existing.local_file.equals(d.localFile) && !existing.is_finished()) {
+						exists = true;
+						break;
 					}
 				}
+				if (!exists) {
+					final DownloadObject obj = new DownloadObject(targetHubIp, d.nick, d.localFile,
+							d.remoteFile, DCPPService.this, d.groupLabel, d.groupName);
+					obj.set_total_bytes(d.fileSize);
+					obj.pendingStartOffset = existingLength;
+					// Restored paused; resumeRestoredDownloadsSoon() resumes it via the normal unpause path (resume_download()).
+					obj.isPaused = true;
+					if (obj.mBuilder2 != null) {
+						obj.mBuilder2.setContentText("Download Paused").setOngoing(false);
+					}
+					initiated_downloads.add(obj);
+					added++;
+				}
 			}
-			restoreSuccessful = true;
-		} catch (Exception e) {
-			Log.e("andcpp", "Error restoring downloads state", e);
 		}
+		if (added > 0) manageWakeLock();
+		return added;
+	}
 
-		// Keep the saved state as it is: the next save rewrites it. (It used to be cleared here, so a kill in the
-		// seconds before that save - e.g. an app update installed right after start - lost the whole queue.)
-		// If the restore failed, keep not saving so the next start can try again with the full saved list.
-		if (restoreSuccessful) downloadsStateRestored = true;
-
-		// Wait 10 seconds, then resume using normal manual unpause implementation (resume_download())
+	/** Resumes the restored (paused) downloads after 10 seconds, giving the hub time to connect. */
+	private void resumeRestoredDownloadsSoon() {
 		new Handler(Looper.getMainLooper()).postDelayed(() -> {
 			synchronized (initiated_downloads) {
 				for (DownloadObject obj : initiated_downloads) {
@@ -4321,6 +4421,75 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 			retryPendingDownloads();
 		}, 10000);
+	}
+
+	private void restoreDownloadsState() {
+		List<SavedDownload> saved = readDownloadsPrefs();
+		if (saved.isEmpty()) {
+			// Nothing in the app's own storage: a clean install, or simply an empty queue. Try the backup file.
+			downloadsStateRestored = true;
+			restoreDownloadsFromBackupIfNeeded();
+			return;
+		}
+
+		boolean restoreSuccessful = false;
+		try {
+			Log.d("andcpp", "Restoring " + saved.size() + " downloads state...");
+			addSavedDownloads(saved);
+			restoreSuccessful = true;
+		} catch (Exception e) {
+			Log.e("andcpp", "Error restoring downloads state", e);
+		}
+
+		// Keep the saved state as it is: the next save rewrites it. (It used to be cleared here, so a kill in the
+		// seconds before that save - e.g. an app update installed right after start - lost the whole queue.)
+		// If the restore failed, keep not saving so the next start can try again with the full saved list.
+		if (restoreSuccessful) {
+			downloadsStateRestored = true;
+			downloadsBackupChecked = true; // the app's own state is the current copy; the backup just follows it
+			saveDownloadsState(); // (re)write the backup file
+		}
+
+		resumeRestoredDownloadsSoon();
+	}
+
+	/**
+	 * After a clean install, brings back the download queue from the backup file in shared storage.
+	 * Needs storage permission; MainActivity calls this again once the permission is granted.
+	 */
+	public void restoreDownloadsFromBackupIfNeeded() {
+		if (downloadsBackupChecked) return;
+		if (!hasStoragePermission()) {
+			Log.d("andcpp", "Downloads backup: no storage permission yet; will check once it is granted");
+			return;
+		}
+		new Thread(() -> {
+			final List<SavedDownload> saved;
+			try {
+				saved = readDownloadsBackup();
+			} catch (Exception e) {
+				Log.w("andcpp", "Could not read the downloads backup: " + e.getMessage());
+				return; // leave the file alone: maybe a later start can read it
+			}
+			new Handler(Looper.getMainLooper()).post(() -> {
+				if (downloadsBackupChecked) return;
+				int added;
+				try {
+					added = addSavedDownloads(saved);
+				} catch (Exception e) {
+					Log.e("andcpp", "Error restoring downloads from the backup", e);
+					return; // leave the backup untouched so a later start can try again
+				}
+				downloadsBackupChecked = true;
+				saveDownloadsState(); // into the app's own state too, and refresh the backup
+				if (added > 0) {
+					Log.i("andcpp", "Restored " + added + " downloads from " + downloadsBackupFile().getPath() + " (after a reinstall)");
+					Toast.makeText(DCPPService.this, "Restored " + added
+							+ " unfinished downloads; they continue once a hub is connected", Toast.LENGTH_LONG).show();
+					resumeRestoredDownloadsSoon();
+				}
+			});
+		}, "RestoreDownloadsBackup").start();
 	}
 
 	public void resetAllDownloads() {

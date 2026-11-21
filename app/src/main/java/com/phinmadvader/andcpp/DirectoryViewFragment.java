@@ -92,7 +92,29 @@ public class DirectoryViewFragment extends Fragment {
 							.show();
 					return true;
 				}
-				return false;
+
+				// Individual file: same kind of box as a folder.
+				DCPPService.FileSize fs = new DCPPService.FileSize(selectedFile.size);
+				final String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + selectedFile.name;
+				new android.app.AlertDialog.Builder(getActivity())
+						.setTitle("Download File")
+						.setMessage(String.format(java.util.Locale.US, "Do you want to download the file '%s' (%.2f %s)?",
+								selectedFile.name, fs.fileSize, fs.unit))
+						.setPositiveButton("Download", (dialog, which) -> {
+							if (mainActivity.mService != null && mainActivity.mService.get_status() == DCPPService.DCClientStatus.CONNECTED) {
+								String remotePath = "";
+								for (int j = 1; j <= depth; j++)
+									remotePath += filelist_manager.filelist_stack.get(j).name + "\\";
+								remotePath += selectedFile.name;
+								mainActivity.mService.download_file(mainActivity.chosenNick, localPath, remotePath, selectedFile.size);
+								Toast.makeText(getActivity(), "Started download: " + selectedFile.name, Toast.LENGTH_SHORT).show();
+							} else {
+								Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
+							}
+						})
+						.setNegativeButton("Cancel", null)
+						.show();
+				return true;
 			}
 		});
 

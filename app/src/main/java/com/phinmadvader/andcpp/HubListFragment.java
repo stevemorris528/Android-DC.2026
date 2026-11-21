@@ -27,6 +27,25 @@ public class HubListFragment extends Fragment {
     private MainActivity mainActivity;
     private static final String FAVORITE_HUBS_PREF = "favorite_hubs";
 
+    /**
+     * Adds a hub ("host" or "host:port") to the saved hubs unless it is already there (with or without its port).
+     * Returns true when it was added.
+     */
+    public static boolean saveHub(Context c, String hubId) {
+        if (hubId == null || hubId.trim().isEmpty()) return false;
+        hubId = hubId.trim();
+        String host = hubId.split(":")[0];
+        SharedPreferences prefs = c.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+        Set<String> favorites = new HashSet<>(prefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
+        for (String f : favorites) {
+            if (f.equals(hubId) || f.equals(host) || (!hubId.contains(":") && f.startsWith(host + ":"))) return false;
+        }
+        favorites.add(hubId);
+        prefs.edit().putStringSet(FAVORITE_HUBS_PREF, favorites).apply();
+        android.util.Log.i("andcpp", "Saved hub " + hubId);
+        return true;
+    }
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         mainActivity = (MainActivity) getActivity();
@@ -195,6 +214,8 @@ public class HubListFragment extends Fragment {
                         editor.putString("favorite_passwords_" + hubIp.split(":")[0], pass);
                     }
                     editor.apply();
+                    saveHub(mainActivity, hubIp); // details saved for a hub = keep the hub in the list
+                    refresh();
 
                     if (mainActivity.mService != null) {
                         DCPPService.HubSession session = mainActivity.mService.getSession(hubIp);
