@@ -278,6 +278,17 @@ public final class AdcHubConnection implements HubConnection {
             case "DRCM":
                 handleConnectRequest(c);
                 break;
+            case "BSCH":
+            case "DSCH":
+            case "FSCH":
+                handleSearch(c);
+                break;
+            case "DRES":
+                handleResult(c);
+                break;
+            case "ICMD":
+                handleUserCommand(c);
+                break;
             case "IGET":
                 if ("blom".equals(c.param(0))) sendBloomLater(c);
                 break;
@@ -579,7 +590,7 @@ public final class AdcHubConnection implements HubConnection {
         boolean any = false;
         synchronized (sentInf) {
             for (Map.Entry<String, String> e : now.entrySet()) {
-                String v = e.getValue();
+                String v = e.getValue() != null ? e.getValue() : ""; // unknown = not sent
                 String before = sentInf.get(e.getKey());
                 boolean changed = full ? !v.isEmpty() : !v.equals(before == null ? "" : before);
                 if (changed) {
@@ -676,7 +687,93 @@ public final class AdcHubConnection implements HubConnection {
 
     @Override
     public void search(DCUser me, String text) {
-        log("search on ADC hubs comes in phase 9; not sent: " + text);
+        String sid = mySid;
+        if (sid == null || text == null || text.trim().isEmpty()) return;
+        String t = text.trim();
+        String token = Long.toString(System.nanoTime() & Long.MAX_VALUE, 36);
+        lastSearchToken = token;
+        AdcCommand.Builder b = AdcCommand.of('B', "SCH").from(sid);
+        String hash = t.regionMatches(true, 0, "TTH:", 0, 4) ? t.substring(4).trim() : t;
+        if (AdcIdentity.isValidId(hash.toUpperCase(Locale.ROOT))) { // a 39-char Base32 TTH
+            b.named("TR", hash.toUpperCase(Locale.ROOT));
+        } else {
+            for (String term : t.split("\\s+")) {
+                if (term.startsWith("-") && term.length() > 1) b.named("NO", term.substring(1));
+                else if (!term.isEmpty()) b.named("AN", term);
+            }
+        }
+        b.named("TO", token);
+        send(b.build());
+        log("search sent: " + t);
+    }
+
+    /** Token of our latest search (results carry it). */
+    private volatile String lastSearchToken;
+
+    private void handleSearch(AdcCommand c) {
+        if (c.fromSid == null || c.fromSid.equals(mySid)) return; // never answer our own search
+        if (c.type == 'D' && (mySid == null || !mySid.equals(c.toSid))) return; // a direct search for someone else
+        if (c.type == 'F' && !featuresMatch(c.extra)) return;
+        AdcSearch s = AdcSearch.parse(c);
+        DCUser from = users.get(c.fromSid);
+        if (s != null && from != null) listener.onSearch(from, s);
+    }
+
+    /** FSCH "+TCP4-NAT0": the search is only for users whose features match. */
+    private boolean featuresMatch(String selector) {
+        if (selector == null) return true;
+        boolean active = myInfo.active();
+        for (int i = 0; i + 5 <= selector.length(); i += 5) {
+            char sign = selector.charAt(i);
+            String f = selector.substring(i + 1, i + 5);
+            boolean have = "TCP4".equals(f) ? active : false; // we advertise no other features in SU
+            if (sign == '+' && !have) return false;
+            if (sign == '-' && have) return false;
+        }
+        return true;
+    }
+
+    private void handleResult(AdcCommand c) {
+        if (mySid == null || !mySid.equals(c.toSid)) return;
+        String fn = c.named("FN");
+        if (fn == null) return;
+        DCUser from = users.get(c.fromSid);
+        if (from == null) return;
+        listener.onSearchResult(from, fn, parseLong(c.named("SI")), (int) parseLong(c.named("SL")),
+                c.named("TR"), c.named("TO"));
+    }
+
+    /** ICMD name TT&lt;command&gt; CT&lt;context&gt; [RM1] [SP1]. */
+    private void handleUserCommand(AdcCommand c) {
+        String name = c.param(0);
+        if (name == null) return;
+        int ct = (int) parseLong(c.named("CT", 1));
+        listener.onUserCommand(name, c.named("TT", 1), ct, "1".equals(c.named("RM", 1)), "1".equals(c.named("SP", 1)));
+    }
+
+    /** Answers a search through the hub: DRES &lt;us&gt; &lt;searcher&gt; FN SI SL [TR] [TO], one per hit. */
+    public void sendResults(String searcherSid, String token, List<SearchResult> hits) {
+        String sid = mySid;
+        if (sid == null) return;
+        for (SearchResult r : hits) {
+            AdcCommand.Builder b = AdcCommand.of('D', "RES").from(sid).to(searcherSid)
+                    .named("FN", AdcSearch.adcPath(r.path, r.dir))
+                    .named("SI", String.valueOf(r.dir ? 0 : r.size))
+                    .named("SL", String.valueOf(r.freeSlots));
+            if (!r.dir && r.tth != null) b.named("TR", r.tth);
+            if (token != null) b.named("TO", token);
+            send(b.build());
+        }
+    }
+
+    /** Our own SID on this hub (for hub menu placeholders). */
+    public String sid() {
+        return mySid;
+    }
+
+    /** Our CID (for hub menu placeholders). */
+    public String cid() {
+        return identity.cid;
     }
 
     @Override

@@ -39,6 +39,21 @@ public interface HubEventListener {
      */
     void onTransferRefused(String message);
 
+    /** Another user's search (ADC BSCH/DSCH/FSCH), to answer off this thread. */
+    void onSearch(DCUser from, com.phinvader.libjdcpp.adc.AdcSearch search);
+
+    /**
+     * A result for our search (ADC DRES): {@code fn} is the ADC path ("/dir/file", directories end in '/'),
+     * {@code tth} may be null.
+     */
+    void onSearchResult(DCUser from, String fn, long size, int freeSlots, String tth, String token);
+
+    /**
+     * A hub menu entry (ADC ICMD): {@code name} uses '/' between submenus, {@code command} is ADC text with
+     * %[...] placeholders, {@code context} the UCMD context bits (1 hub, 2 user, 4 search, 8 file list).
+     */
+    void onUserCommand(String name, String command, int context, boolean remove, boolean separator);
+
     /** A status or error message from the hub, worth showing in the hub chat. */
     void onStatus(String message);
 

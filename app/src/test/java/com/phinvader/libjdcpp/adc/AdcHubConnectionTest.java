@@ -71,6 +71,15 @@ public class AdcHubConnectionTest {
         public void onHubInfo(String name, String topic) { hubName = name; }
         public void onStatus(String m) { status.add(m); }
         public void onTransferRefused(String m) { status.add("refused: " + m); }
+        final List<String> searches = new CopyOnWriteArrayList<>();
+        public void onSearch(DCUser from, AdcSearch s) { searches.add(from.nick + "|" + s.nmdcPattern() + "|" + s.token); }
+        public void onSearchResult(DCUser from, String fn, long size, int slots, String tth, String token) {
+            searches.add("res:" + from.nick + "|" + fn + "|" + size + "|" + slots + "|" + tth + "|" + token);
+        }
+        final List<String> menus = new CopyOnWriteArrayList<>();
+        public void onUserCommand(String name, String command, int ct, boolean rm, boolean sp) {
+            menus.add(name + "|" + command + "|" + ct + "|" + rm + "|" + sp);
+        }
         final List<String> connectRequests = new CopyOnWriteArrayList<>();
         public void onConnectRequest(DCUser peer, String proto, int port, String token, boolean reverse) {
             connectRequests.add(peer.nick + "|" + proto + "|" + port + "|" + token + "|" + reverse);

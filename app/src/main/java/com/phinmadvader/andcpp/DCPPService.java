@@ -3855,6 +3855,27 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		sendBroadcast(i);
 	}
 
+	/**
+	 * Answers another user's ADC search from our share: at most 10 results, through the hub (DRES; we don't
+	 * listen on UDP). Two passive users can't connect, so a passive searcher gets nothing while we're passive.
+	 */
+	private void answerAdcSearch(AdcHubConnection hub, DCUser from, com.phinvader.libjdcpp.adc.AdcSearch s) {
+		UploadManager um = uploadManager;
+		if (um == null || from == null || from.sid == null) return;
+		if (!from.active && !adcMyInfo.active()) return;
+		List<UploadManager.SearchHit> hits = um.searchShare(false, false, 0, s.nmdcType(), s.nmdcPattern(), 30);
+		List<SearchResult> out = new ArrayList<>();
+		int free = um.getFreeSlots(), max = um.getMaxSlots();
+		for (UploadManager.SearchHit h : hits) {
+			if (!s.accepts(h.path, h.size, h.dir)) continue;
+			out.add(new SearchResult(h.path, h.size, h.tth, h.dir, free, max));
+			if (out.size() >= 10) break;
+		}
+		if (out.isEmpty()) return;
+		Log.d("andcpp", "[ADC] search from " + from.nick + " for '" + s.nmdcPattern() + "': " + out.size() + " result(s)");
+		hub.sendResults(from.sid, s.token, out);
+	}
+
 	/** Remembers a hub's name for the hub list (also while offline) and refreshes the UI. */
 	private void rememberHubName(HubSession session, String name) {
 		if (name == null || name.trim().isEmpty()) return;
@@ -3976,6 +3997,49 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public void onStatus(String message) {
 			Log.i("andcpp", "[ADC] " + session.hubIp + ": " + message);
 			onMainChat("*** " + message);
+		}
+
+		@Override
+		public void onSearch(DCUser from, com.phinvader.libjdcpp.adc.AdcSearch search) {
+			final AdcHubConnection c = connection;
+			if (c == null) return;
+			searchReplyExecutor.execute(() -> { // bounded, off the hub reader (same as NMDC searches)
+				try {
+					answerAdcSearch(c, from, search);
+				} catch (Exception e) {
+					Log.e("andcpp", "Failed to answer ADC search", e);
+				}
+			});
+		}
+
+		@Override
+		public void onSearchResult(DCUser from, String fn, long size, int freeSlots, String tth, String token) {
+			// As an NMDC $SR, so the Search tab and downloads handle it unchanged.
+			DCMessage m = new DCMessage();
+			m.command = "SR";
+			m.is_dir_result = fn.endsWith("/");
+			m.file_path = com.phinvader.libjdcpp.adc.AdcSearch.nmdcPath(fn);
+			m.file_size = m.is_dir_result ? 0 : size;
+			m.file_tth = tth;
+			m.file_signature = tth != null ? "TTH:" + tth : null;
+			m.hisinfo = new DCUser();
+			m.hisinfo.nick = from.nick;
+			new MySearchHandler(hubKey).onCommand(m);
+		}
+
+		@Override
+		public void onUserCommand(String name, String command, int context, boolean remove, boolean separator) {
+			String title = name.replace('/', '\\'); // our menus use '\' between submenus, as NMDC
+			for (UserCommand uc : session.userCommands) {
+				if (title.equals(uc.title) && (uc.context & context) != 0) session.userCommands.remove(uc);
+			}
+			if (remove) return;
+			if (separator) {
+				session.userCommands.add(new UserCommand(UserCommand.TYPE_SEPARATOR, context, title, null));
+			} else if (command != null && !command.isEmpty()) {
+				session.userCommands.add(new UserCommand(1, context, title, command));
+				Log.d("andcpp", "Hub " + session.hubIp + " ADC user command: " + title + " (context " + context + ")");
+			}
 		}
 
 		@Override
@@ -4298,6 +4362,51 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	/**
+	 * An ADC hub menu entry: fills in %[myNI] %[mySID] %[myCID] %[userNI] %[userSID] %[userCID] %[userI4] and
+	 * %[line:...] (values ADC-escaped; the command text is already ADC) and sends each line as is.
+	 */
+	private boolean runAdcUserCommand(final HubSession session, UserCommand uc, String targetNick,
+			Map<String, String> lineValues) {
+		if (!(session.hub instanceof AdcHubConnection) || session.status != DCClientStatus.CONNECTED
+				|| uc == null || uc.command == null) {
+			return false;
+		}
+		final AdcHubConnection hub = (AdcHubConnection) session.hub;
+		DCUser target = targetNick != null ? hub.userByNick(targetNick) : null;
+		String myNick = session.myuser != null && session.myuser.nick != null ? session.myuser.nick : "";
+		Map<String, String> values = new java.util.LinkedHashMap<>();
+		values.put("myNI", com.phinvader.libjdcpp.adc.AdcCommand.escape(myNick));
+		values.put("mySID", hub.sid() != null ? hub.sid() : "");
+		values.put("myCID", hub.cid());
+		String tNick = target != null && target.nick != null ? target.nick : (targetNick != null ? targetNick : "");
+		values.put("userNI", com.phinvader.libjdcpp.adc.AdcCommand.escape(tNick));
+		values.put("nick", com.phinvader.libjdcpp.adc.AdcCommand.escape(tNick)); // NMDC-style menus on bridged hubs
+		values.put("userSID", target != null && target.sid != null ? target.sid : "");
+		values.put("userCID", target != null && target.cid != null ? target.cid : "");
+		values.put("userI4", target != null && target.ip != null ? target.ip : "");
+		String cmd = uc.command;
+		if (lineValues != null) {
+			for (Map.Entry<String, String> e : lineValues.entrySet()) {
+				cmd = cmd.replace("%[line:" + e.getKey() + "]",
+						com.phinvader.libjdcpp.adc.AdcCommand.escape(e.getValue() != null ? e.getValue() : ""));
+			}
+		}
+		for (Map.Entry<String, String> e : values.entrySet()) {
+			cmd = cmd.replace("%[" + e.getKey() + "]", e.getValue());
+		}
+		final List<String> lines = new ArrayList<>();
+		for (String l : cmd.split("\n")) {
+			if (!l.trim().isEmpty()) lines.add(l);
+		}
+		if (lines.isEmpty()) return false;
+		Log.i("andcpp", "Running ADC hub command '" + uc.title + "' for " + tNick + " on " + session.hubIp);
+		userCommandExecutor.execute(() -> {
+			for (String l : lines) hub.sendHubCommand(l);
+		});
+		return true;
+	}
+
 	/** Commands (and separators) this hub offers in the given context, e.g. UserCommand.CONTEXT_USER. */
 	public List<UserCommand> getUserCommands(String hubIp, int contextBit) {
 		List<UserCommand> out = new ArrayList<>();
@@ -4323,6 +4432,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 * Returns false if the hub is not connected.
 	 */
 	public boolean runUserCommand(String hubIp, UserCommand uc, String targetNick, Map<String, String> lineValues) {
+		HubSession adcSession = sessionForUi(hubIp);
+		if (adcSession != null && adcSession.protocol.isAdc()) {
+			return runAdcUserCommand(adcSession, uc, targetNick, lineValues);
+		}
 		final HubSession session = getSession(hubIp);
 		if (session == null || session.client == null || session.myuser == null
 				|| session.status != DCClientStatus.CONNECTED || uc == null || uc.command == null) {
