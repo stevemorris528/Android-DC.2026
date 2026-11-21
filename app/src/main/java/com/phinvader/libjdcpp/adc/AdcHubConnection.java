@@ -102,6 +102,9 @@ public final class AdcHubConnection implements HubConnection {
     private volatile String quitReason;
     private volatile String redirect;
     private volatile boolean closedByUs;
+    /** The hub kicked us with TL-1: it asks us not to reconnect. */
+    private volatile boolean noReconnect;
+    private final CountDownLatch readerDone = new CountDownLatch(1);
     private final AtomicBoolean ended = new AtomicBoolean();
 
     public AdcHubConnection(HubAddress address, AdcIdentity identity, MyInfo myInfo, HubEventListener listener) {
@@ -141,8 +144,13 @@ public final class AdcHubConnection implements HubConnection {
             throw new IOException("Hub login timed out");
         }
         if (!loggedIn) {
+            // A refusal is usually ISTA (the reason) then IQUI (with TL-1 = "don't reconnect"): give the reader a
+            // moment to see the IQUI before deciding.
+            readerDone.await(1000, TimeUnit.MILLISECONDS);
             closeQuietly();
-            throw new IOException(loginFailure != null ? loginFailure : "Hub closed the connection during login");
+            String why = loginFailure != null ? loginFailure : "Hub closed the connection during login";
+            if (noReconnect) throw new com.phinvader.libjdcpp.hub.HubRefusedException(why);
+            throw new IOException(why);
         }
         log("logged in to " + address.toUrl() + " as " + nick + " (SID " + mySid + ", " + users.size() + " users)");
     }
@@ -152,6 +160,18 @@ public final class AdcHubConnection implements HubConnection {
         if (loginFailure == null) loginFailure = reason;
         loginDone.countDown();
         closeQuietly();
+    }
+
+    /** Like failLogin, but keeps reading so the hub's following IQUI (and its TL) is still seen. */
+    private void failLoginKeepReading(String reason) {
+        if (loggedIn) return;
+        if (loginFailure == null) loginFailure = reason;
+        loginDone.countDown();
+    }
+
+    /** True if the hub kicked us with TL-1 ("don't reconnect"): automatic retries can't help. */
+    public boolean hubAskedNotToReconnect() {
+        return noReconnect;
     }
 
     // ---- reading ----
@@ -198,6 +218,7 @@ public final class AdcHubConnection implements HubConnection {
         } else if (!closedByUs) {
             listener.onDisconnected(reason, redirect);
         }
+        readerDone.countDown();
     }
 
     /** The last few lines from the hub (shortened), logged when the connection ends: why were we dropped? */
@@ -329,7 +350,7 @@ public final class AdcHubConnection implements HubConnection {
         }
         if (severity == 2) {
             if (!loggedIn) {
-                failLogin(msg);
+                failLoginKeepReading(msg); // the hub usually follows with IQUI (maybe TL-1)
             } else {
                 quitReason = msg;
                 listener.onStatus("Hub error: " + msg);
@@ -388,7 +409,11 @@ public final class AdcHubConnection implements HubConnection {
             String rd = c.named("RD", 1);
             StringBuilder why = new StringBuilder(rd != null ? "Redirected to " + rd : "Disconnected by the hub");
             if (ms != null && !ms.isEmpty()) why.append(": ").append(ms);
-            if (tl != null) why.append(" (can't reconnect for ").append(tl).append(" s)");
+            if ("-1".equals(tl)) {
+                noReconnect = true; // TL-1: the hub asks us not to reconnect (until something changes)
+            } else if (tl != null) {
+                why.append(" (can't reconnect for ").append(tl).append(" s)");
+            }
             redirect = rd;
             quitReason = why.toString();
             if (!loggedIn) failLogin(quitReason);

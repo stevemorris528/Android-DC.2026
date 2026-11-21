@@ -351,6 +351,25 @@ public class AdcHubConnectionTest {
         assertEquals("HSTA 140 Unsupported\\sk\n", new String(wire.toByteArray(), UTF8));
     }
 
+    /** Seen on a public hub: ISTA 230 with the reason, then IQUI TL-1 ("don't reconnect"), socket left open. */
+    @Test
+    public void refusalWithDontReconnect() throws Exception {
+        try (FakeHub hub = new FakeHub((in, out) -> {
+            in.readLine();
+            w(out, "ISUP ADBASE ADTIGR", "ISID AAAB");
+            in.readLine();
+            w(out, "ISTA 230 You\\shave\\stoo\\sfew\\supload\\sslots\\sopen\\s(\\s2\\s),\\sthe\\sminimum\\srequired\\sis\\s3",
+                    "IQUI AAAB TL-1 DI1");
+        })) {
+            try {
+                newConn(new Events()).connect(hub.connect(), "me", null, 0, 5000);
+                fail("login should be refused");
+            } catch (com.phinvader.libjdcpp.hub.HubRefusedException e) {
+                assertTrue(e.getMessage(), e.getMessage().startsWith("You have too few upload slots open"));
+            }
+        }
+    }
+
     @Test
     public void loginTimesOut() throws Exception {
         try (FakeHub hub = new FakeHub((in, out) -> in.readLine())) {

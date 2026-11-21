@@ -170,6 +170,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		 * until the user decides. Cleared by the next connect attempt.
 		 */
 		public volatile String keyprintProblem;
+		/**
+		 * The hub refused us and asked us not to reconnect (ADC TL-1), e.g. "too few upload slots": no
+		 * automatic retries until the user connects again (after fixing it). Shown in the hub list.
+		 */
+		public volatile String blockedReason;
 		/** The new keyprint the user may choose to trust (only for a changed remembered keyprint). */
 		public volatile String pendingNewKeyprint;
 		/** Hub software (ADC VE), for hub details. */
@@ -4061,6 +4066,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			// Only for the connection this session still uses (not one replaced by a reconnect).
 			if (session.hub == connection && session.status != DCClientStatus.DISCONNECTED
 					&& sessions.get(hubKey) == session) {
+				if (connection != null && connection.hubAskedNotToReconnect()) session.blockedReason = reason;
 				handleConnectionFailure(hubKey, session, reason);
 			}
 		}
@@ -4069,6 +4075,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private void connectToHub(final String hubKey, final HubSession session) {
 		session.status = DCClientStatus.CONNECTING;
 		session.keyprintProblem = null; // a new attempt (e.g. the user pressed Connect): check again
+		session.blockedReason = null;
 		new Thread(() -> {
 			try {
 				if (session.client != null) {
@@ -4145,6 +4152,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				}, 15000);
 			} catch (Exception e) {
+				if (e instanceof com.phinvader.libjdcpp.hub.HubRefusedException) session.blockedReason = e.getMessage();
 				Log.e("andcpp", "Connection failed for " + session.hubIp + ":" + session.hubPort, e);
 				handleConnectionFailure(hubKey, session, e.getMessage() != null ? e.getMessage() : e.toString());
 			}
@@ -4175,6 +4183,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			manageWakeLock();
 			mySendBroadcast(session.hubIp, true, true);
 			sendKeyprintWarning(hubKey, session);
+			return;
+		}
+		if (session.blockedReason != null) {
+			Log.w("andcpp", "Not reconnecting to " + session.address().toUrl() + " (the hub asked us not to): " + session.blockedReason);
+			session.status = DCClientStatus.DISCONNECTED;
+			manageWakeLock();
+			mySendBroadcast(session.hubIp, true, true);
 			return;
 		}
 		if (session.status == DCClientStatus.RECONNECTING) {

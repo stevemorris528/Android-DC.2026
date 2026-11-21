@@ -458,7 +458,9 @@ public class HubListFragment extends Fragment {
                 String hubAddressStr = entry.session.hubIp + ":" + entry.session.hubPort
                         + (entry.session.protocol.secure ? " 🔒 " + entry.session.protocol.label
                         : entry.session.protocol.isAdc() ? " " + entry.session.protocol.label : "");
-                String statusStr = entry.session.keyprintProblem != null
+                String statusStr = entry.session.blockedReason != null
+                        ? "⚠ REFUSED: " + entry.session.blockedReason
+                        : entry.session.keyprintProblem != null
                         ? (entry.session.pendingNewKeyprint != null ? "⚠ KEYPRINT CHANGED" : "⚠ WRONG KEYPRINT")
                         : entry.session.status != null ? entry.session.status.toString() : "UNKNOWN";
                 
