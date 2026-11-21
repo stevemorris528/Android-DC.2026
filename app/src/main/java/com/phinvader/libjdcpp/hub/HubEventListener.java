@@ -33,6 +33,12 @@ public interface HubEventListener {
      */
     void onConnectRequest(DCUser peer, String protocol, int port, String token, boolean reverse);
 
+    /**
+     * The hub refused to pass on our transfer request (an ISTA whose FC is DCTM or DRCM, e.g. "You are not
+     * allowed to download in this hub"). {@code message} is user-readable.
+     */
+    void onTransferRefused(String message);
+
     /** A status or error message from the hub, worth showing in the hub chat. */
     void onStatus(String message);
 

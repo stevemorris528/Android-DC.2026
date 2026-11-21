@@ -54,6 +54,8 @@ final class AdcTransfers {
         final String peerNick;
         final DCDownloader.DownloadQueueEntity entity;
         final String identifier;
+        /** The hub the request went through (a hub refusal fails its requests). */
+        volatile AdcHubConnection hub;
         final long createdAt = System.currentTimeMillis();
 
         Pending(String peerCid, String peerNick, DCDownloader.DownloadQueueEntity entity, String identifier) {
@@ -81,7 +83,9 @@ final class AdcTransfers {
         boolean weActive = canAccept(session);
         if (!weActive && !peer.active) return "both passive";
         String token = newToken();
-        pending.put(token, new Pending(peer.cid, peer.nick, entity, AdcClientConnection.identifierFor(remotePath)));
+        Pending p = new Pending(peer.cid, peer.nick, entity, AdcClientConnection.identifierFor(remotePath));
+        p.hub = hub;
+        pending.put(token, p);
         entity.status = DCConstants.DownloadStatus.QUEUED;
         if (weActive) {
             hub.sendConnectToMe(peer.sid, PROTO, service.getUploadManager().getPort(), token);
@@ -91,6 +95,22 @@ final class AdcTransfers {
             Log.d("andcpp", "[CC] DRCM to " + peer.nick + " for " + remotePath + " (token " + token + ")");
         }
         return null;
+    }
+
+    /**
+     * The hub refused our transfer requests ("You are not allowed to download in this hub"): fail the downloads
+     * waiting on it instead of leaving them queued. Permanent, so they aren't retried in a loop; the reason is
+     * also shown in that hub's chat.
+     */
+    void refusedByHub(AdcHubConnection hub, String reason) {
+        for (Iterator<Map.Entry<String, Pending>> it = pending.entrySet().iterator(); it.hasNext(); ) {
+            Pending p = it.next().getValue();
+            if (p.hub != hub) continue;
+            it.remove();
+            p.entity.permanentError = true;
+            p.entity.status = DCConstants.DownloadStatus.FAILED;
+            Log.i("andcpp", "[CC] Hub refused the transfer of " + p.identifier + " from " + p.peerNick + ": " + reason);
+        }
     }
 
     /** Drops a waiting request for this download (abandoned attempt, cancel). */

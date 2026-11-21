@@ -3979,6 +3979,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 
 		@Override
+		public void onTransferRefused(String message) {
+			AdcHubConnection c = connection;
+			if (c != null) adcTransfers.refusedByHub(c, message);
+		}
+
+		@Override
 		public void onConnectRequest(DCUser peer, String protocol, int port, String token, boolean reverse) {
 			AdcHubConnection c = connection;
 			if (c != null) adcTransfers.onConnectRequest(session, c, peer, protocol, port, token, reverse);

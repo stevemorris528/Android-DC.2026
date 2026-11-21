@@ -312,6 +312,10 @@ public final class AdcHubConnection implements HubConnection {
         if (code == null || code.length() != 3) return;
         int severity = code.charAt(0) - '0';
         String msg = describeStatus(code, desc, c);
+        String fc = c.named("FC", 2);
+        if (loggedIn && severity >= 1 && ("DCTM".equals(fc) || "DRCM".equals(fc))) {
+            listener.onTransferRefused(desc != null && !desc.trim().isEmpty() ? desc.trim() : msg);
+        }
         if (severity == 2) {
             if (!loggedIn) {
                 failLogin(msg);

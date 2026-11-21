@@ -70,6 +70,7 @@ public class AdcHubConnectionTest {
         public void onPrivateMessage(String conv, String from, String text) { pms.add(conv + "|" + from + "|" + text); }
         public void onHubInfo(String name, String topic) { hubName = name; }
         public void onStatus(String m) { status.add(m); }
+        public void onTransferRefused(String m) { status.add("refused: " + m); }
         final List<String> connectRequests = new CopyOnWriteArrayList<>();
         public void onConnectRequest(DCUser peer, String proto, int port, String token, boolean reverse) {
             connectRequests.add(peer.nick + "|" + proto + "|" + port + "|" + token + "|" + reverse);
