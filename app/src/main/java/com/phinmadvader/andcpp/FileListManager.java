@@ -55,7 +55,7 @@ public class FileListManager {
 		filelist_stack.add(dir);
 		if (mainActivity != null && mainActivity.tab_page_adapter != null) {
 			mainActivity.tab_page_adapter.notifyDataSetChanged();
-			mainActivity.tab_page_adapter.move_to_last_page();
+			mainActivity.tab_page_adapter.move_to_tab(TabPagerAdapter.TAB_FILELIST);
 		}
 	}
 

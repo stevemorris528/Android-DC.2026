@@ -685,7 +685,7 @@ public class MainActivity extends FragmentActivity implements
 				tab_page_adapter.notifyDataSetChanged();
 				tab_page_adapter.add_tab(TabPagerAdapter.TAB_FILELIST,
 						null, fileListTabTitle(nick));
-				tab_page_adapter.move_to_last_page();
+				tab_page_adapter.move_to_tab(TabPagerAdapter.TAB_FILELIST);
 			}
 			try {
 				getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)

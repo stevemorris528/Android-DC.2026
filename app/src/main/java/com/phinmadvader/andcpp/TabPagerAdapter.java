@@ -273,6 +273,19 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 		viewpager.setCurrentItem(getCount() - 1);
 	}
 
+	/**
+	 * Shows the given tab (for the file list: its deepest open directory). Tabs keep a fixed order, so the
+	 * file list is not the last page once a PM tab is open: move_to_last_page() used to land on the PM.
+	 */
+	public void move_to_tab(int tabid) {
+		int pos = get_tab_position(tabid);
+		if (pos >= 0 && pos < getCount()) {
+			viewpager.setCurrentItem(pos);
+		} else {
+			move_to_last_page();
+		}
+	}
+
 	@Override
 	public void onTabReselected(Tab tab, FragmentTransaction ft) {
 	}
