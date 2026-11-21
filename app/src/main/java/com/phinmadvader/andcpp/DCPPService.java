@@ -2773,6 +2773,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		runningInstance = this;
 		ensureForeground("");
 		if (initiated_downloads == null)
 			initiated_downloads = new ArrayList<DownloadObject>();
@@ -2967,6 +2968,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			retryPendingDownloads();
 		}
 		// When it becomes blocked, running downloads park themselves in the worker loop.
+		// Uploads are stopped here: peers retry later and get $MaxedOut until Wi-Fi is back.
+		if (!wasBlocked && blocked && uploadManager != null) {
+			int n = uploadManager.stopAllUploads();
+			Log.i("andcpp", "Wi-Fi only is on and we're on mobile data: stopped " + n + " upload connection(s)");
+		}
+	}
+
+	/** May be null before the service has started listening. */
+	public UploadManager getUploadManager() {
+		return uploadManager;
+	}
+
+	/** True while "Wi-Fi only" is on and the active link is mobile data: no uploads are served. */
+	public boolean isUploadBlockedByNetwork() {
+		return downloadsBlockedByNetwork;
 	}
 
 	private static String networkKeyOf(NetworkInfo info) {
@@ -3137,6 +3153,28 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		final String k = key;
 		new Handler(Looper.getMainLooper()).post(() ->
 				handleConnectionFailure(k, session, "peers stopped answering connect requests"));
+	}
+
+	/**
+	 * Called after every file list rebuild. The share size is sent to the hub in $MyINFO at login, which can be
+	 * before the share was scanned (or before storage access was granted); re-send it whenever it changes so the
+	 * hub's user list shows our real share.
+	 */
+	public void onShareSizeChanged(long size) {
+		for (HubSession s : sessions.values()) {
+			if (s.prefs == null || s.myuser == null) continue;
+			if (s.prefs.getShare_size() == size && s.myuser.share_size == size) continue;
+			s.prefs.setShare_size(size);
+			s.myuser.share_size = size;
+			if (s.status == DCClientStatus.CONNECTED && s.client != null) {
+				try {
+					s.client.sendMyInfo(s.myuser, s.prefs);
+					Log.i("andcpp", "Share size now " + size + " bytes; MyINFO re-sent to " + s.hubIp);
+				} catch (Exception e) {
+					Log.w("andcpp", "Could not re-send MyINFO to " + s.hubIp, e);
+				}
+			}
+		}
 	}
 
 	/**
@@ -3404,6 +3442,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			session.myuser = new DCUser();
 			session.myuser.nick = nick;
 			session.myuser.active = activeMode;
+			session.myuser.share_size = sharedSize;
 
 			connectToHub(hubKey, session);
 		} else {
@@ -3943,6 +3982,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	@Override
 	public void onDestroy() {
 		super.onDestroy();
+		if (runningInstance == this) runningInstance = null;
 		saveDownloadsStateNow();
 		saveAllTimeTotals();
 		connectivityExecutor.shutdownNow();
@@ -4096,11 +4136,32 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	private static volatile DCPPService runningInstance = null;
+
+	/** The service while it runs (used by the updater to save state before installing). */
+	public static DCPPService getRunningInstance() {
+		return runningInstance;
+	}
+
+	/** Called just before an app update is installed (the installer kills the process without onDestroy). */
+	public void prepareForUpdate() {
+		Log.i("andcpp", "[UPDATE] saving downloads state before update");
+		saveDownloadsStateNow();
+	}
+
+	/** False until restoreDownloadsState() has loaded the saved queue: saving before then would overwrite it with less. */
+	private volatile boolean downloadsStateRestored = false;
+
 	private void saveDownloadsStateNow() {
 		synchronized (saveLock) {
 		try {
 			SharedPreferences prefs = getSharedPreferences("dcpp_downloads_state", Context.MODE_PRIVATE);
 			SharedPreferences.Editor editor = prefs.edit();
+			if (!downloadsStateRestored) {
+				Log.d("andcpp", "Downloads state not restored yet; not saving over it");
+				return;
+			}
+			editor.clear(); // drop entries of a longer previous list
 			
 			List<DownloadItem> queue = get_download_queue();
 			int count = 0;
@@ -4189,7 +4250,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private void restoreDownloadsState() {
 		SharedPreferences prefs = getSharedPreferences("dcpp_downloads_state", Context.MODE_PRIVATE);
 		int count = prefs.getInt("download_count", 0);
-		if (count <= 0) return;
+		if (count <= 0) {
+			downloadsStateRestored = true;
+			return;
+		}
 
 		boolean restoreSuccessful = false;
 		try {
@@ -4241,9 +4305,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			Log.e("andcpp", "Error restoring downloads state", e);
 		}
 
-		if (restoreSuccessful) {
-			prefs.edit().clear().apply();
-		}
+		// Keep the saved state as it is: the next save rewrites it. (It used to be cleared here, so a kill in the
+		// seconds before that save - e.g. an app update installed right after start - lost the whole queue.)
+		// If the restore failed, keep not saving so the next start can try again with the full saved list.
+		if (restoreSuccessful) downloadsStateRestored = true;
 
 		// Wait 10 seconds, then resume using normal manual unpause implementation (resume_download())
 		new Handler(Looper.getMainLooper()).postDelayed(() -> {

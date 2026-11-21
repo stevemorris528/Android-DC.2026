@@ -368,6 +368,53 @@ public class UploadManager {
     public List<PeerConnectionHandler> getActiveUploads() {
         return new ArrayList<>(activeUploads.values());
     }
+
+    /** Nicks the user blocked from the upload menu (until the app restarts). They get $MaxedOut. */
+    private final java.util.Set<String> blockedNicks = java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
+
+    public boolean isNickBlocked(String nick) {
+        return nick != null && blockedNicks.contains(nick);
+    }
+
+    public void setNickBlocked(String nick, boolean blocked) {
+        if (nick == null) return;
+        if (blocked) {
+            blockedNicks.add(nick);
+            stopUploadsTo(nick);
+        } else {
+            blockedNicks.remove(nick);
+        }
+        Log.i("andcpp", (blocked ? "Blocked " : "Unblocked ") + nick + " for uploads");
+    }
+
+    /** Closes every upload connection. Returns how many were closed. */
+    public int stopAllUploads() {
+        int n = 0;
+        for (PeerConnectionHandler h : activeUploads.values()) {
+            if (h.isFinished()) continue;
+            h.stop("all uploads stopped");
+            n++;
+        }
+        return n;
+    }
+
+    /** Closes every upload connection to this nick. Returns how many were closed. */
+    public int stopUploadsTo(String nick) {
+        int n = 0;
+        for (PeerConnectionHandler h : activeUploads.values()) {
+            if (h.isFinished() || !nick.equals(h.getHisNick())) continue;
+            h.stop("stopped by user");
+            n++;
+        }
+        return n;
+    }
+
+    /** Reason to refuse an upload right now, or null when it may go ahead. */
+    String uploadRefusalReason(String nick) {
+        if (service.isUploadBlockedByNetwork()) return "Wi-Fi only is on and we're on mobile data";
+        if (isNickBlocked(nick)) return nick + " is blocked";
+        return null;
+    }
     
     public int getPort() {
         return port;
@@ -666,6 +713,7 @@ public class UploadManager {
             collectTths(tree, byTth);
             fileByTth = byTth;
             cachedShareSize = totalSize[0];
+            service.onShareSizeChanged(totalSize[0]);
             shareIndexReady = true;
 
             Log.i("andcpp", "File list refreshed: " + byTth.size() + " files, " + totalSize[0] + " bytes, "

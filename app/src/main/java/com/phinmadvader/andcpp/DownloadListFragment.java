@@ -157,6 +157,9 @@ public class DownloadListFragment extends Fragment {
         if (errors > 0) {
             summary += " | Errors: " + errors;
         }
+        if (mainActivity.mService.isUploadBlockedByNetwork()) {
+            summary = "UL paused: Wi-Fi only, on mobile data | " + summary;
+        }
         txtUploadStats.setText(summary);
 
         // One row per open upload connection, reusing views so the list doesn't flicker every second.
@@ -291,6 +294,63 @@ public class DownloadListFragment extends Fragment {
             speed.setText(statusName);
         }
         speed.setVisibility(View.VISIBLE);
+
+        row.setOnClickListener(v -> Toast.makeText(getActivity(), "Long-press for options", Toast.LENGTH_SHORT).show());
+        row.setOnLongClickListener(v -> {
+            showUploadDialog(up);
+            return true;
+        });
+    }
+
+    /** Long-press menu of an upload row. */
+    private void showUploadDialog(final PeerConnectionHandler up) {
+        if (mainActivity == null || mainActivity.mService == null) return;
+        final UploadManager um = mainActivity.mService.getUploadManager();
+        if (um == null) return;
+        final String nick = up.getHisNick();
+        String name = up.getFileName();
+        boolean hasFile = name != null && !name.equals("None");
+
+        String title = (hasFile ? name : "Connection") + "\nTo: " + nick;
+        long total = up.getTotalSize();
+        if (hasFile && total > 0) {
+            FileSize doneFs = new FileSize(up.getBytesSent());
+            FileSize totalFs = new FileSize(total);
+            title += String.format(java.util.Locale.US, "\nProgress: %.1f%% (%.2f %s / %.2f %s)",
+                    (double) up.getBytesSent() / total * 100.0, doneFs.fileSize, doneFs.unit, totalFs.fileSize, totalFs.unit);
+        }
+        if (mainActivity.mService.isUploadBlockedByNetwork()) {
+            title += "\n(Uploads paused: Wi-Fi only, on mobile data)";
+        }
+
+        final boolean blocked = um.isNickBlocked(nick);
+        final String optStop = "Stop Upload";
+        final String optStopUser = "Stop All Uploads to " + nick;
+        final String optBlock = blocked ? "Unblock " + nick : "Block " + nick + " (until app restart)";
+        final String optStopAll = "Stop All Uploads";
+        final String[] options = {optStop, optStopUser, optBlock, optStopAll};
+
+        new android.app.AlertDialog.Builder(getActivity())
+                .setTitle(title)
+                .setItems(options, (dialog, which) -> {
+                    String selected = options[which];
+                    if (selected.equals(optStop)) {
+                        up.stop("stopped by user");
+                        Toast.makeText(getActivity(), "Upload stopped (the peer may retry)", Toast.LENGTH_SHORT).show();
+                    } else if (selected.equals(optStopUser)) {
+                        int n = um.stopUploadsTo(nick);
+                        Toast.makeText(getActivity(), "Stopped " + n + " upload(s) to " + nick, Toast.LENGTH_SHORT).show();
+                    } else if (selected.equals(optBlock)) {
+                        um.setNickBlocked(nick, !blocked);
+                        Toast.makeText(getActivity(), (blocked ? "Unblocked " : "Blocked ") + nick, Toast.LENGTH_SHORT).show();
+                    } else if (selected.equals(optStopAll)) {
+                        int n = um.stopAllUploads();
+                        Toast.makeText(getActivity(), "Stopped " + n + " upload(s)", Toast.LENGTH_SHORT).show();
+                    }
+                    updateList();
+                })
+                .setNegativeButton("Close", null)
+                .show();
     }
 
     @Override

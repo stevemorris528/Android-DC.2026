@@ -349,6 +349,9 @@ public class MessageHandler {
 	public void send_myinfo(DCUser user, DCPreferences prefs) {
 		DCUser myuser = new DCUser(user);
 		boolean isActive = (prefs != null) ? prefs.active : myuser.active;
+		if (prefs != null && prefs.getShare_size() > 0) {
+			myuser.share_size = prefs.getShare_size(); // the session's current share size, never a stale copy
+		}
 		if (myuser.description == null)
 			myuser.description = "";
 

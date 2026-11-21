@@ -49,6 +49,7 @@ public class MyApplication extends Application {
         super.onCreate();
         installCrashRecorder();
         startTraceLogger();
+        UpdateChecker.start(this);
         new Thread(new Runnable() {
             @Override
             public void run() {

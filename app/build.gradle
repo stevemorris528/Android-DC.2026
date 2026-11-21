@@ -50,7 +50,7 @@ android {
         applicationId 'com.phinmadvader.andcpp'
         minSdk 14
         targetSdk 28
-        versionCode 6
+        versionCode buildNumber // = build number, so the in-app updater can compare builds
         versionName '1.0.5'
 
         buildConfigField 'int', 'BUILD_NUMBER', "${buildNumber}"

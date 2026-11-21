@@ -38,7 +38,8 @@ public class Settings extends Activity{
 				"Auto-Reconnect Saved Hubs on Startup",
 				"VPN Forwarded Port (active mode on a VPN)",
 				"PIA Port Forwarding (automatic)",
-				"PIA Login (for port forwarding)"
+				"PIA Login (for port forwarding)",
+				"Check for Updates"
 		};
 		
 		ArrayAdapter<String> myArrayAdapter = new ArrayAdapter<String>(this,
@@ -76,11 +77,26 @@ public class Settings extends Activity{
 				case 7:
 					changePiaLogin();
 					return;
+				case 8:
+					UpdateChecker.checkNow(true);
+					return;
 				default:
 					Log.d("andcpp", "this is unimplemented");
 				}
 			}
 		});
+	}
+
+	@Override
+	protected void onResume() {
+		super.onResume();
+		UpdateChecker.setForeground(this); // an update found by "Check for Updates" is offered here
+	}
+
+	@Override
+	protected void onPause() {
+		UpdateChecker.setForeground(null);
+		super.onPause();
 	}
 
 	public void changeThemeMode() {

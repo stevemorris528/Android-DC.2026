@@ -4,6 +4,7 @@ import android.app.ActionBar;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -366,6 +367,8 @@ public class MainActivity extends FragmentActivity implements
 		});
 
 		Log.d("andcpp", "CREATION");
+		clearUpdateNotifications();
+		UpdateChecker.checkNow(false); // app opened: the process (kept alive by the service) may be hours old
 	}
 
 	@Override
@@ -454,7 +457,7 @@ public class MainActivity extends FragmentActivity implements
 			item.setChecked(wifiOnly);
 			Settings.putWifiOnlyDownloads(wifiOnly, this); // the service reacts via its preference listener
 			Toast.makeText(this,
-					wifiOnly ? "Downloads will wait for Wi-Fi" : "Downloads allowed on Wi-Fi and mobile data",
+					wifiOnly ? "Downloads and uploads only over Wi-Fi" : "Downloads and uploads allowed on Wi-Fi and mobile data",
 					Toast.LENGTH_SHORT).show();
 			return true;
 		} else if (id == R.id.action_settings) {
@@ -639,8 +642,15 @@ public class MainActivity extends FragmentActivity implements
 		}
 	}
 	
+	/** The app is open again: drop the "updated, tap to reopen" notice. */
+	private void clearUpdateNotifications() {
+		NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+		if (nm != null) nm.cancel(UpdateReceiver.RESTART_NOTIFICATION_ID);
+	}
+
 	@Override
 	protected void onPause() {
+		UpdateChecker.setForeground(null);
 		if (poller != null) {
 			poller.stop();
 			poller = null;
@@ -657,6 +667,7 @@ public class MainActivity extends FragmentActivity implements
 			recreate();
 			return;
 		}
+		UpdateChecker.setForeground(this);
 		poller = new Poller(this); // start poller, will take care of service
 									// connect/disconnect updates
 	}

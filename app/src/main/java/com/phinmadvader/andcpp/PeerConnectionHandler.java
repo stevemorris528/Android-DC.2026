@@ -112,6 +112,16 @@ public class PeerConnectionHandler implements Runnable {
         return (bytesSent.get() * 1000.0) / elapsed;
     }
 
+    /** Set when the user (or the Wi-Fi only rule) stops this upload; the stream loop aborts on it. */
+    private volatile String stopReason = null;
+
+    /** Stops this upload and closes the connection. */
+    public void stop(String reason) {
+        stopReason = reason;
+        Log.i("andcpp", "Stopping upload to " + hisNick + ": " + reason);
+        close();
+    }
+
     public void close() {
         try {
             peerSocket.close();
@@ -383,6 +393,14 @@ public class PeerConnectionHandler implements Runnable {
         Log.d("andcpp", "Received request from " + hisNick + ": " + req.command
                 + (adc ? " " + req.adc_type : "") + " " + requestedFile);
 
+        // Wi-Fi only on mobile data, or a nick blocked from the upload menu: answer "busy" so the peer retries later.
+        String refusal = uploadManager.uploadRefusalReason(hisNick);
+        if (refusal != null) {
+            handler.send_msg("$MaxedOut");
+            Log.i("andcpp", "Upload refused to " + hisNick + " (" + refusal + "); sent $MaxedOut");
+            return false;
+        }
+
         // Partial file list of one directory ("$ADCGET list /Share/Folder/ 0 -1 [RE1]"). Clients use this to
         // download a whole folder (e.g. from search results). Uncompressed XML; no slot needed.
         if (adc && "list".equals(req.adc_type)) {
@@ -522,6 +540,13 @@ public class PeerConnectionHandler implements Runnable {
                 totalSent += bytesRead;
                 this.bytesSent.set(totalSent);
                 uploadManager.addUploadedBytes(bytesRead);
+
+                if (stopReason == null && (totalSent & 0xFFFFF) < bytesRead) { // about once per MiB
+                    stopReason = uploadManager.uploadRefusalReason(hisNick);
+                }
+                if (stopReason != null) {
+                    throw new IOException("Upload stopped: " + stopReason);
+                }
 
                 // Throttle progress updates to avoid flooding
                 long now = System.currentTimeMillis();
