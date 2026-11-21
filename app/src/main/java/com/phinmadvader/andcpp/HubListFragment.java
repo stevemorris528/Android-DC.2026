@@ -169,7 +169,7 @@ public class HubListFragment extends Fragment {
                             break;
                         case "Reconnect":
                             if (mainActivity.mService != null && entry.session != null
-                                    && mainActivity.mService.reconnectHub(entry.session.hubIp)) {
+                                    && mainActivity.mService.reconnectHub(entry.session.address().sessionKey())) {
                                 Toast.makeText(getActivity(), "Reconnecting to " + entry.session.hubIp, Toast.LENGTH_SHORT).show();
                                 listView.postDelayed(this::refresh, 500);
                             } else {
@@ -178,13 +178,14 @@ public class HubListFragment extends Fragment {
                             break;
                         case "Delete Hub":
                             if (mainActivity.mService != null && entry.session != null) {
-                                mainActivity.mService.shutdownSession(entry.session.hubIp);
+                                mainActivity.mService.shutdownSession(entry.session.address().sessionKey());
                             }
                             SharedPreferences delPrefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
                             Set<String> delFavorites = new HashSet<>(delPrefs.getStringSet(FAVORITE_HUBS_PREF, new HashSet<String>()));
                             delFavorites.remove(entry.hubIp);
                             if (entry.session != null) {
                                 delFavorites.remove(entry.session.hubIp + ":" + entry.session.hubPort);
+                                delFavorites.remove(entry.session.address().id());
                             }
                             delPrefs.edit().putStringSet(FAVORITE_HUBS_PREF, delFavorites).apply();
                             refresh();
@@ -329,9 +330,12 @@ public class HubListFragment extends Fragment {
             Set<String> processedIps = new HashSet<>();
 
             for (DCPPService.HubSession session : activeSessions) {
-                String hubIdentifier = session.hubIp + (session.hubPort != 411 ? ":" + session.hubPort : "");
-                newEntries.add(new HubEntry(hubIdentifier, session, favorites.contains(session.hubIp) || favorites.contains(hubIdentifier)));
-                processedIps.add(session.hubIp);
+                // NMDC: "host[:port]" as before; NMDCS: "nmdcs://host:port", matching its saved entry.
+                String hubIdentifier = session.address().id();
+                boolean nmdc = session.protocol == HubAddress.Protocol.NMDC;
+                newEntries.add(new HubEntry(hubIdentifier, session,
+                        (nmdc && favorites.contains(session.hubIp)) || favorites.contains(hubIdentifier)));
+                if (nmdc) processedIps.add(session.hubIp);
                 processedIps.add(hubIdentifier);
             }
 
@@ -382,7 +386,8 @@ public class HubListFragment extends Fragment {
 
             if (entry.session != null) {
                 String hubNameStr = entry.session.hubName;
-                String hubAddressStr = entry.session.hubIp + ":" + entry.session.hubPort;
+                String hubAddressStr = entry.session.hubIp + ":" + entry.session.hubPort
+                        + (entry.session.protocol.secure ? " 🔒 " + entry.session.protocol.label : "");
                 String statusStr = entry.session.status != null ? entry.session.status.toString() : "UNKNOWN";
                 
                 if (hubNameStr != null && !hubNameStr.trim().isEmpty()) {

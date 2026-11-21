@@ -499,7 +499,10 @@ public class MainActivity extends FragmentActivity implements
 				+ "<p>Developed further by the Android DC++ project.</p>"
 				+ "<p>GitHub Source Code: <a href=\"https://github.com/stevemorris528/Android-DC.2026/blob/master/README.md\">&#x2B07;&#xFE0F;</a></p>"
 				// Filled in by Gradle on every build (see app/build.gradle)
-				+ "<p>Build " + BuildConfig.BUILD_NUMBER + " &middot; " + BuildConfig.BUILD_DATE + "</p>";
+				+ "<p>Build " + BuildConfig.BUILD_NUMBER + " &middot; " + BuildConfig.BUILD_DATE + "</p>"
+				// Our identity on ADC / secure hubs (long-press the text to copy it)
+				+ "<p><b>Your ADC CID</b><br/><small>" + AdcIdentityStore.cid(this) + "</small><br/>"
+				+ "<b>Your TLS keyprint</b><br/><small>" + aboutKeyprint() + "</small></p>";
 
 		TextView textView = new TextView(this);
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -521,7 +524,25 @@ public class MainActivity extends FragmentActivity implements
 				.setTitle("About Android DC++ 2026")
 				.setView(scrollView)
 				.setPositiveButton("OK", null)
+				.setNeutralButton("Copy CID & keyprint", (d, w) -> {
+					String text = "CID: " + AdcIdentityStore.cid(this) + "\nKeyprint: " + aboutKeyprint();
+					android.content.ClipboardManager cm =
+							(android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+					if (cm != null) {
+						cm.setPrimaryClip(android.content.ClipData.newPlainText("Android DC++ identity", text));
+						Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+					}
+				})
 				.show();
+	}
+
+	/** Our keyprint for About; the certificate is made on first need, off the UI thread. */
+	private String aboutKeyprint() {
+		String kp = ClientCertificateStore.peekKeyprint(this);
+		if (kp != null) return kp;
+		final android.content.Context app = getApplicationContext();
+		new Thread(() -> ClientCertificateStore.get(app), "make-client-cert").start();
+		return "(being created; reopen About in a moment)";
 	}
 
 	private void showLicenseDialog() {
@@ -787,11 +808,17 @@ public class MainActivity extends FragmentActivity implements
 			Toast.makeText(this, addr.host + ":" + addr.port + ": " + addr.unsupportedReason(), Toast.LENGTH_LONG).show();
 			return false;
 		}
-		startBackgroundService(nick, addr.host, String.valueOf(addr.port), showDialog);
+		startBackgroundService(nick, addr.host, String.valueOf(addr.port), showDialog, addr.protocol, addr.kp);
 		return true;
 	}
 
 	public void startBackgroundService(String nick, String ip, String port, boolean showDialog) {
+		startBackgroundService(nick, ip, port, showDialog, HubAddress.Protocol.NMDC, null);
+	}
+
+	/** Starts (or reuses) the hub session. {@code protocol}/{@code kp} go to the service as "scheme"/"kp". */
+	private void startBackgroundService(String nick, String ip, String port, boolean showDialog,
+			HubAddress.Protocol protocol, String kp) {
 		if (myBR == null) {
 			myBR = new myBroadcastReceiver();
 			IntentFilter intFil = new IntentFilter("ACTION_DO_SOMETHING");
@@ -823,6 +850,8 @@ public class MainActivity extends FragmentActivity implements
 		serviceIntent.putExtra("nick", nick);
 		serviceIntent.putExtra("ip", ip);
 		serviceIntent.putExtra("port", port);
+		serviceIntent.putExtra("scheme", protocol.name());
+		if (kp != null) serviceIntent.putExtra("kp", kp);
 
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 			startForegroundService(serviceIntent);
@@ -917,8 +946,8 @@ public class MainActivity extends FragmentActivity implements
 				continue;
 			}
 
-			String hubKey = addr.host + ":" + addr.port;
-			if (mService != null && mService.getSession(hubKey) != null) {
+			String hubKey = addr.sessionKey(); // NMDC: host:port; NMDCS: nmdcs://host:port
+			if (mService != null && mService.hasSession(hubKey)) {
 				Log.i("andcpp", "Auto-reconnect: " + hubKey + " already has a session");
 				continue;
 			}

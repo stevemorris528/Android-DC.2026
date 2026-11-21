@@ -96,6 +96,15 @@ public class HubAddressTest {
         assertEquals(HubAddress.Protocol.NMDCS, a.protocol);
         assertEquals(411, a.port);
         assertEquals("nmdcs://international.dchub.net:411", a.id());
+        assertTrue(a.isSupported());
+    }
+
+    @Test
+    public void sessionKeys() {
+        assertEquals("host:411", HubAddress.parse("host").sessionKey());
+        assertEquals("host:1069", HubAddress.parse("dchub://host:1069").sessionKey());
+        assertEquals("nmdcs://host:411", HubAddress.parse("nmdcs://host").sessionKey());
+        assertEquals("adcs://h:1", HubAddress.parse("adcs://h:1/?kp=SHA256/X").sessionKey());
     }
 
     @Test

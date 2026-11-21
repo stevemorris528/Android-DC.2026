@@ -108,8 +108,18 @@ public class DCClient {
 	public void connect(String ip, int port, DCPreferences pref)
 			throws UnknownHostException, IOException, InterruptedException {
 
-		DCConnectionSocket = new Socket();
-		DCConnectionSocket.connect(new java.net.InetSocketAddress(ip, port), 15000); // 15s connection timeout
+		Socket s = new Socket();
+		s.connect(new java.net.InetSocketAddress(ip, port), 15000); // 15s connection timeout
+		connect(s, pref);
+	}
+
+	/**
+	 * Logs in over an already connected socket: plain TCP, or a TLS socket with its handshake done (NMDCS).
+	 * The NMDC login itself is the same either way.
+	 */
+	public void connect(Socket connectedSocket, DCPreferences pref)
+			throws IOException, InterruptedException {
+		DCConnectionSocket = connectedSocket;
 		DCConnectionSocket.setKeepAlive(true);
 		DCConnectionSocket.setTcpNoDelay(true);
 		// Disable read timeout (0 = infinite) so TCP connection does not time out during long deep sleep idle periods

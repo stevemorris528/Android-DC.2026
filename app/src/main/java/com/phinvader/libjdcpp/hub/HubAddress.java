@@ -235,7 +235,16 @@ public final class HubAddress {
 
     /** True if this build can connect to this kind of hub. Grows as the ADC phases land. */
     public boolean isSupported() {
-        return protocol == Protocol.NMDC;
+        return protocol == Protocol.NMDC || protocol == Protocol.NMDCS;
+    }
+
+    /**
+     * Key of the running hub session in DCPPService: {@code host:port} for NMDC (as always), the
+     * {@link #prefKey()} ({@code nmdcs://host:port}) for other protocols, so a secure and a plain session to
+     * the same host:port never share a key.
+     */
+    public String sessionKey() {
+        return protocol == Protocol.NMDC ? hostPort() : prefKey();
     }
 
     /** Short user-visible reason why {@link #isSupported()} is false, or null when supported. */

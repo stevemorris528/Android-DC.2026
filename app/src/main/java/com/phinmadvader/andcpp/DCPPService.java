@@ -65,6 +65,10 @@ import com.phinvader.libjdcpp.hub.HubAddress;
 import com.phinvader.libjdcpp.hub.HubConnection;
 import com.phinvader.libjdcpp.hub.NmdcHubConnection;
 import com.phinvader.libjdcpp.hub.SearchResult;
+import com.phinvader.libjdcpp.tls.SelfSignedCertificate;
+import com.phinvader.libjdcpp.tls.TlsSocketFactory;
+
+import javax.net.ssl.SSLSocket;
 import com.phinmadvader.andcpp.pia.PIAPortForwardingManager;
 
 /**
@@ -152,9 +156,32 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		/** Hub/user menu commands sent by this hub ($UserCommand). Reset on every (re)connect. */
 		public final List<UserCommand> userCommands = new java.util.concurrent.CopyOnWriteArrayList<>();
 
+		/** NMDC, or NMDCS (NMDC over TLS). */
+		public HubAddress.Protocol protocol = HubAddress.Protocol.NMDC;
+		/** Keyprint the hub's certificate must have (from ?kp= in its address), or null. */
+		public String expectedKeyprint;
+		/** Keyprint of the certificate the hub presented (secure hubs only), for logs and hub details. */
+		public volatile String hubKeyprint;
+
 		public HubSession(String ip, int port) {
 			this.hubIp = ip;
 			this.hubPort = port;
+		}
+
+		public HubAddress address() {
+			return HubAddress.of(protocol, hubIp, hubPort);
+		}
+
+		/** A per-hub string preference (nick, password); NMDC tries host:port then host, exactly as before. */
+		String hubPref(SharedPreferences prefs, String prefix) {
+			List<String> keys = protocol == HubAddress.Protocol.NMDC
+					? java.util.Arrays.asList(hubIp + ":" + hubPort, hubIp)
+					: address().prefKeys();
+			for (String k : keys) {
+				String v = prefs.getString(prefix + k, "");
+				if (v != null && !v.isEmpty()) return v;
+			}
+			return "";
 		}
 
 		public void shutdown() {
@@ -172,6 +199,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	private String getSessionKey(String ip, int port) {
 		return ip + ":" + port;
+	}
+
+	/** True if a session exists under exactly this key (no fallback to another hub, unlike getSession). */
+	public boolean hasSession(String hubKey) {
+		return hubKey != null && sessions.containsKey(hubKey);
 	}
 
 	public HubSession getSession(String hubKey) {
@@ -2806,6 +2838,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		super.onCreate();
 		runningInstance = this;
 		ensureForeground("");
+		// Make our TLS certificate now (first start only: RSA key generation takes a moment on old phones),
+		// so the first secure hub doesn't wait for it and About can show our keyprint.
+		new Thread(() -> ClientCertificateStore.get(DCPPService.this), "client-cert").start();
 		if (initiated_downloads == null)
 			initiated_downloads = new ArrayList<DownloadObject>();
 		if (normal_queue == null)
@@ -3522,13 +3557,27 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			return START_STICKY;
 		}
 
-		String hubKey = ip + ":" + port;
+		// "scheme" (protocol) and "kp" extras: NMDC when missing, as from older callers.
+		HubAddress.Protocol protocol = HubAddress.Protocol.NMDC;
+		try {
+			String scheme = data.getString("scheme");
+			if (scheme != null) protocol = HubAddress.Protocol.valueOf(scheme);
+		} catch (IllegalArgumentException e) {
+			Log.w("andcpp", "Unknown hub protocol " + data.getString("scheme") + "; using NMDC");
+		}
+		if (!HubAddress.of(protocol, ip, port).isSupported()) {
+			exceptionCaught(ip, protocol.label + " hubs are not supported yet");
+			return START_STICKY;
+		}
+		String hubKey = HubAddress.of(protocol, ip, port).sessionKey(); // NMDC: ip:port, as always
 
 		// Establish foreground status to satisfy Android 8.0+ requirements
 		ensureForeground(ip);
 
 		if (!sessions.containsKey(hubKey)) {
 			final HubSession session = new HubSession(ip, port);
+			session.protocol = protocol;
+			session.expectedKeyprint = data.getString("kp");
 			sessions.put(hubKey, session);
 			session.status = DCClientStatus.CONNECTING;
 			
@@ -3558,19 +3607,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			
 			long sharedSize = (uploadManager != null) ? uploadManager.getSharedSize() : (17000L * 1024 * 1024);
 			
-			String savedNick = prefs.getString("favorite_nicks_" + hubKey, "");
-			if (savedNick.isEmpty()) {
-				savedNick = prefs.getString("favorite_nicks_" + ip, "");
-			}
+			String savedNick = session.hubPref(prefs, "favorite_nicks_");
 			if (!savedNick.isEmpty()) {
 				nick = savedNick;
 			}
 
 			session.prefs = new DCPreferences(nick, sharedSize, ip, activeMode, uploadPort);
-			String savedPass = prefs.getString("favorite_passwords_" + hubKey, "");
-			if (savedPass.isEmpty()) {
-				savedPass = prefs.getString("favorite_passwords_" + ip, "");
-			}
+			String savedPass = session.hubPref(prefs, "favorite_passwords_");
 			if (!savedPass.isEmpty()) {
 				session.prefs.password = savedPass;
 			}
@@ -3605,17 +3648,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 				if (session.prefs != null) {
 					SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, 0);
-					String savedPass = prefs.getString("favorite_passwords_" + hubKey, "");
-					if (savedPass.isEmpty()) {
-						savedPass = prefs.getString("favorite_passwords_" + session.hubIp, "");
-					}
+					String savedPass = session.hubPref(prefs, "favorite_passwords_");
 					if (!savedPass.isEmpty()) {
 						session.prefs.password = savedPass;
 					}
-					String savedNick = prefs.getString("favorite_nicks_" + hubKey, "");
-					if (savedNick.isEmpty()) {
-						savedNick = prefs.getString("favorite_nicks_" + session.hubIp, "");
-					}
+					String savedNick = session.hubPref(prefs, "favorite_nicks_");
 					if (!savedNick.isEmpty()) {
 						session.prefs.nick = savedNick;
 						if (session.myuser != null) {
@@ -3624,10 +3661,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					}
 				}
 				session.client = new DCClient();
-				session.hub = new NmdcHubConnection(
-						HubAddress.of(HubAddress.Protocol.NMDC, session.hubIp, session.hubPort), session.client);
+				session.hub = new NmdcHubConnection(session.address(), session.client);
 				session.client.adoptDownloadHandler(session.keptDownloads); // build m: keep pending download requests
-				session.client.connect(session.hubIp, session.hubPort, session.prefs);
+				if (session.protocol.secure) {
+					// NMDCS: TLS first (checked against ?kp= when given), then the same NMDC login over it.
+					SelfSignedCertificate ours = ClientCertificateStore.get(DCPPService.this);
+					SSLSocket tls = TlsSocketFactory.connect(session.hubIp, session.hubPort, 15000,
+							ours != null ? ours.keyManagers() : null, session.expectedKeyprint);
+					session.hubKeyprint = TlsSocketFactory.peerKeyprint(tls);
+					Log.i("andcpp", "[NMDCS] " + session.hubIp + ":" + session.hubPort + " TLS up ("
+							+ TlsSocketFactory.describe(tls) + "), hub keyprint " + session.hubKeyprint
+							+ (session.expectedKeyprint != null ? " (matches the address)" : ""));
+					session.client.connect(tls, session.prefs);
+				} else {
+					session.client.connect(session.hubIp, session.hubPort, session.prefs);
+				}
 				
 				session.client.bootstrap(session.myuser);
 				session.client.setCustomUserChangeHandler(new MyUserHandler(hubKey));
@@ -3638,9 +3686,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						session.hubName = dcMessage.hubname_s;
 						try {
 							android.content.SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-							p.edit().putString("hub_name_" + session.hubIp, dcMessage.hubname_s).apply();
-							if (session.hubPort != 411) {
-								p.edit().putString("hub_name_" + session.hubIp + ":" + session.hubPort, dcMessage.hubname_s).apply();
+							if (session.protocol == HubAddress.Protocol.NMDC) {
+								p.edit().putString("hub_name_" + session.hubIp, dcMessage.hubname_s).apply();
+								if (session.hubPort != 411) {
+									p.edit().putString("hub_name_" + session.hubIp + ":" + session.hubPort, dcMessage.hubname_s).apply();
+								}
+							} else { // e.g. nmdcs://host:port: never overwrite the plain NMDC hub's name
+								p.edit().putString("hub_name_" + session.address().prefKey(), dcMessage.hubname_s).apply();
 							}
 						} catch (Exception ignored) {}
 						mySendBroadcast(session.hubIp, false, true);
@@ -3660,8 +3712,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.status = DCClientStatus.CONNECTED;
 				session.reconnectAttempts = 0; // Reset on success
 				// A hub we connected to stays in the saved hubs list (until "Delete Hub"), so it survives restarts.
-				HubListFragment.saveHub(DCPPService.this,
-						session.hubIp + (session.hubPort != 411 ? ":" + session.hubPort : ""));
+				HubListFragment.saveHub(DCPPService.this, session.address().id()); // NMDC: host[:port] as before
 				ensureForeground(session.hubIp);
 				mySendBroadcast(session.hubIp, false, true);
 				manageWakeLock();

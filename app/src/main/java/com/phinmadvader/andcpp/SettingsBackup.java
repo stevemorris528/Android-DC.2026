@@ -95,7 +95,8 @@ public final class SettingsBackup {
 
     private static boolean isSecret(String key) {
         // The ADC PID is a secret too: whoever has it can claim our CID.
-        return key.startsWith("favorite_passwords_") || key.equals(AdcIdentityStore.KEY_PID);
+        return key.startsWith("favorite_passwords_") || key.equals(AdcIdentityStore.KEY_PID)
+                || key.equals(ClientCertificateStore.KEY_PRIVATE_KEY); // our TLS private key
     }
 
     private static String scramble(String s) {
