@@ -31,6 +31,12 @@ public class DCDownloader {
 		public DCConstants.DownloadStatus status;
 		/** Set when the peer said the file will never be served (e.g. "File Not Available"); do not auto-retry. */
 		public volatile boolean permanentError = false;
+		/**
+		 * True if the latest request for this download was $RevConnectToMe (the peer connects to us via its own
+		 * $ConnectToMe), false if it was our $ConnectToMe (the peer connects straight to our listening port).
+		 * A $ConnectToMe from the peer only answers a download that asked with $RevConnectToMe.
+		 */
+		public volatile boolean revConnectSent = false;
 	}
 
 	private HashMap<String, ArrayList<DownloadQueueEntity>> downloadQ;
@@ -100,6 +106,29 @@ public class DCDownloader {
 		ret.status = DownloadStatus.INITIATED; // claimed by a connection: no longer pending
 		Log.d("andcpp", "[DLTRACE] DCDownloader.getDownloadEntityCaseInsensitive: nick=" + nick + (matchedKey.equals(nick) ? "" : " (matched key " + matchedKey + ")") + ", retrieved entity remoteFile=" + (ret != null ? ret.remote_filename : "null") + ", listSizeBefore=" + sizeBefore + ", listSizeAfter=" + list.size());
 		return ret;
+	}
+
+	/**
+	 * For an incoming $ConnectToMe from {@code nick}: claims the first pending download from that peer that we
+	 * requested with $RevConnectToMe, or returns null. Downloads requested with our own $ConnectToMe are left
+	 * alone: the peer's $ConnectToMe is then its own download request, to be served as an upload. (Taking the
+	 * connection for our download used to starve the peer's download whenever ours was pending.)
+	 */
+	public synchronized DownloadQueueEntity claimRevConnectAnswer(String nick) {
+		if (downloadQ == null || nick == null) return null;
+		for (java.util.Map.Entry<String, ArrayList<DownloadQueueEntity>> en : downloadQ.entrySet()) {
+			if (en.getKey() == null || !en.getKey().equalsIgnoreCase(nick) || en.getValue() == null) continue;
+			for (DownloadQueueEntity e : en.getValue()) {
+				if (e.revConnectSent) {
+					en.getValue().remove(e);
+					e.status = DownloadStatus.INITIATED; // claimed by a connection: no longer pending
+					Log.d("andcpp", "[DLTRACE] DCDownloader.claimRevConnectAnswer: nick=" + nick
+							+ ", claimed remoteFile=" + e.remote_filename + ", left=" + en.getValue().size());
+					return e;
+				}
+			}
+		}
+		return null;
 	}
 
 	public synchronized boolean isEntityPending(String nick, DownloadQueueEntity entity) {

@@ -230,6 +230,7 @@ public class DCClient {
 				o.getTarget_user(), o.getMy_user(), o.getRemote_filaname(),
 				o.getLocal_filename());
 		downloadE = downloadHandler.addDownloadEntity(o.getTarget_user().nick, downloadE);
+		downloadE.revConnectSent = true; // the peer's $ConnectToMe will answer this one
 		handler.send_revconnect(o.getMy_user(), o.getTarget_user());
 		return downloadE;
 	}
@@ -241,6 +242,7 @@ public class DCClient {
 				o.getTarget_user(), o.getMy_user(), o.getRemote_filaname(),
 				o.getLocal_filename());
 		downloadE = downloadHandler.addDownloadEntity(o.getTarget_user().nick, downloadE);
+		downloadE.revConnectSent = false; // the peer connects to our port; its own $ConnectToMe is an upload request
 		handler.send_connecttome(o.getTarget_user(), o.getMy_user().ip, port);
 		return downloadE;
 	}

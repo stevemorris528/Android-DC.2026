@@ -115,6 +115,23 @@ public class DCMessage {
 	 * @return
 	 * @throws DCMessageParseException
 	 */
+	/**
+	 * NMDC text is decoded as ISO-8859-1, the same charset MessageHandler uses to send. That maps every byte to
+	 * one char and back, so a nick from a Cyrillic (CP1251) or UTF-8 hub goes back to the hub byte for byte.
+	 * The old platform-default (UTF-8) decode turned such bytes into U+FFFD, which went out as '?', so
+	 * $ConnectToMe / $RevConnectToMe / $To: for those users named someone who doesn't exist.
+	 * (Showing those nicks in their real alphabet needs a per-hub encoding setting.)
+	 */
+	private static final java.nio.charset.Charset NMDC_CHARSET = java.nio.charset.Charset.forName("ISO-8859-1");
+
+	private static String latin1(byte[] b) {
+		return new String(b, NMDC_CHARSET);
+	}
+
+	private static String latin1(byte[] b, int off, int len) {
+		return new String(b, off, len, NMDC_CHARSET);
+	}
+
 	public static DCMessage parse_message(byte[] input) {
 		DCMessage ret = new DCMessage();
 		ret.parse(input);
@@ -137,28 +154,28 @@ public class DCMessage {
 				int beg = DCFunctions.find_next(input, 1, ' ');
 				if (beg == -1)
 					beg = input.length;
-				command = new String(input, 1, beg - 1);
+				command = latin1(input, 1, beg - 1);
 				if (command.equals("Lock")) {
 					int poffset = beg + 1, coffset;
 					coffset = DCFunctions.find_next(input, poffset, ' ');
-					lock_s = new String(input, poffset, coffset - poffset);
+					lock_s = latin1(input, poffset, coffset - poffset);
 					// The rest is "Pk=<client>", and newer DC++ appends "Ref=<hub>" ("Pk=DCPLUSPLUS0.880Ref=host:port").
 					// Only the lock is needed (for $Key), so never drop the $Lock over the Pk part: rejecting
 					// "Pk=...Ref=..." made the handshake with those clients wait for a $Lock that was already discarded.
 					poffset = Math.min(coffset + 1, input.length);
 					coffset = DCFunctions.find_next(input, poffset, ' ');
-					String pk = new String(input, poffset, Math.max(0, coffset - poffset));
+					String pk = latin1(input, poffset, Math.max(0, coffset - poffset));
 					if (pk.regionMatches(true, 0, "Pk=", 0, 3)) {
 						key_s = pk.substring(3);
 					}
 
 				} else if (command.equals("Key")) {
-					key_s = new String(input, beg + 1, input.length - beg - 1);
+					key_s = latin1(input, beg + 1, input.length - beg - 1);
 				} else if (command.equals("SR")) {
 					// Search Result (\x05 separates fields):
 					//   file: $SR <nick> <path>\x05<size> <free>/<total>\x05<TTH:hash|hubname> (<hubip:port>)[\x05<target>]
 					//   dir:  $SR <nick> <dirpath> <free>/<total>\x05<hubname> (<hubip:port>)[\x05<target>]
-					String body = new String(input, beg + 1, input.length - beg - 1);
+					String body = latin1(input, beg + 1, input.length - beg - 1);
 					int sp = body.indexOf(' ');
 					String[] parts = sp > 0 ? body.substring(sp + 1).split("\u0005", -1) : new String[0];
 					String sig = null;
@@ -193,7 +210,7 @@ public class DCMessage {
 
 				} else if (command.equals("UserCommand")) {
 					// $UserCommand <type> <context>[ <title>$<command>]
-					String rest = new String(input, beg + 1, input.length - beg - 1);
+					String rest = latin1(input, beg + 1, input.length - beg - 1);
 					String[] t = rest.split(" ", 3);
 					uc_type = Integer.parseInt(t[0].trim());
 					uc_context = t.length > 1 ? Integer.parseInt(t[1].trim()) : 0;
@@ -203,14 +220,14 @@ public class DCMessage {
 						uc_command = dollar >= 0 ? t[2].substring(dollar + 1) : "";
 					}
 				} else if (command.equals("HubName")) {
-					hubname_s = new String(input, beg + 1, input.length - beg
+					hubname_s = latin1(input, beg + 1, input.length - beg
 							- 1);
 				} else if (command.equals("Supports")) {
-					String sup_s = new String(input, beg + 1, input.length
+					String sup_s = latin1(input, beg + 1, input.length
 							- beg - 1);
 					supports = sup_s.split(" ");
 				} else if (command.equals("Hello")) {
-					hello_s = new String(input, beg + 1, input.length - beg - 1);
+					hello_s = latin1(input, beg + 1, input.length - beg - 1);
 				} else if (command.equals("MyINFO")) {
 					myinfo = new DCUser();
 					DCFunctions.find_next(input, beg, '$');
@@ -248,11 +265,11 @@ public class DCMessage {
 					offsets[5] = loffset;
 					loffset = DCFunctions.find_next(input, loffset, '$');
 					seglength[5] = loffset - offsets[5];
-					if (new String(input, offsets[0], seglength[0])
+					if (latin1(input, offsets[0], seglength[0])
 							.equals("$ALL")) {
-						myinfo.nick = new String(input, offsets[1],
+						myinfo.nick = latin1(input, offsets[1],
 								seglength[1]);
-						myinfo.description = new String(input, offsets[2],
+						myinfo.description = latin1(input, offsets[2],
 								seglength[2]);
 						int desc_split_offset = myinfo.description
 								.lastIndexOf('<');
@@ -269,12 +286,12 @@ public class DCMessage {
 							myinfo.active = true;
 						else
 							myinfo.active = false;
-						myinfo.connection_speed = new String(input, offsets[3],
+						myinfo.connection_speed = latin1(input, offsets[3],
 								seglength[3] - 1);
 						myinfo.speed_id = input[offsets[3] + seglength[3] - 1];
-						myinfo.email = new String(input, offsets[4],
+						myinfo.email = latin1(input, offsets[4],
 								seglength[4]);
-						myinfo.share_size = Long.parseLong(new String(input,
+						myinfo.share_size = Long.parseLong(latin1(input,
 								offsets[5], seglength[5]));
 					}
 
@@ -285,7 +302,7 @@ public class DCMessage {
 					// } else if (command.equals("Version")) {
 					// } else if (command.equals("GetNickList")) {
 				} else if (command.equals("FileLength")) {
-					String val = new String(input, beg + 1, input.length - beg - 1);
+					String val = latin1(input, beg + 1, input.length - beg - 1);
 					if (val.contains("|")) {
 						val = val.substring(0, val.indexOf('|'));
 					}
@@ -301,20 +318,20 @@ public class DCMessage {
 					}
 				} else if (command.equals("MyNick")) {
 					hisinfo = new DCUser();
-					hisinfo.nick = new String(input, beg + 1, input.length
+					hisinfo.nick = latin1(input, beg + 1, input.length
 							- beg - 1);
 				} else if (command.equals("UserIP")) {
-					msg_s = new String(input, beg + 1, input.length - beg - 1);
+					msg_s = latin1(input, beg + 1, input.length - beg - 1);
 					parse_success = true;
 				} else if (command.equals("Direction")) {
-					String dir_str[] = new String(input, beg + 1, input.length
+					String dir_str[] = latin1(input, beg + 1, input.length
 							- beg - 1).split("\\s");
 					dir_download = true;
 					if (!dir_str[0].equals("Download"))
 						dir_download = false;
 					dir_no = Integer.parseInt(dir_str[1]);
 				} else if (command.equals("ConnectToMe")) {
-					String conn_str = new String(input, beg + 1, input.length
+					String conn_str = latin1(input, beg + 1, input.length
 							- beg - 1);
 					String[] parts = conn_str.split("\\s");
 					if (parts.length >= 2) {
@@ -328,12 +345,12 @@ public class DCMessage {
 						}
 					}
 				} else if (command.equals("RevConnectToMe")) {
-					String conn_str = new String(input, beg + 1, input.length - beg - 1);
+					String conn_str = latin1(input, beg + 1, input.length - beg - 1);
 					String[] parts = conn_str.split("\\s");
 					revconnect_from = parts[0];
 					revconnect_to = parts[1];
 				} else if (command.equals("Search")) {
-					String searchStr = new String(input, beg + 1, input.length - beg - 1);
+					String searchStr = latin1(input, beg + 1, input.length - beg - 1);
 					int firstSpace = searchStr.indexOf(' ');
 					if (firstSpace != -1) {
 						search_ip_port = searchStr.substring(0, firstSpace);
@@ -341,14 +358,14 @@ public class DCMessage {
 					}
 				} else if (command.equals("HubQuit")) {
 					if (input.length - beg - 1 > 0)
-						quit_s = new String(input, beg + 1, input.length - beg
+						quit_s = latin1(input, beg + 1, input.length - beg
 								- 1);
 					else
 						quit_s = "";
 					// return just command as HubQuit
 				} else if (command.equals("Quit")) {
 					if (input.length > beg + 1) {
-						quit_s = new String(input, beg + 1, input.length - beg - 1);
+						quit_s = latin1(input, beg + 1, input.length - beg - 1);
 					} else {
 						quit_s = "";
 					}
@@ -356,12 +373,12 @@ public class DCMessage {
 					parse_success = true;
 				} else if (command.equals("Error")) {
 					if (input.length - beg - 1 > 0)
-						error_s = new String(input, beg + 1, input.length - beg - 1);
+						error_s = latin1(input, beg + 1, input.length - beg - 1);
 					else
 						error_s = "";
 					parse_success = true;
 				} else if (command.equals("Get")) {
-					String getStr = new String(input, beg, input.length - beg).trim();
+					String getStr = latin1(input, beg, input.length - beg).trim();
 					if (getStr.contains("|")) {
 						getStr = getStr.substring(0, getStr.indexOf('|'));
 					}
@@ -380,7 +397,7 @@ public class DCMessage {
 					}
 					parse_success = true;
 				} else if (command.equals("ADCGET")) {
-					String val = new String(input, beg, input.length - beg).trim();
+					String val = latin1(input, beg, input.length - beg).trim();
 					String[] parts = splitAdcEscaped(val);
 					if (parts.length >= 1) {
 						adc_type = parts[0];
@@ -431,7 +448,7 @@ public class DCMessage {
 					parse_success = true;
 				} else if (command.startsWith("To:")) {
 					command = "To:";
-					String fullStr = new String(input, "ISO-8859-1");
+					String fullStr = latin1(input);
 					// Format: $To: <Recipient> From: <Sender> $<Sender> <Message>
 					// Or: $To: <Recipient> From: <Sender> $<Sender> message
 					int fromIdx = fullStr.indexOf(" From: ");
@@ -477,19 +494,19 @@ public class DCMessage {
 				}
 			} else if (input[0] == '<') {
 				command = "BoardMessage";
-				msg_s = new String(input);
+				msg_s = latin1(input);
 			} else {
 				parse_success = false;
 			}
 			if (!parse_success) {
 				command = null;
-				msg_s = new String(input);
+				msg_s = latin1(input);
 			}
 		} catch (Exception e) {
 			// TODO Remove This debugging piece
 			command = null;
 			msg_s = "ParseFail : " + e.toString();
-			msg_s += "\n For:" + new String(input);
+			msg_s += "\n For:" + latin1(input);
 		}
 	}
 

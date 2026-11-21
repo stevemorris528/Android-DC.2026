@@ -448,7 +448,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			downloadID++;
 			this.currentID = downloadID;
 
-			mBuilder2 = new NotificationCompat.Builder(parent, CHANNEL_ID);
+			// Icon and title set up front: Android rejects any notify() without a small icon, and
+			// get_file_list() posts progress right after the first start_download() attempt, which
+			// doesn't always set one ("Invalid notification (no valid small icon)" aborted the list).
+			mBuilder2 = new NotificationCompat.Builder(parent, CHANNEL_ID)
+					.setSmallIcon(R.drawable.ic_launcher)
+					.setContentTitle(file_name);
 			// Pre-flight checks run at the start of each attempt (start_download), not here:
 			// on restore the hubs are usually not connected yet.
 		}

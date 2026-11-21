@@ -93,8 +93,12 @@ public class DCHandlers {
 				}
 
 				String peerNick = hisNick.hisinfo.nick;
-				DCDownloader.DownloadQueueEntity entity = downloaderManager.getDownloadEntityCaseInsensitive(peerNick);
-				android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: peer=" + peerNick + ", pendingDownloadFound=" + (entity != null));
+				// Only a download we asked for with $RevConnectToMe is answered by the peer's $ConnectToMe.
+				// If we asked with $ConnectToMe, this is the peer's own download request: serve it as an upload.
+				DCDownloader.DownloadQueueEntity entity = downloaderManager.claimRevConnectAnswer(peerNick);
+				android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: peer=" + peerNick + ", revConnectDownloadFound="
+						+ (entity != null) + (entity == null && downloaderManager.hasPendingFor(peerNick)
+						? " (our pending download asked with $ConnectToMe: serving the peer's upload request)" : ""));
 
 				if (entity != null) {
 					client.startDownloadingFile(entity, client, rlock, h);
