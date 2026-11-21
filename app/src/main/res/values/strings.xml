@@ -9,7 +9,6 @@
     <string name="hello_world">Hello world!</string>
     <string name="action_sort">Sort</string>
     <string name="action_shutdown">Shutdown App</string>
-    <string name="auto_reconnect_hubs">Auto-reconnect saved hubs on startup</string>
 	<string-array name="settings_options_list">
 	    <item >Change Downloads Directory</item>
 	</string-array>

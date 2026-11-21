@@ -35,15 +35,6 @@ final class HubAutoConnect {
         return prefs(c).getStringSet(KEY_HUBS, new HashSet<String>()).contains(key(hubId));
     }
 
-    /** How many saved hubs have auto-connect on. */
-    static int countOn(Context c) {
-        int n = 0;
-        for (String hub : prefs(c).getStringSet("favorite_hubs", new HashSet<String>())) {
-            if (isOn(c, hub)) n++;
-        }
-        return n;
-    }
-
     static void set(Context c, String hubId, boolean on) {
         if (hubId == null) return;
         SharedPreferences p = prefs(c);
