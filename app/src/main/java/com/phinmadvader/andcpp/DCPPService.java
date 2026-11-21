@@ -2856,36 +2856,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			@Override
 			public void onReceive(Context context, Intent intent) {
 				if (ConnectivityManager.CONNECTIVITY_ACTION.equals(intent.getAction())) {
-					onWifiOnlyConditionChanged();
-					ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-					NetworkInfo activeNetwork = cm != null ? cm.getActiveNetworkInfo() : null;
-					if (activeNetwork != null && activeNetwork.isConnected()) {
-						String networkKey = networkKeyOf(activeNetwork);
-						boolean networkChanged = lastNetworkKey != null
-								&& (networkLostSinceLastConnect || !networkKey.equals(lastNetworkKey));
-						lastNetworkKey = networkKey;
-						networkLostSinceLastConnect = false;
-
-						Log.d("andcpp", "Network connected (" + networkKey + "), triggering reconnection logic");
-						triggerReconnections();
-
-						// VPN switched on/off: incoming connections now take another path; re-check active/passive.
-						boolean vpnNow = isVpnActive();
-						if (vpnNow != lastVpnActive) {
-							lastVpnActive = vpnNow;
-							redetectConnectivity(vpnNow ? "VPN turned on" : "VPN turned off");
-						}
-
-						long now = System.currentTimeMillis();
-						if (networkChanged && now - lastNetworkRestartAt > 5000) {
-							lastNetworkRestartAt = now;
-							Log.i("andcpp", "Network changed; restarting active downloads");
-							restartDownloadsAfterNetworkChange();
-							redetectConnectivity("network changed"); // new network: active may (no longer) be possible
-						}
-					} else if (lastNetworkKey != null) {
-						networkLostSinceLastConnect = true;
-					}
+					handleNetworkEvent();
 				}
 			}
 		};
@@ -2895,9 +2866,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		NetworkInfo initialNetwork = initialConnectivity != null
 				? initialConnectivity.getActiveNetworkInfo() : null;
 		if (initialNetwork != null && initialNetwork.isConnected()) {
-			lastNetworkKey = networkKeyOf(initialNetwork);
+			lastNetworkKey = networkKeyOf(initialConnectivity, initialNetwork);
 		}
 		registerReceiver(networkReceiver, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+		registerPhysicalNetworkCallback(initialConnectivity);
 
 		refreshDownloadsBlockedByNetwork();
 		wifiOnlyPrefListener = (sp, key) -> {
@@ -3009,9 +2981,140 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return downloadsBlockedByNetwork;
 	}
 
-	private static String networkKeyOf(NetworkInfo info) {
-		String extra = info.getExtraInfo(); // SSID for wifi, APN for mobile (may be null)
-		return info.getType() + "|" + (extra != null ? extra : "");
+	/**
+	 * Identifies the network we're on, to tell when it changed. Type + SSID/APN alone wasn't enough: without
+	 * location permission Android hides the Wi-Fi name, so every Wi-Fi looked the same ("1|") and a switch from
+	 * one Wi-Fi to another never restarted transfers. Each physical connection (not the VPN) gets its own network
+	 * id from Android, so the key also lists those ids and their IPv4 addresses.
+	 */
+	private static String networkKeyOf(ConnectivityManager cm, NetworkInfo info) {
+		String extra = info.getExtraInfo(); // SSID for wifi, APN for mobile (may be null; SSID hidden without location)
+		StringBuilder key = new StringBuilder().append(info.getType()).append('|').append(extra != null ? extra : "");
+		if (cm != null && Build.VERSION.SDK_INT >= 23) {
+			try {
+				List<String> parts = new ArrayList<>();
+				for (android.net.Network n : cm.getAllNetworks()) {
+					android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(n);
+					if (caps == null || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) continue;
+					if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+							&& !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
+							&& !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue;
+					StringBuilder p = new StringBuilder(n.toString()); // network id: new for every (re)connection
+					android.net.LinkProperties lp = cm.getLinkProperties(n);
+					if (lp != null) {
+						for (android.net.LinkAddress a : lp.getLinkAddresses()) {
+							if (a.getAddress() instanceof java.net.Inet4Address) { // IPv6 rotates; IPv4 is stable
+								p.append('@').append(a.getAddress().getHostAddress());
+							}
+						}
+					}
+					parts.add(p.toString());
+				}
+				Collections.sort(parts);
+				key.append('|').append(android.text.TextUtils.join(",", parts));
+			} catch (Exception ignored) {
+			}
+		}
+		return key.toString();
+	}
+
+	/** Reacts to a possible network change (connectivity broadcast or a physical network coming/going). */
+	private void handleNetworkEvent() {
+		onWifiOnlyConditionChanged();
+		ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+		NetworkInfo activeNetwork = cm != null ? cm.getActiveNetworkInfo() : null;
+		if (activeNetwork != null && activeNetwork.isConnected()) {
+			String networkKey = networkKeyOf(cm, activeNetwork);
+			boolean networkChanged = lastNetworkKey != null
+					&& (networkLostSinceLastConnect || !networkKey.equals(lastNetworkKey));
+			boolean sameAsBefore = networkKey.equals(lastNetworkKey);
+			lastNetworkKey = networkKey;
+			networkLostSinceLastConnect = false;
+			if (sameAsBefore && !networkChanged) return; // nothing new (e.g. a duplicate callback)
+
+			Log.d("andcpp", "Network connected (" + networkKey + "), triggering reconnection logic");
+			triggerReconnections();
+
+			// VPN switched on/off: incoming connections now take another path; re-check active/passive.
+			boolean vpnNow = isVpnActive();
+			if (vpnNow != lastVpnActive) {
+				lastVpnActive = vpnNow;
+				redetectConnectivity(vpnNow ? "VPN turned on" : "VPN turned off");
+			}
+
+			long now = System.currentTimeMillis();
+			if (networkChanged && now - lastNetworkRestartAt > 5000) {
+				lastNetworkRestartAt = now;
+				Log.i("andcpp", "Network changed; restarting active downloads");
+				closeTransfersOfOldNetwork();
+				restartDownloadsAfterNetworkChange();
+				redetectConnectivity("network changed"); // new network: active may (no longer) be possible
+			}
+		} else if (lastNetworkKey != null) {
+			networkLostSinceLastConnect = true;
+		}
+	}
+
+	/**
+	 * After a network change, connections made on the old network are dead, but on a Wi-Fi to Wi-Fi switch
+	 * (especially through a VPN) neither side notices for a long time: an upload stayed "open", holding the
+	 * other client's slot so its download couldn't restart, and a hub kept showing "connected" with our old
+	 * address, so the other client's new connection requests never reached us. Close both: the other client
+	 * reconnects and resumes where it stopped, and the hubs reconnect from the new network.
+	 */
+	private void closeTransfersOfOldNetwork() {
+		if (uploadManager != null) {
+			int n = uploadManager.stopAllUploads();
+			if (n > 0) Log.i("andcpp", "Network changed: closed " + n + " upload connection(s); peers will reconnect");
+		}
+		for (HubSession s : getActiveSessions()) {
+			if (s.status == DCClientStatus.CONNECTED || s.status == DCClientStatus.CONNECTING) {
+				Log.i("andcpp", "Network changed: reconnecting hub " + s.hubIp);
+				reconnectHub(s.hubIp);
+			}
+		}
+	}
+
+	private ConnectivityManager.NetworkCallback physicalNetworkCallback;
+	private final Handler networkEventHandler = new Handler(Looper.getMainLooper());
+	private final Runnable networkEventRunnable = this::handleNetworkEvent;
+
+	/**
+	 * Also watches the physical networks themselves (not the VPN): with a VPN on, a Wi-Fi to Wi-Fi handover
+	 * may not change the connectivity broadcast at all. Bursts of callbacks are merged (1.5 s).
+	 */
+	private void registerPhysicalNetworkCallback(ConnectivityManager cm) {
+		if (cm == null || Build.VERSION.SDK_INT < 21) return;
+		try {
+			android.net.NetworkRequest request = new android.net.NetworkRequest.Builder()
+					.addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+					.build(); // NOT_VPN is in the default request: only real networks
+			physicalNetworkCallback = new ConnectivityManager.NetworkCallback() {
+				private void changed() {
+					networkEventHandler.removeCallbacks(networkEventRunnable);
+					networkEventHandler.postDelayed(networkEventRunnable, 1500);
+				}
+
+				@Override
+				public void onAvailable(android.net.Network network) {
+					changed();
+				}
+
+				@Override
+				public void onLost(android.net.Network network) {
+					changed();
+				}
+
+				@Override
+				public void onLinkPropertiesChanged(android.net.Network network, android.net.LinkProperties lp) {
+					changed();
+				}
+			};
+			cm.registerNetworkCallback(request, physicalNetworkCallback);
+		} catch (Exception e) {
+			Log.w("andcpp", "Could not watch network changes: " + e.getMessage());
+			physicalNetworkCallback = null;
+		}
 	}
 
 	private void restartDownloadsAfterNetworkChange() {
@@ -4045,6 +4148,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (networkReceiver != null) {
 			unregisterReceiver(networkReceiver);
 			networkReceiver = null;
+		}
+		networkEventHandler.removeCallbacks(networkEventRunnable);
+		if (physicalNetworkCallback != null) {
+			try {
+				ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+				if (cm != null) cm.unregisterNetworkCallback(physicalNetworkCallback);
+			} catch (Exception ignored) {
+			}
+			physicalNetworkCallback = null;
 		}
 		if (wakeLock != null && wakeLock.isHeld()) {
 			wakeLock.release();
