@@ -89,6 +89,44 @@ public class AdcClientConnectionTest {
         }
     }
 
+    /** DC++ / AirDC++ as connector: CSUP, then an informational "CSTA 000 RF<hub>", then CINF. Must not fail. */
+    @Test
+    public void acceptorSkipsInformationalStatus() throws Exception {
+        try (ServerSocket server = new ServerSocket(0)) {
+            Thread peer = new Thread(() -> {
+                try (Socket s = new Socket()) {
+                    s.connect(new InetSocketAddress("127.0.0.1", server.getLocalPort()), 5000);
+                    OutputStream o = s.getOutputStream();
+                    o.write("CSUP ADBASE ADTIGR\nCSTA 000 RFadcs://www.it-admin.se:2780\n".getBytes("US-ASCII"));
+                    o.flush();
+                    java.io.InputStream in = s.getInputStream();
+                    // wait for our CSUP + CINF, then send the peer's CINF
+                    int lines = 0;
+                    while (lines < 2) {
+                        int b = in.read();
+                        if (b < 0) return;
+                        if (b == '\n') lines++;
+                    }
+                    o.write("CINF IDPEERCID TOtok\n".getBytes("US-ASCII"));
+                    o.flush();
+                    in.read(); // until closed
+                } catch (Exception ignored) {
+                    // test thread asserts
+                }
+            });
+            peer.setDaemon(true);
+            peer.start();
+            Socket s = server.accept();
+            s.setSoTimeout(5000);
+            AdcClientConnection conn = new AdcClientConnection(s, null);
+            conn.handshakeAsAcceptor("OURCID");
+            assertEquals("PEERCID", conn.peerCid);
+            assertEquals("tok", conn.token);
+            assertEquals("adcs://www.it-admin.se:2780", conn.referrerHub);
+            conn.close();
+        }
+    }
+
     @Test
     public void resumeFromOffset() throws Exception {
         final byte[] data = "0123456789".getBytes("US-ASCII");

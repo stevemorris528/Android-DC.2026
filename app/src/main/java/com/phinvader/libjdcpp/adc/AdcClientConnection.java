@@ -73,8 +73,17 @@ public final class AdcClientConnection implements Closeable {
         token = inf.named("TO");
     }
 
+    /** The hub the peer says this connection is for (CSTA 000 RF&lt;hub url&gt;, sent by DC++ / AirDC++), or null. */
+    public volatile String referrerHub;
+
     private AdcCommand expect(String cmd) throws IOException {
         AdcCommand c = readCommand();
+        // DC++ / AirDC++ send "CSTA 000 RF<hub url>" (severity 0: information) during the handshake: skip it.
+        while (c != null && c.type == 'C' && c.cmd.equals("STA") && c.param(0) != null && c.param(0).startsWith("0")) {
+            String rf = c.named("RF", 1);
+            if (rf != null) referrerHub = rf;
+            c = readCommand();
+        }
         if (c == null) throw new EOFException("Peer closed the connection during the ADC handshake");
         if (c.type == 'C' && c.cmd.equals("STA")) {
             throw new IOException("Peer refused the connection: " + c.param(1) + " (" + c.param(0) + ")");
