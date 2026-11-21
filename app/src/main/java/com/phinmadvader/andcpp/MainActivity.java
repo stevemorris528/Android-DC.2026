@@ -919,19 +919,6 @@ public class MainActivity extends FragmentActivity implements
 		if (hasAutoReconnected) return;
 		hasAutoReconnected = true;
 
-		// One-time (owner request, 2026-11-21): start this build with auto-reconnect off, so a saved plain hub
-		// and its nmdcs:// twin don't both connect and kick each other before the old entry can be removed.
-		// Runs here, after any settings-backup restore, so the restore can't switch it back on. The user can
-		// turn it on again in Settings; the marker then keeps this from running again.
-		SharedPreferences once = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-		if (!once.getBoolean("autoreconnect_off_once_v1", false)) {
-			Settings.putAutoReconnectHubs(false, this);
-			once.edit().putBoolean("autoreconnect_off_once_v1", true).apply();
-			Log.i("andcpp", "Auto-reconnect switched off once for this build (turn it on again in Settings)");
-			if (hublist_fragment != null) hublist_fragment.refresh(); // updates the Auto reconnect checkbox
-			return;
-		}
-
 		if (!Settings.getAutoReconnectHubs(this)) return;
 
 		SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
