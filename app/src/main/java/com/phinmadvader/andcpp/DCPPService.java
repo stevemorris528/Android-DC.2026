@@ -2696,6 +2696,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return null;
 	}
 
+	/** True if the hub the UI names is an ADC / ADCS hub. */
+	public boolean isAdcHub(String hubIp) {
+		HubSession s = sessionForUi(hubIp);
+		return s != null && s.protocol.isAdc();
+	}
+
 	public List<DCUser> get_nick_list(String hubIp) {
 		HubSession session = sessionForUi(hubIp);
 		if (session == null) return new ArrayList<>();

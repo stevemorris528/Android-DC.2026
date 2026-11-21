@@ -1131,6 +1131,13 @@ public class MainActivity extends FragmentActivity implements
 
 	public void open_file_list(final String hubIp, DCUserComparable user) {
 		final String nick = user.nick;
+		if (mService != null && mService.isAdcHub(hubIp)) {
+			// Until ADC client-to-client transfers exist, the NMDC download path would ask an NMDC hub for this
+			// user (and retry for minutes). Say so instead.
+			Toast.makeText(this, "File lists and downloads on ADC hubs aren't supported yet (coming in a later update)",
+					Toast.LENGTH_LONG).show();
+			return;
+		}
 		if (mService == null || mService.get_status(hubIp) != DCPPService.DCClientStatus.CONNECTED) {
 			Toast.makeText(this, "Not connected to hub. Checking for cached list...", Toast.LENGTH_SHORT).show();
 			open_cached_file_list(nick);
