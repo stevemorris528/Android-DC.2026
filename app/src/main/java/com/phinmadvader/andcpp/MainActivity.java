@@ -331,7 +331,7 @@ public class MainActivity extends FragmentActivity implements
 
 		// Always make Downloads tab visible
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
-				downloadlist_fragment, "Downloads", false);
+				downloadlist_fragment, "Transfers", false);
 
 		// Totals tab (all-time and session DL/UL), right after Downloads
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_TOTALS,
@@ -1036,7 +1036,7 @@ public class MainActivity extends FragmentActivity implements
 		
 		if (downloadlist_fragment != null) {
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
-					downloadlist_fragment, "Downloads", false);
+					downloadlist_fragment, "Transfers", false);
 		}
 		if (totals_fragment != null) {
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_TOTALS,
