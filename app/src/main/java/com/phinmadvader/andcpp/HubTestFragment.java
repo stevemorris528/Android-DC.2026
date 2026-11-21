@@ -84,8 +84,9 @@ public class HubTestFragment extends Fragment {
             output.setText(e.getMessage() + ".");
             return;
         }
-        if (!parsed.isSupported()) { // the probe speaks plain NMDC only
-            output.setText("This test only supports NMDC hubs. " + parsed.unsupportedReason() + ".");
+        if (parsed.protocol != com.phinvader.libjdcpp.hub.HubAddress.Protocol.NMDC) { // the probe speaks plain NMDC only
+            output.setText("This test only supports plain NMDC hubs (not " + parsed.protocol.label
+                    + "). Connect to it from the Login tab instead.");
             return;
         }
         String host = parsed.host;

@@ -61,8 +61,10 @@ import com.phinvader.libjdcpp.DCFileList;
 import com.phinvader.libjdcpp.DCMessage;
 import com.phinvader.libjdcpp.DCPreferences;
 import com.phinvader.libjdcpp.DCUser;
+import com.phinvader.libjdcpp.adc.AdcHubConnection;
 import com.phinvader.libjdcpp.hub.HubAddress;
 import com.phinvader.libjdcpp.hub.HubConnection;
+import com.phinvader.libjdcpp.hub.HubEventListener;
 import com.phinvader.libjdcpp.hub.NmdcHubConnection;
 import com.phinvader.libjdcpp.hub.SearchResult;
 import com.phinvader.libjdcpp.tls.SelfSignedCertificate;
@@ -191,6 +193,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 			if (client != null) {
 				client.close();
+			} else if (hub != null) {
+				hub.close(); // ADC link
 			}
 		}
 	}
@@ -2690,7 +2694,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (session == null && !sessions.isEmpty()) {
 			session = sessions.values().iterator().next();
 		}
-		return session != null && session.client != null ? session.client.get_nick_list() : new ArrayList<>();
+		if (session == null) return new ArrayList<>();
+		if (session.client != null) return session.client.get_nick_list();
+		HubConnection hub = session.hub; // ADC
+		return hub != null ? hub.users() : new ArrayList<>();
 	}
 
 	public List<String> get_board_messages(String hubIp) {
@@ -2711,6 +2718,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			for(DCMessage msg: session.client.getBoardMessages()) {
 				ret.add(msg.msg_s);
 			}
+		} else if (session != null && session.hub instanceof AdcHubConnection) {
+			ret.addAll(((AdcHubConnection) session.hub).boardMessages());
 		}
 		return ret;
 	}
@@ -3691,6 +3700,141 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	/** Remembers a hub's name for the hub list (also while offline) and refreshes the UI. */
+	private void rememberHubName(HubSession session, String name) {
+		if (name == null || name.trim().isEmpty()) return;
+		session.hubName = name;
+		try {
+			SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
+			if (session.protocol == HubAddress.Protocol.NMDC) {
+				p.edit().putString("hub_name_" + session.hubIp, name).apply();
+				if (session.hubPort != 411) {
+					p.edit().putString("hub_name_" + session.hubIp + ":" + session.hubPort, name).apply();
+				}
+			} else { // nmdcs:// / adc:// / adcs://: never overwrite a plain NMDC hub's name on the same host
+				p.edit().putString("hub_name_" + session.address().prefKey(), name).apply();
+			}
+		} catch (Exception ignored) {}
+		mySendBroadcast(session.hubIp, false, true);
+	}
+
+	/** What we tell ADC hubs about ourselves besides nick and share size. */
+	private final AdcHubConnection.MyInfo adcMyInfo = new AdcHubConnection.MyInfo() {
+		@Override public int slots() { return uploadManager != null ? uploadManager.getMaxSlots() : 1; }
+		@Override public int freeSlots() { return uploadManager != null ? uploadManager.getFreeSlots() : 1; }
+		@Override public long sharedFiles() { return uploadManager != null ? uploadManager.getSharedFileCount() : 0; }
+		@Override public int[] hubCounts() {
+			int normal = 0, registered = 0;
+			for (HubSession s : sessions.values()) {
+				if (s.status != DCClientStatus.CONNECTED && s.status != DCClientStatus.CONNECTING) continue;
+				if (s.prefs != null && s.prefs.password != null && !s.prefs.password.isEmpty()) registered++;
+				else normal++;
+			}
+			return new int[] {Math.max(normal, registered == 0 ? 1 : 0), registered, 0};
+		}
+	};
+
+	/**
+	 * ADC / ADCS login. The connection reports users, chat and PMs through {@link AdcEvents}, which hands them
+	 * to the same handlers as NMDC, so the user list, chat and PM screens work unchanged.
+	 * Not on ADC yet: search (phase 9), transfers (phase 8), hub menus (phase 9).
+	 */
+	private void connectAdc(String hubKey, HubSession session) throws Exception {
+		session.client = null; // no NMDC client on ADC hubs
+		AdcEvents events = new AdcEvents(hubKey, session);
+		AdcHubConnection adc = new AdcHubConnection(session.address(), AdcIdentityStore.get(this), adcMyInfo, events);
+		events.connection = adc;
+		session.hub = adc;
+		session.userCommands.clear();
+
+		java.net.Socket socket;
+		if (session.protocol.secure) {
+			SelfSignedCertificate ours = ClientCertificateStore.get(DCPPService.this);
+			SSLSocket tls = TlsSocketFactory.connect(session.hubIp, session.hubPort, 15000,
+					ours != null ? ours.keyManagers() : null, session.expectedKeyprint);
+			session.hubKeyprint = TlsSocketFactory.peerKeyprint(tls);
+			Log.i("andcpp", "[ADCS] " + session.hubIp + ":" + session.hubPort + " TLS up ("
+					+ TlsSocketFactory.describe(tls) + "), hub keyprint " + session.hubKeyprint
+					+ (session.expectedKeyprint != null ? " (matches the address)" : ""));
+			socket = tls;
+		} else {
+			socket = new java.net.Socket();
+			socket.connect(new java.net.InetSocketAddress(session.hubIp, session.hubPort), 15000);
+		}
+		adc.connect(socket, session.prefs.getNick(), session.prefs.password, session.prefs.getShare_size(), 30000);
+		if (adc.hubName() != null) rememberHubName(session, adc.hubName());
+		Log.i("andcpp", "[ADC] " + session.address().toUrl() + ": logged in, " + adc.users().size() + " users"
+				+ (adc.hubSoftware() != null ? ", hub software " + adc.hubSoftware() : ""));
+	}
+
+	/** Turns ADC hub events into the DCMessages the NMDC handlers (and so the UI) already understand. */
+	private final class AdcEvents implements HubEventListener {
+		private final String hubKey;
+		private final HubSession session;
+		volatile AdcHubConnection connection;
+
+		AdcEvents(String hubKey, HubSession session) {
+			this.hubKey = hubKey;
+			this.session = session;
+		}
+
+		@Override
+		public void onUserUpdated(DCUser user) {
+			DCMessage m = new DCMessage();
+			m.command = "MyINFO";
+			m.myinfo = user;
+			new MyUserHandler(hubKey).onCommand(m);
+		}
+
+		@Override
+		public void onUserQuit(DCUser user) {
+			DCMessage m = new DCMessage();
+			m.command = "Quit";
+			m.quit_s = user.nick;
+			new MyUserHandler(hubKey).onCommand(m);
+		}
+
+		@Override
+		public void onMainChat(String line) {
+			DCMessage m = new DCMessage();
+			m.command = "BoardMessage";
+			m.msg_s = line;
+			new MyBoardMessageHandler(hubKey).onCommand(m);
+		}
+
+		@Override
+		public void onPrivateMessage(String conversationNick, String fromNick, String text) {
+			DCMessage m = new DCMessage();
+			m.command = "To:";
+			m.pm_from = conversationNick;
+			m.pm_text = fromNick.equals(conversationNick) ? text : "<" + fromNick + "> " + text; // chat rooms
+			m.to_user = session.myuser != null ? session.myuser.nick : null;
+			new MyPrivateMessageHandler(hubKey).onCommand(m);
+		}
+
+		@Override
+		public void onHubInfo(String name, String topic) {
+			rememberHubName(session, name);
+		}
+
+		@Override
+		public void onStatus(String message) {
+			Log.i("andcpp", "[ADC] " + session.hubIp + ": " + message);
+			onMainChat("*** " + message);
+		}
+
+		@Override
+		public void onDisconnected(String reason, String redirect) {
+			Log.i("andcpp", "[ADC] " + session.address().toUrl() + " disconnected: " + reason
+					+ (redirect != null ? " (redirect to " + redirect + ", not followed automatically yet)" : ""));
+			// Only for the connection this session still uses (not one replaced by a reconnect).
+			if (session.hub == connection && session.status != DCClientStatus.DISCONNECTED
+					&& sessions.get(hubKey) == session) {
+				handleConnectionFailure(hubKey, session, reason);
+			}
+		}
+	}
+
 	private void connectToHub(final String hubKey, final HubSession session) {
 		session.status = DCClientStatus.CONNECTING;
 		new Thread(() -> {
@@ -3700,6 +3844,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						session.keptDownloads = session.client.downloadHandler; // build m
 					}
 					session.client.close();
+				} else if (session.hub != null) {
+					session.hub.close(); // an ADC link (no DCClient)
 				}
 				if (session.prefs != null) {
 					SharedPreferences prefs = getSharedPreferences(Constants.PREFS_NAME, 0);
@@ -3715,6 +3861,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						}
 					}
 				}
+				if (session.protocol.isAdc()) {
+					connectAdc(hubKey, session); // ADC / ADCS: its own login and events, no DCClient
+				} else {
 				session.client = new DCClient();
 				session.hub = new NmdcHubConnection(session.address(), session.client);
 				session.client.adoptDownloadHandler(session.keptDownloads); // build m: keep pending download requests
@@ -3737,21 +3886,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.client.setCustomBoardMessageHandler(new MyBoardMessageHandler(hubKey));
 				session.client.setCustomSearchHandler(new MySearchHandler(hubKey));
 				session.client.setCustomRawHandler("HubName", dcMessage -> {
-					if (dcMessage.hubname_s != null) {
-						session.hubName = dcMessage.hubname_s;
-						try {
-							android.content.SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
-							if (session.protocol == HubAddress.Protocol.NMDC) {
-								p.edit().putString("hub_name_" + session.hubIp, dcMessage.hubname_s).apply();
-								if (session.hubPort != 411) {
-									p.edit().putString("hub_name_" + session.hubIp + ":" + session.hubPort, dcMessage.hubname_s).apply();
-								}
-							} else { // e.g. nmdcs://host:port: never overwrite the plain NMDC hub's name
-								p.edit().putString("hub_name_" + session.address().prefKey(), dcMessage.hubname_s).apply();
-							}
-						} catch (Exception ignored) {}
-						mySendBroadcast(session.hubIp, false, true);
-					}
+					if (dcMessage.hubname_s != null) rememberHubName(session, dcMessage.hubname_s);
 				});
 				session.client.setCustomRawHandler("Search", new MyIncomingSearchHandler(hubKey));
 				// Hub command menus: start empty on every (re)connect; the hub sends them after login.
@@ -3763,7 +3898,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.client.setCustomRawHandler("MyINFO", new MyUserInfoHandler(hubKey));
 				session.client.setCustomRawHandler("To:", new MyPrivateMessageHandler(hubKey));
 				session.client.InitiateDefaultRouting();
-				
+				} // NMDC / NMDCS
+
 				session.status = DCClientStatus.CONNECTED;
 				session.reconnectAttempts = 0; // Reset on success
 				// A hub we connected to stays in the saved hubs list (until "Delete Hub"), so it survives restarts.
@@ -3775,12 +3911,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				clearBackoffsAfterReconnect();
 				retryPendingDownloads();
 
-				// Diagnostic: how many users the hub has sent us (user list = one $MyINFO per user).
-				final DCClient clientAtLogin = session.client;
+				// Diagnostic: how many users the hub has sent us.
+				final HubConnection hubAtLogin = session.hub;
 				new Handler(Looper.getMainLooper()).postDelayed(() -> {
-					if (session.client == clientAtLogin && clientAtLogin != null) {
-						List<DCUser> nl = clientAtLogin.get_nick_list();
-						Log.i("andcpp", "[USERLIST] " + hubKey + ": " + (nl != null ? nl.size() : -1)
+					if (session.hub == hubAtLogin && hubAtLogin != null) {
+						Log.i("andcpp", "[USERLIST] " + hubKey + ": " + hubAtLogin.users().size()
 								+ " users 15 s after login");
 					}
 				}, 15000);
@@ -3800,6 +3935,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.client.close();
 			} catch (Exception ignored) {}
 			session.client = null;
+			session.hub = null;
+		} else if (session.hub != null) { // ADC link
+			try {
+				session.hub.close();
+			} catch (Exception ignored) {}
 			session.hub = null;
 		}
 

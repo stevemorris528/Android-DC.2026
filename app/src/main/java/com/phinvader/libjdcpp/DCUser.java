@@ -20,6 +20,26 @@ public class DCUser {
 	public byte speed_id; // filled by myinfo
 	public boolean active; // filled by tag from myfino
 	public boolean op;
+
+	// ---- ADC (null / 0 on NMDC hubs). NI, DE, SS, I4 and the op bit of CT also fill the fields above. ----
+	/** Session ID on this hub (4 chars). Changes every login: never store it. */
+	public String sid;
+	/** Client ID (39-char Base32), the same on every hub. */
+	public String cid;
+	/** Client type bits: 1 bot, 2 registered, 4 operator, 8 super user, 16 owner, 32 hub. */
+	public int ct;
+	public int slots;
+	public int freeSlots;
+	public long sharedFiles;
+	/** VE: client name and version. */
+	public String client;
+	/** SU: supported features (TCP4, UDP4, ADC0, ADCS, ...). */
+	public java.util.Set<String> features = new java.util.HashSet<String>();
+	/** KP: keyprint of the user's TLS certificate, or null. */
+	public String kp;
+	public int udp4;
+	public boolean away;
+
 	public DCUser(DCUser original) {
 		nick = original.nick;
 		ip = original.ip;
@@ -31,6 +51,17 @@ public class DCUser {
 		speed_id = original.speed_id;
 		active = original.active;
 		op = original.op;
+		sid = original.sid;
+		cid = original.cid;
+		ct = original.ct;
+		slots = original.slots;
+		freeSlots = original.freeSlots;
+		sharedFiles = original.sharedFiles;
+		client = original.client;
+		features = new java.util.HashSet<String>(original.features);
+		kp = original.kp;
+		udp4 = original.udp4;
+		away = original.away;
 	}
 	public DCUser() {
 	}

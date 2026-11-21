@@ -66,8 +66,8 @@ public class HubAddressTest {
         assertEquals("adc://192.168.1.10:2780", a.prefKey());
         assertEquals(Arrays.asList("adc://192.168.1.10:2780"), a.prefKeys());
         assertEquals(Arrays.asList("adc://192.168.1.10:2780"), a.prefKeysToWrite());
-        assertFalse(a.isSupported());
-        assertEquals("ADC (not yet supported)", a.unsupportedReason());
+        assertTrue(a.isSupported()); // since phase 5
+        assertNull(a.unsupportedReason());
     }
 
     @Test

@@ -67,6 +67,11 @@ android {
     lint {
         abortOnError false
     }
+
+    // JVM unit tests: android.* calls (e.g. Log) return defaults instead of throwing "not mocked".
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 dependencies {

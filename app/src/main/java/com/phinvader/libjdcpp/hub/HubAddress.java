@@ -235,7 +235,7 @@ public final class HubAddress {
 
     /** True if this build can connect to this kind of hub. Grows as the ADC phases land. */
     public boolean isSupported() {
-        return protocol == Protocol.NMDC || protocol == Protocol.NMDCS;
+        return true; // NMDC, NMDCS, ADC and ADCS (ADC transfers and search come in later phases)
     }
 
     /**

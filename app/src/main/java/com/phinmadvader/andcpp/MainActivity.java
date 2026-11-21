@@ -1175,8 +1175,9 @@ public class MainActivity extends FragmentActivity implements
 	private boolean isUserOnline(String nick) {
 		if (mService == null || nick == null) return false;
 		for (DCPPService.HubSession s : mService.getActiveSessions()) {
-			if (s.status != DCPPService.DCClientStatus.CONNECTED || s.client == null) continue;
-			java.util.List<com.phinvader.libjdcpp.DCUser> users = s.client.get_nick_list();
+			com.phinvader.libjdcpp.hub.HubConnection hubLink = s.hub; // NMDC or ADC
+			if (s.status != DCPPService.DCClientStatus.CONNECTED || hubLink == null) continue;
+			java.util.List<com.phinvader.libjdcpp.DCUser> users = hubLink.users();
 			if (users == null) continue;
 			for (com.phinvader.libjdcpp.DCUser u : users) {
 				if (u != null && nick.equalsIgnoreCase(u.nick)) return true;

@@ -1096,6 +1096,11 @@ public class UploadManager {
         return service;
     }
 
+    /** Number of shared files we know the TTH of (the ADC SF field). */
+    public int getSharedFileCount() {
+        return fileByTth.size();
+    }
+
     public long getSharedSize() {
         if (cachedShareSize >= 0) return cachedShareSize;
         String downloadDir = Settings.getDCDownloadsDirectory(service);

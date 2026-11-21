@@ -406,7 +406,8 @@ public class HubListFragment extends Fragment {
             if (entry.session != null) {
                 String hubNameStr = entry.session.hubName;
                 String hubAddressStr = entry.session.hubIp + ":" + entry.session.hubPort
-                        + (entry.session.protocol.secure ? " 🔒 " + entry.session.protocol.label : "");
+                        + (entry.session.protocol.secure ? " 🔒 " + entry.session.protocol.label
+                        : entry.session.protocol.isAdc() ? " " + entry.session.protocol.label : "");
                 String statusStr = entry.session.status != null ? entry.session.status.toString() : "UNKNOWN";
                 
                 if (hubNameStr != null && !hubNameStr.trim().isEmpty()) {
@@ -419,8 +420,9 @@ public class HubListFragment extends Fragment {
                 
                 int userCount = 0;
                 String tag = "N/A";
-                if (entry.session.client != null) {
-                    List<DCUser> nicks = entry.session.client.get_nick_list();
+                com.phinvader.libjdcpp.hub.HubConnection hubLink = entry.session.hub; // NMDC or ADC
+                if (hubLink != null) {
+                    List<DCUser> nicks = hubLink.users();
                     if (nicks != null) userCount = nicks.size();
                     if (entry.session.myuser != null && entry.session.myuser.tag != null) tag = entry.session.myuser.tag;
                 }
