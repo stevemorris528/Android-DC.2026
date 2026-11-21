@@ -171,6 +171,10 @@ public class HubListFragment extends Fragment {
             optionsList.add("Add to Favorite Hubs");
         }
         optionsList.add("Edit Nick & Password");
+        optionsList.add("Hub details");
+        if (entry.session != null && entry.session.keyprintProblem != null) {
+            optionsList.add(0, "Keyprint warning…");
+        }
 
         final String[] options = optionsList.toArray(new String[0]);
 
@@ -224,6 +228,52 @@ public class HubListFragment extends Fragment {
                         case "Edit Nick & Password":
                             showEditNickPasswordDialog(entry.hubIp);
                             break;
+                        case "Hub details":
+                            showHubDetails(entry);
+                            break;
+                        case "Keyprint warning…":
+                            if (entry.session != null && entry.session.keyprintProblem != null) {
+                                mainActivity.showKeyprintWarning(entry.session.address().sessionKey(),
+                                        entry.session.hubName != null ? entry.session.hubName : entry.hubIp,
+                                        entry.session.keyprintProblem, entry.session.pendingNewKeyprint != null);
+                            }
+                            break;
+                    }
+                })
+                .show();
+    }
+
+    /** Protocol, status, software and keyprints of a hub (copyable). */
+    private void showHubDetails(HubEntry entry) {
+        HubAddress addr = entry.session != null ? entry.session.address() : HubAddress.tryParse(entry.hubIp);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Address: ").append(addr != null ? addr.toUrl() : entry.hubIp).append('\n');
+        sb.append("Protocol: ").append(addr != null ? addr.protocol.label : "?")
+                .append(addr != null && addr.protocol.secure ? " (encrypted)" : "").append('\n');
+        if (entry.session != null) {
+            DCPPService.HubSession s = entry.session;
+            if (s.hubName != null) sb.append("Name: ").append(s.hubName).append('\n');
+            sb.append("Status: ").append(s.status).append('\n');
+            if (s.hubSoftware != null) sb.append("Software: ").append(s.hubSoftware).append('\n');
+            if (s.hubKeyprint != null) sb.append("\nHub keyprint (this connection):\n").append(s.hubKeyprint).append('\n');
+            if (s.keyprintProblem != null) sb.append("\n⚠ ").append(s.keyprintProblem).append('\n');
+        }
+        if (addr != null && addr.protocol.secure) {
+            if (addr.kp != null) sb.append("\nKeyprint in the address:\n").append(addr.kp).append('\n');
+            String remembered = KeyprintStore.get(mainActivity, addr);
+            sb.append("\nTrusted keyprint:\n").append(remembered != null ? remembered : "(none yet: remembered on first connection)").append('\n');
+        }
+        final String text = sb.toString().trim();
+        new AlertDialog.Builder(getActivity())
+                .setTitle("Hub details")
+                .setMessage(text)
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Copy", (d, w) -> {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                            mainActivity.getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (cm != null) {
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("Hub details", text));
+                        Toast.makeText(getActivity(), "Copied", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .show();
@@ -408,7 +458,9 @@ public class HubListFragment extends Fragment {
                 String hubAddressStr = entry.session.hubIp + ":" + entry.session.hubPort
                         + (entry.session.protocol.secure ? " 🔒 " + entry.session.protocol.label
                         : entry.session.protocol.isAdc() ? " " + entry.session.protocol.label : "");
-                String statusStr = entry.session.status != null ? entry.session.status.toString() : "UNKNOWN";
+                String statusStr = entry.session.keyprintProblem != null
+                        ? (entry.session.pendingNewKeyprint != null ? "⚠ KEYPRINT CHANGED" : "⚠ WRONG KEYPRINT")
+                        : entry.session.status != null ? entry.session.status.toString() : "UNKNOWN";
                 
                 if (hubNameStr != null && !hubNameStr.trim().isEmpty()) {
                     address.setText(hubNameStr.trim() + favIndicator);

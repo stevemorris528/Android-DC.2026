@@ -1107,6 +1107,32 @@ public class MainActivity extends FragmentActivity implements
 		tab_page_adapter.hide_tab(TabPagerAdapter.TAB_SEARCHLIST);
 	}
 
+	private AlertDialog keyprintDialog;
+
+	/**
+	 * A secure hub's certificate didn't match: explain, and for a changed remembered keyprint offer
+	 * "Trust new" (reconnects) or "Cancel" (stays disconnected). A keyprint from the hub's address can't be
+	 * overridden here: fix or remove the ?kp= in the address instead.
+	 */
+	void showKeyprintWarning(final String hubKey, String hubName, String problem, boolean canTrust) {
+		if (isFinishing()) return;
+		if (keyprintDialog != null && keyprintDialog.isShowing()) keyprintDialog.dismiss();
+		AlertDialog.Builder b = new AlertDialog.Builder(this)
+				.setTitle(canTrust ? "Keyprint changed: " + hubName : "Wrong keyprint: " + hubName)
+				.setMessage(problem + (canTrust
+						? "\n\nOnly trust the new keyprint if you know the hub changed its certificate."
+						: "\n\nCheck the keyprint (?kp=...) in the hub address."))
+				.setNegativeButton(canTrust ? "Cancel" : "OK", null);
+		if (canTrust) {
+			b.setPositiveButton("Trust new", (d, w) -> {
+				if (mService != null && mService.trustNewKeyprint(hubKey)) {
+					Toast.makeText(this, "Reconnecting to " + hubName, Toast.LENGTH_SHORT).show();
+				}
+			});
+		}
+		keyprintDialog = b.show();
+	}
+
 	/** An incoming PM: add its tab (if new) without leaving the current tab; notify if the app is in the background. */
 	private void show_incoming_private_chat(String hubIp, String senderNick, String text) {
 		if (privatechat_manager != null && tab_page_adapter != null) {
@@ -1327,6 +1353,12 @@ public class MainActivity extends FragmentActivity implements
 			// TODO Auto-generated method stub
 			Log.d("andcpp", "Broadcast Received");
 			Bundle inBun = intent.getExtras();
+			if (inBun != null && inBun.getString("keyprintProblem") != null) {
+				showKeyprintWarning(inBun.getString("keyprintHubKey"), inBun.getString("keyprintHubName"),
+						inBun.getString("keyprintProblem"), inBun.getBoolean("keyprintCanTrust", false));
+				if (hublist_fragment != null) hublist_fragment.refresh();
+				return;
+			}
 			if (inBun != null) {
 				String hubIp = inBun.getString("hubIp");
 				boolean stopServiceFlag = inBun.getBoolean("stopServiceFlag", false);

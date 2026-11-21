@@ -67,6 +67,7 @@ import com.phinvader.libjdcpp.hub.HubConnection;
 import com.phinvader.libjdcpp.hub.HubEventListener;
 import com.phinvader.libjdcpp.hub.NmdcHubConnection;
 import com.phinvader.libjdcpp.hub.SearchResult;
+import com.phinvader.libjdcpp.tls.Keyprint;
 import com.phinvader.libjdcpp.tls.SelfSignedCertificate;
 import com.phinvader.libjdcpp.tls.TlsSocketFactory;
 
@@ -164,6 +165,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public String expectedKeyprint;
 		/** Keyprint of the certificate the hub presented (secure hubs only), for logs and hub details. */
 		public volatile String hubKeyprint;
+		/**
+		 * Set when a secure hub's certificate didn't match the expected keyprint: we don't connect (or retry)
+		 * until the user decides. Cleared by the next connect attempt.
+		 */
+		public volatile String keyprintProblem;
+		/** The new keyprint the user may choose to trust (only for a changed remembered keyprint). */
+		public volatile String pendingNewKeyprint;
+		/** Hub software (ADC VE), for hub details. */
+		public volatile String hubSoftware;
 
 		public HubSession(String ip, int port) {
 			this.hubIp = ip;
@@ -3642,6 +3652,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			Log.d("andcpp", "Session already exists for " + hubKey + ", status: " + (session != null ? session.status : "null"));
 			if (session != null) {
 				session.reconnectAttempts = 0;
+				// The address used this time decides the keyprint check (?kp= given, or trust on first use).
+				session.expectedKeyprint = data.getString("kp");
 				connectToHub(hubKey, session);
 			}
 			mySendBroadcast(ip, false, true);
@@ -3675,6 +3687,78 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			HubListFragment.removeSavedHub(this, twin.address().id());
 			shutdownSession(e.getKey());
 		}
+	}
+
+	/**
+	 * TLS to a secure hub (NMDCS / ADCS), checked against the keyprint in its address (?kp=) or else the one
+	 * remembered from the first connection (trust on first use). A mismatch sets session.keyprintProblem:
+	 * the connection is refused and not retried until the user decides (see trustNewKeyprint).
+	 */
+	private SSLSocket connectSecure(HubSession session, String tag) throws Exception {
+		HubAddress addr = session.address();
+		String fromAddress = session.expectedKeyprint;
+		String remembered = KeyprintStore.get(this, addr);
+		String expected = fromAddress != null ? fromAddress : remembered;
+		SelfSignedCertificate ours = ClientCertificateStore.get(DCPPService.this);
+		try {
+			SSLSocket tls = TlsSocketFactory.connect(session.hubIp, session.hubPort, 15000,
+					ours != null ? ours.keyManagers() : null, expected);
+			session.hubKeyprint = TlsSocketFactory.peerKeyprint(tls);
+			String how;
+			if (fromAddress != null) {
+				how = "matches the address";
+				if (!Keyprint.matches(fromAddress, remembered)) KeyprintStore.put(this, addr, session.hubKeyprint);
+			} else if (remembered == null) {
+				how = "first connection: remembered (trust on first use)";
+				KeyprintStore.put(this, addr, session.hubKeyprint);
+			} else {
+				how = "matches the remembered keyprint";
+			}
+			Log.i("andcpp", tag + " " + session.hubIp + ":" + session.hubPort + " TLS up (" + TlsSocketFactory.describe(tls)
+					+ "), hub keyprint " + session.hubKeyprint + " (" + how + ")");
+			return tls;
+		} catch (TlsSocketFactory.KeyprintMismatchException e) {
+			session.hubKeyprint = e.actual;
+			if (fromAddress != null) {
+				session.pendingNewKeyprint = null; // the address is authoritative: nothing to "trust"
+				session.keyprintProblem = "The hub's certificate does not match the keyprint in its address. "
+						+ "Not connecting: this may not be the real hub.\nExpected: " + fromAddress + "\nHub sent: " + e.actual;
+			} else {
+				session.pendingNewKeyprint = e.actual;
+				session.keyprintProblem = "The hub's keyprint has changed since you last connected. Not connecting "
+						+ "until you trust the new one.\nRemembered: " + remembered + "\nNow: " + e.actual;
+			}
+			Log.w("andcpp", tag + " " + session.hubIp + ":" + session.hubPort + ": keyprint mismatch, expected "
+					+ e.expected + ", got " + e.actual);
+			throw new java.io.IOException(fromAddress != null ? "Keyprint does not match the hub address"
+					: "Hub keyprint changed", e);
+		}
+	}
+
+	/** The user trusts the hub's new keyprint (after a "keyprint changed" warning): remember it and reconnect. */
+	public boolean trustNewKeyprint(String hubKey) {
+		final HubSession session = sessions.get(hubKey);
+		if (session == null || session.pendingNewKeyprint == null) return false;
+		KeyprintStore.put(this, session.address(), session.pendingNewKeyprint);
+		Log.i("andcpp", "[TLS] " + session.address().toUrl() + ": user trusts new keyprint " + session.pendingNewKeyprint);
+		session.keyprintProblem = null;
+		session.pendingNewKeyprint = null;
+		session.reconnectAttempts = 0;
+		connectToHub(hubKey, session);
+		return true;
+	}
+
+	/** Tells the UI a secure hub was refused over its keyprint (MainActivity shows Trust new / Cancel). */
+	private void sendKeyprintWarning(String hubKey, HubSession session) {
+		Intent i = new Intent();
+		i.setAction("ACTION_DO_SOMETHING");
+		i.addCategory(Intent.CATEGORY_DEFAULT);
+		i.putExtra("hubIp", session.hubIp);
+		i.putExtra("keyprintProblem", session.keyprintProblem);
+		i.putExtra("keyprintHubKey", hubKey);
+		i.putExtra("keyprintCanTrust", session.pendingNewKeyprint != null);
+		i.putExtra("keyprintHubName", session.hubName != null ? session.hubName : session.address().toUrl());
+		sendBroadcast(i);
 	}
 
 	/** Remembers a hub's name for the hub list (also while offline) and refreshes the UI. */
@@ -3726,20 +3810,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		java.net.Socket socket;
 		if (session.protocol.secure) {
-			SelfSignedCertificate ours = ClientCertificateStore.get(DCPPService.this);
-			SSLSocket tls = TlsSocketFactory.connect(session.hubIp, session.hubPort, 15000,
-					ours != null ? ours.keyManagers() : null, session.expectedKeyprint);
-			session.hubKeyprint = TlsSocketFactory.peerKeyprint(tls);
-			Log.i("andcpp", "[ADCS] " + session.hubIp + ":" + session.hubPort + " TLS up ("
-					+ TlsSocketFactory.describe(tls) + "), hub keyprint " + session.hubKeyprint
-					+ (session.expectedKeyprint != null ? " (matches the address)" : ""));
-			socket = tls;
+			socket = connectSecure(session, "[ADCS]");
 		} else {
 			socket = new java.net.Socket();
 			socket.connect(new java.net.InetSocketAddress(session.hubIp, session.hubPort), 15000);
 		}
 		adc.connect(socket, session.prefs.getNick(), session.prefs.password, session.prefs.getShare_size(), 30000);
 		if (adc.hubName() != null) rememberHubName(session, adc.hubName());
+		session.hubSoftware = adc.hubSoftware();
 		Log.i("andcpp", "[ADC] " + session.address().toUrl() + ": logged in, " + adc.users().size() + " users"
 				+ (adc.hubSoftware() != null ? ", hub software " + adc.hubSoftware() : ""));
 	}
@@ -3814,6 +3892,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	private void connectToHub(final String hubKey, final HubSession session) {
 		session.status = DCClientStatus.CONNECTING;
+		session.keyprintProblem = null; // a new attempt (e.g. the user pressed Connect): check again
 		new Thread(() -> {
 			try {
 				if (session.client != null) {
@@ -3845,15 +3924,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.hub = new NmdcHubConnection(session.address(), session.client);
 				session.client.adoptDownloadHandler(session.keptDownloads); // build m: keep pending download requests
 				if (session.protocol.secure) {
-					// NMDCS: TLS first (checked against ?kp= when given), then the same NMDC login over it.
-					SelfSignedCertificate ours = ClientCertificateStore.get(DCPPService.this);
-					SSLSocket tls = TlsSocketFactory.connect(session.hubIp, session.hubPort, 15000,
-							ours != null ? ours.keyManagers() : null, session.expectedKeyprint);
-					session.hubKeyprint = TlsSocketFactory.peerKeyprint(tls);
-					Log.i("andcpp", "[NMDCS] " + session.hubIp + ":" + session.hubPort + " TLS up ("
-							+ TlsSocketFactory.describe(tls) + "), hub keyprint " + session.hubKeyprint
-							+ (session.expectedKeyprint != null ? " (matches the address)" : ""));
-					session.client.connect(tls, session.prefs);
+					// NMDCS: TLS first (keyprint checked), then the same NMDC login over it.
+					session.client.connect(connectSecure(session, "[NMDCS]"), session.prefs);
 				} else {
 					session.client.connect(session.hubIp, session.hubPort, session.prefs);
 				}
@@ -3920,6 +3992,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			session.hub = null;
 		}
 
+		if (session.keyprintProblem != null) {
+			// Wrong / changed certificate: retrying can't help and may mean someone is in the middle.
+			Log.w("andcpp", "Not reconnecting to " + session.address().toUrl() + ": " + session.keyprintProblem.replace('\n', ' '));
+			session.status = DCClientStatus.DISCONNECTED;
+			manageWakeLock();
+			mySendBroadcast(session.hubIp, true, true);
+			sendKeyprintWarning(hubKey, session);
+			return;
+		}
 		if (session.status == DCClientStatus.RECONNECTING) {
 			return;
 		}
