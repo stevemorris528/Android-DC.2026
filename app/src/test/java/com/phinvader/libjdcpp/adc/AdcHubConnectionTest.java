@@ -282,6 +282,27 @@ public class AdcHubConnectionTest {
         }
     }
 
+    /** A hub that puts a raw newline in message text: the kick glued to the text's tail must still count. */
+    @Test
+    public void kickGluedToStrayTextIsRecovered() throws Exception {
+        assertEquals(5, AdcHubConnection.embeddedCommandStart("sorryIQUI AAAB"));
+        assertEquals(-1, AdcHubConnection.embeddedCommandStart("just text"));
+        Events ev = new Events();
+        try (FakeHub hub = new FakeHub((in, out) -> {
+            in.readLine();
+            w(out, "ISUP ADBASE ADTIGR", "ISID AAAB");
+            in.readLine();
+            w(out, "BINF AAAB NIme");
+            Thread.sleep(200);
+            out.write("IMSG Your\\sshare\\sis\\stoo\\ssmall,\nsorryIQUI AAAB MSMinimum\\sshare\\s10\\sGiB\n".getBytes(UTF8));
+            out.flush();
+        })) {
+            newConn(ev).connect(hub.connect(), "me", null, 0, 5000);
+            assertEquals("Disconnected by the hub: Minimum share 10 GiB", ev.disconnected.poll(5, TimeUnit.SECONDS));
+            assertEquals("<Hub> Your share is too small,", ev.chat.get(0));
+        }
+    }
+
     @Test
     public void loginTimesOut() throws Exception {
         try (FakeHub hub = new FakeHub((in, out) -> in.readLine())) {

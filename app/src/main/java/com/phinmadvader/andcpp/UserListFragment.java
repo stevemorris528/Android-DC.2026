@@ -333,7 +333,10 @@ public class UserListFragment extends Fragment {
 				if (currentHubIp != null) {
 					nicks = mainActivity.mService.get_nick_list(currentHubIp);
 				}
-				if ((nicks == null || nicks.isEmpty()) && !mainActivity.mService.getActiveSessions().isEmpty()) {
+				// Fall back to another hub only when no hub was chosen. An empty list for the chosen hub is real
+				// (e.g. between reconnects): showing another hub's users under its name confused everything.
+				if (currentHubIp == null && (nicks == null || nicks.isEmpty())
+						&& !mainActivity.mService.getActiveSessions().isEmpty()) {
 					for (DCPPService.HubSession s : mainActivity.mService.getActiveSessions()) {
 						if (s.status == DCPPService.DCClientStatus.CONNECTED) {
 							nicks = mainActivity.mService.get_nick_list(s.hubIp);

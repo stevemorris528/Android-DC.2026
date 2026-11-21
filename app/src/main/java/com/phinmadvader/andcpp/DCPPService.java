@@ -2681,19 +2681,23 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return get_status(hubIp);
 	}
 
+	/**
+	 * The session for a hub the UI names (session key or host). Unlike getSession(), never another hub's
+	 * session when that hub isn't there: its users and chat would be shown under the wrong hub.
+	 * A null hubIp still means "any connected hub", as before.
+	 */
+	private HubSession sessionForUi(String hubIp) {
+		if (hubIp == null) return getSession(null);
+		HubSession s = sessions.get(hubIp);
+		if (s != null) return s;
+		for (HubSession x : sessions.values()) {
+			if (x.hubIp.equals(hubIp)) return x;
+		}
+		return null;
+	}
+
 	public List<DCUser> get_nick_list(String hubIp) {
-		HubSession session = getSession(hubIp);
-		if (session == null && hubIp != null && !hubIp.contains(":")) {
-			for (HubSession s : sessions.values()) {
-				if (s.hubIp.equals(hubIp)) {
-					session = s;
-					break;
-				}
-			}
-		}
-		if (session == null && !sessions.isEmpty()) {
-			session = sessions.values().iterator().next();
-		}
+		HubSession session = sessionForUi(hubIp);
 		if (session == null) return new ArrayList<>();
 		if (session.client != null) return session.client.get_nick_list();
 		HubConnection hub = session.hub; // ADC
@@ -2702,18 +2706,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public List<String> get_board_messages(String hubIp) {
 		ArrayList<String> ret = new ArrayList<String>();
-		HubSession session = getSession(hubIp);
-		if (session == null && hubIp != null && !hubIp.contains(":")) {
-			for (HubSession s : sessions.values()) {
-				if (s.hubIp.equals(hubIp)) {
-					session = s;
-					break;
-				}
-			}
-		}
-		if (session == null && !sessions.isEmpty()) {
-			session = sessions.values().iterator().next();
-		}
+		HubSession session = sessionForUi(hubIp);
 		if (session != null && session.client != null) {
 			for(DCMessage msg: session.client.getBoardMessages()) {
 				ret.add(msg.msg_s);
@@ -2730,18 +2723,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public boolean send_chat_message(String hubIp, String text) {
 		if (text == null || text.trim().isEmpty()) return false;
-		HubSession session = getSession(hubIp);
-		if (session == null && hubIp != null && !hubIp.contains(":")) {
-			for (HubSession s : sessions.values()) {
-				if (s.hubIp.equals(hubIp)) {
-					session = s;
-					break;
-				}
-			}
-		}
-		if (session == null && !sessions.isEmpty()) {
-			session = sessions.values().iterator().next();
-		}
+		HubSession session = sessionForUi(hubIp); // never another hub: the text would go to the wrong hub
 		final HubConnection hub = session != null ? session.hub : null;
 		if (hub != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
 			final DCUser me = session.myuser;
@@ -2785,18 +2767,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (text == null || text.trim().isEmpty() || targetNick == null || targetNick.trim().isEmpty()) {
 			return false;
 		}
-		HubSession session = getSession(hubIp);
-		if (session == null && hubIp != null && !hubIp.contains(":")) {
-			for (HubSession s : sessions.values()) {
-				if (s.hubIp.equals(hubIp)) {
-					session = s;
-					break;
-				}
-			}
-		}
-		if (session == null && !sessions.isEmpty()) {
-			session = sessions.values().iterator().next();
-		}
+		HubSession session = sessionForUi(hubIp); // never another hub: the PM would go to the wrong hub
 		final HubConnection hub = session != null ? session.hub : null;
 		if (hub != null && session.myuser != null && session.status == DCClientStatus.CONNECTED) {
 			String myNick = session.myuser.nick;

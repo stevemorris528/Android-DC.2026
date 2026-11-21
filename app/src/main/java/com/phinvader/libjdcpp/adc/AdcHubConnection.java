@@ -181,6 +181,11 @@ public final class AdcHubConnection implements HubConnection {
     private void end(String reason) {
         if (!ended.compareAndSet(false, true)) return;
         closeQuietly();
+        if (!closedByUs) {
+            synchronized (recentLines) {
+                log("connection ended (" + reason + "); last lines from the hub: " + recentLines);
+            }
+        }
         if (!loggedIn) {
             failLogin(reason);
         } else if (!closedByUs) {
@@ -188,15 +193,37 @@ public final class AdcHubConnection implements HubConnection {
         }
     }
 
+    /** The last few lines from the hub (shortened), logged when the connection ends: why were we dropped? */
+    private final LinkedList<String> recentLines = new LinkedList<>();
+
+    private void remember(String l) {
+        synchronized (recentLines) {
+            recentLines.add(l.length() > 200 ? l.substring(0, 200) + "…" : l);
+            while (recentLines.size() > 8) recentLines.removeFirst();
+        }
+    }
+
     void handleLine(String raw) {
         String l = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
         if (l.isEmpty()) return; // keep-alive
+        if (!l.startsWith("BINF ")) remember(l); // user INFs would crowd out the interesting lines
         AdcCommand c;
         try {
             c = AdcCommand.parse(l);
         } catch (IllegalArgumentException e) {
-            log("ignoring unparsable line: " + e.getMessage());
+            // Some hubs put a raw newline inside message text, so the rest of the text arrives glued to the
+            // start of the next command ("...sorryIQUI ABCD MS..."). Find that command and handle it.
+            int at = embeddedCommandStart(l);
+            if (at > 0) {
+                log("line with a stray text fragment \"" + shorten(l.substring(0, at)) + "\"; handling the command after it");
+                handleLine(l.substring(at));
+            } else {
+                log("ignoring unparsable line: " + shorten(l));
+            }
             return;
+        }
+        if (c.type == 'I' && (c.cmd.equals("MSG") || c.cmd.equals("STA") || c.cmd.equals("QUI"))) {
+            log("hub: " + shorten(l));
         }
         switch (c.name()) {
             case "ISUP":
@@ -645,6 +672,23 @@ public final class AdcHubConnection implements HubConnection {
     }
 
     // ---- helpers ----
+
+    private static final String[] RECOVERABLE = {"IQUI ", "ISTA ", "IMSG ", "IINF ", "ISID ", "IGPA ", "ISUP ",
+            "BINF ", "BMSG ", "EMSG ", "DMSG "};
+
+    /** Index of a known command glued into the middle of a line, or -1. Package-private for tests. */
+    static int embeddedCommandStart(String l) {
+        int best = -1;
+        for (String k : RECOVERABLE) {
+            int i = l.indexOf(k, 1);
+            if (i > 0 && (best < 0 || i < best)) best = i;
+        }
+        return best;
+    }
+
+    private static String shorten(String s) {
+        return s.length() > 200 ? s.substring(0, 200) + "…" : s;
+    }
 
     private static long parseLong(String s) {
         if (s == null) return 0;
