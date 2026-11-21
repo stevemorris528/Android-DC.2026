@@ -8,7 +8,7 @@ This document contains authoritative notices, dependency graphs, versions, licen
 
 | Component Name | Version | Inclusion | License | Copyright / Attribution |
 | :--- | :--- | :--- | :--- | :--- |
-| **Android DC++ App Source** | 1.0.5 | Source ZIP & APK | GNU GPL v3.0 | Copyright © 2011–2026 Anish Shankar, Lakshminarayanan Srinivasan, Madhavan Malolan, and Android DC++ project contributors. |
+| **Android DC++ App Source** | 2.1.0 | Source ZIP & APK | GNU GPL v3.0 | Copyright © 2011–2026 Anish Shankar, Lakshminarayanan Srinivasan, Madhavan Malolan, and Android DC++ project contributors. |
 | **AnDCpp Core Library (libjdcpp)** | Original / Custom | Source ZIP & APK | GNU GPL v3.0 (derived/bundled) | Copyright © Anish Shankar, Lakshminarayanan Srinivasan, Madhavan Malolan. |
 | **Apache Commons Compress** | 1.26.2 | Source ZIP & APK | Apache License 2.0 | Copyright © 2002–2024 The Apache Software Foundation. |
 | **Apache Commons Codec** *(transitive via Commons Compress)* | 1.17.0 | APK (Transitive runtime) & Source ZIP | Apache License 2.0 | Copyright © 2002–2024 The Apache Software Foundation. |
@@ -24,7 +24,7 @@ This document contains authoritative notices, dependency graphs, versions, licen
 
 ### 1. Android DC++ App Source & libjdcpp
 - **Name:** Android DC++ & libjdcpp
-- **Version:** 1.0.5
+- **Version:** 2.1.0
 - **Inclusion:** Source ZIP and APK
 - **License:** GNU General Public License v3.0 (GNU GPLv3)
 - **Copyright Notice:** 

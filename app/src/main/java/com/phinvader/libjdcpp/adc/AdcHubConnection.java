@@ -45,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class AdcHubConnection implements HubConnection {
 
     /** VE sent to hubs (owner decision). */
-    public static final String CLIENT_VERSION = "AndroidDC++ 1.0.5";
+    public static final String CLIENT_VERSION = "AndroidDC++ " + com.phinmadvader.andcpp.BuildConfig.VERSION_NAME;
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final int MAX_LINE = 256 * 1024;

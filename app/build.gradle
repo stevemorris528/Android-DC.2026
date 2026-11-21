@@ -51,7 +51,7 @@ android {
         minSdk 16 // TLS 1.2 for secure hubs (NMDCS/ADCS) needs Android 4.1+
         targetSdk 28
         versionCode buildNumber // = build number, so the in-app updater can compare builds
-        versionName '1.0.5'
+        versionName '2.1.0'
 
         buildConfigField 'int', 'BUILD_NUMBER', "${buildNumber}"
         buildConfigField 'String', 'BUILD_DATE', "\"${buildDate}\""

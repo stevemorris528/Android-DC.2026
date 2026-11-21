@@ -11,7 +11,7 @@ The old Eclipse/ADT project metadata is retained separately in libjdcpp-original
 Build configuration:
 - Android Gradle Plugin 8.13.2
 - compile SDK 35
-- min SDK 14
+- min SDK 16 (Android 4.1: TLS 1.2 for secure NMDCS / ADCS hubs)
 - target SDK 28 (kept low to avoid unrelated modern behavior changes during the connection test)
 - Java 8 source/target compatibility
 
