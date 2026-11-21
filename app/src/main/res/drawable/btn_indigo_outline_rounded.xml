@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Transparent, outlined button in indigo blue: same look as the open (selected) tab -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/button_corner_radius" />
+            <solid android:color="#553F51B5" />
+            <stroke
+                android:width="2dp"
+                android:color="#3F51B5" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/button_corner_radius" />
+            <solid android:color="#223F51B5" />
+            <stroke
+                android:width="2dp"
+                android:color="#3F51B5" />
+        </shape>
+    </item>
+</selector>
