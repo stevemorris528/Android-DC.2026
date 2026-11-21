@@ -77,6 +77,14 @@ public class MessageHandler {
 	 * @param s
 	 */
 	public MessageHandler(final Socket s) {
+		this(s, null);
+	}
+
+	/**
+	 * Like {@link #MessageHandler(Socket)}, for a connection whose first bytes were already read (the upload
+	 * listener reads the first byte to tell NMDC '$' from ADC 'C'): they are handed to the reader first.
+	 */
+	public MessageHandler(final Socket s, final byte[] alreadyRead) {
 		tcp_scoket = s;
 		message_queue = new ArrayBlockingQueue<DCMessage>(
 				DCConstants.max_message_queue_size);
@@ -84,7 +92,9 @@ public class MessageHandler {
 			@Override
 			public void run() {
 				try {
-					InputStream in = s.getInputStream();
+					InputStream in = (alreadyRead != null && alreadyRead.length > 0)
+							? new java.io.SequenceInputStream(new java.io.ByteArrayInputStream(alreadyRead), s.getInputStream())
+							: s.getInputStream();
 					BufferedInputStream bin = new BufferedInputStream(in);
 					java.io.ByteArrayOutputStream messageBuffer = new java.io.ByteArrayOutputStream();
 					int buf_read_sz = 0;

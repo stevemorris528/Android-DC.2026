@@ -6,10 +6,13 @@ import com.phinvader.libjdcpp.DCFunctions;
 import com.phinvader.libjdcpp.DCMessage;
 import com.phinvader.libjdcpp.DCUser;
 import com.phinvader.libjdcpp.MessageHandler;
+import com.phinvader.libjdcpp.adc.AdcClientConnection;
+import com.phinvader.libjdcpp.adc.AdcCommand;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.Socket;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -65,8 +68,164 @@ public class PeerConnectionHandler implements Runnable {
     private static final long FIRST_REQUEST_TIMEOUT_MS = 15000;
     private static final long IDLE_REQUEST_TIMEOUT_MS = 60000;
     
+    /** ADC uploads: the client-to-client connection (handshake already done), else null (NMDC). */
+    private AdcClientConnection adc = null;
+
     public PeerConnectionHandler(Socket socket, UploadManager uploadManager) {
         this(socket, uploadManager, true);
+    }
+
+    /** An ADC peer downloading from us; the ADC handshake is done. Serves its CGETs like NMDC $ADCGETs. */
+    public PeerConnectionHandler(AdcClientConnection conn, UploadManager uploadManager, String hisNick) {
+        this(conn.socket, uploadManager, false);
+        this.adc = conn;
+        this.hisNick = hisNick != null ? hisNick : "ADC peer";
+    }
+
+    // ---- replies, NMDC or ADC ----
+
+    /** How serveRequest() answers: NMDC ($ADCSND / $Error / $MaxedOut) or ADC (CSND / CSTA). */
+    private interface Responder {
+        void maxedOut() throws IOException;
+
+        void notAvailable() throws IOException;
+
+        void offsetError() throws IOException;
+
+        void snd(String type, String identifier, long offset, long length) throws IOException;
+
+        /** NMDC $Get only. */
+        void fileLength(long length) throws IOException;
+
+        /** NMDC $Get only: wait for the peer's $Send. */
+        void awaitSend() throws IOException, InterruptedException;
+
+        OutputStream out();
+    }
+
+    /** NMDC: exactly the strings this class always sent. */
+    private Responder nmdcResponder(final MessageHandler handler) {
+        return new Responder() {
+            @Override public void maxedOut() { handler.send_msg("$MaxedOut"); }
+            @Override public void notAvailable() { handler.send_msg("$Error File Not Available"); }
+            @Override public void offsetError() { handler.send_msg("$Error Offset out of range"); }
+            @Override public void snd(String type, String identifier, long offset, long length) {
+                handler.send_msg("$ADCSND " + type + " " + DCMessage.escapeAdc(identifier) + " " + offset + " " + length);
+            }
+            @Override public void fileLength(long length) { handler.send_msg("$FileLength " + length); }
+            @Override public void awaitSend() throws IOException, InterruptedException {
+                long start = System.currentTimeMillis();
+                DCMessage sendMsg = null;
+                while (sendMsg == null && (System.currentTimeMillis() - start < FIRST_REQUEST_TIMEOUT_MS)) {
+                    DCMessage m = handler.getNextMessage(1000, TimeUnit.MILLISECONDS);
+                    if (m == null) continue;
+                    if ("Send".equals(m.command)) {
+                        sendMsg = m;
+                        Log.d("andcpp", "Received $Send");
+                    } else if ("HubQuit".equals(m.command)) {
+                        throw new IOException("Peer closed connection before $Send");
+                    }
+                }
+                if (sendMsg == null) {
+                    throw new IOException("Peer did not acknowledge with $Send");
+                }
+            }
+            @Override public OutputStream out() { return handler.os; }
+        };
+    }
+
+    /** ADC: CSND, CSTA 151 (not available), 152 (part not available), 153 (no slots). */
+    private Responder adcResponder(final AdcClientConnection conn) {
+        return new Responder() {
+            @Override public void maxedOut() throws IOException { conn.sendStatus("153", "No slots available"); }
+            @Override public void notAvailable() throws IOException { conn.sendStatus("151", "File Not Available"); }
+            @Override public void offsetError() throws IOException { conn.sendStatus("152", "File part not available"); }
+            @Override public void snd(String type, String identifier, long offset, long length) throws IOException {
+                conn.sendSnd(type, identifier, offset, length);
+            }
+            @Override public void fileLength(long length) { throw new IllegalStateException("not on ADC"); }
+            @Override public void awaitSend() { throw new IllegalStateException("not on ADC"); }
+            @Override public OutputStream out() { return conn.rawOut(); }
+        };
+    }
+
+    /** A CGET as the DCMessage serveRequest() takes (the same fields an NMDC $ADCGET fills). Null if unusable. */
+    static DCMessage requestFromCget(AdcCommand c) {
+        if (c == null || c.type != 'C' || !"GET".equals(c.cmd) || c.params.size() < 4) return null;
+        DCMessage m = new DCMessage();
+        m.command = "ADCGET";
+        m.adc_type = c.param(0);
+        m.get_filename = c.param(1);
+        long start, bytes;
+        try {
+            start = Long.parseLong(c.param(2));
+            bytes = Long.parseLong(c.param(3));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        switch (m.adc_type) {
+            case "file":
+                m.startOffset = start + 1; // serveRequest uses the 1-based $Get convention
+                m.bytesToTransfer = bytes;
+                break;
+            case "tthl":
+                m.startOffset = start;
+                m.bytesToTransfer = bytes;
+                m.is_tthl = true;
+                break;
+            case "list":
+                m.adc_recursive = "1".equals(c.named("RE", 4));
+                break;
+            default:
+                return null;
+        }
+        return m;
+    }
+
+    /** ADC: read CGETs and serve them until the peer is done or idle. */
+    private void runAdc() {
+        try {
+            state = ConnectionState.REQUESTING;
+            boolean first = true;
+            while (true) {
+                peerSocket.setSoTimeout((int) (first ? FIRST_REQUEST_TIMEOUT_MS : IDLE_REQUEST_TIMEOUT_MS));
+                AdcCommand c;
+                try {
+                    c = adc.readCommand();
+                } catch (java.net.SocketTimeoutException e) {
+                    if (first) throw new IOException("No CGET request received from " + hisNick);
+                    Log.d("andcpp", "No further requests from " + hisNick + "; closing connection");
+                    break;
+                }
+                if (c == null) break; // peer closed
+                if (c.type != 'C' || !"GET".equals(c.cmd)) continue;
+                DCMessage req = requestFromCget(c);
+                if (req == null) {
+                    adc.sendStatus("140", "Unsupported request");
+                    continue;
+                }
+                first = false;
+                peerSocket.setSoTimeout(0); // streaming: no read timeout
+                state = ConnectionState.REQUESTING;
+                if (!serveRequest(adcResponder(adc), req)) break;
+            }
+            isFinished = true;
+            state = ConnectionState.COMPLETED;
+            if (listener != null) listener.onUploadFinished(this);
+        } catch (Exception e) {
+            if (state == ConnectionState.UPLOADING) {
+                uploadManager.incrementFailedTransfers();
+            } else if (state != ConnectionState.HANDSHAKING && state != ConnectionState.FAILED) {
+                uploadManager.incrementConnectionErrors();
+            }
+            state = ConnectionState.FAILED;
+            lastError = e.getMessage() != null ? e.getMessage() : e.toString();
+            Log.e("andcpp", "[CC] ADC upload to " + hisNick + " failed: " + lastError);
+            if (listener != null) listener.onUploadError(this, lastError);
+        } finally {
+            isFinished = true;
+            adc.close();
+        }
     }
 
     public PeerConnectionHandler(Socket socket, UploadManager uploadManager, boolean isServer) {
@@ -130,6 +289,10 @@ public class PeerConnectionHandler implements Runnable {
 
     @Override
     public void run() {
+        if (adc != null) {
+            runAdc();
+            return;
+        }
         MessageHandler handler = null;
         boolean intercepted = false;
         try {
@@ -140,7 +303,30 @@ public class PeerConnectionHandler implements Runnable {
             peerSocket.setSendBufferSize(64 * 1024);
             peerSocket.setReceiveBufferSize(64 * 1024);
 
-            handler = (preHandler != null) ? preHandler : new MessageHandler(peerSocket);
+            if (preHandler != null) {
+                handler = preHandler;
+            } else if (isServer) {
+                // Someone connected to our port: NMDC peers start with '$' ($MyNick), ADC peers with 'C' (CSUP).
+                int first;
+                try {
+                    first = peerSocket.getInputStream().read();
+                } catch (IOException e) {
+                    unidentified = true; // sent nothing at all: a port scanner, not a DC client
+                    throw e;
+                }
+                if (first < 0) {
+                    unidentified = true;
+                    throw new IOException("Peer closed connection during handshake");
+                }
+                if (first == 'C') {
+                    intercepted = true; // the ADC code owns the socket now
+                    uploadManager.getService().getAdcTransfers().onIncoming(peerSocket, (byte) first);
+                    return;
+                }
+                handler = new MessageHandler(peerSocket, new byte[] {(byte) first});
+            } else {
+                handler = new MessageHandler(peerSocket);
+            }
             
             // Get our session to get our identity
             DCUser myUser = null;
@@ -394,7 +580,7 @@ public class PeerConnectionHandler implements Runnable {
             }
             first = false;
             state = ConnectionState.REQUESTING;
-            if (!serveRequest(handler, req)) {
+            if (!serveRequest(nmdcResponder(handler), req)) {
                 return;
             }
         }
@@ -421,15 +607,15 @@ public class PeerConnectionHandler implements Runnable {
      * Shortly after start the share index may not know every file yet. "$Error File Not Available" would make
      * the other client drop us as a source for good, so answer "busy" instead: it retries later.
      */
-    private boolean replyNotReadyYet(MessageHandler handler, String requestedFile) {
-        handler.send_msg("$MaxedOut");
+    private boolean replyNotReadyYet(Responder handler, String requestedFile) throws IOException {
+        handler.maxedOut();
         Log.i("andcpp", "Share index not ready yet; sent $MaxedOut to " + hisNick + " for " + requestedFile
                 + " (will retry)");
         return false;
     }
 
     /** Serves one request. Returns true to keep the connection open for further requests. */
-    private boolean serveRequest(MessageHandler handler, DCMessage req) throws IOException, InterruptedException {
+    private boolean serveRequest(Responder handler, DCMessage req) throws IOException, InterruptedException {
         boolean adc = "ADCGET".equals(req.command);
         String requestedFile = req.get_filename;
         Log.d("andcpp", "Received request from " + hisNick + ": " + req.command
@@ -438,7 +624,7 @@ public class PeerConnectionHandler implements Runnable {
         // Wi-Fi only on mobile data, or a nick blocked from the upload menu: answer "busy" so the peer retries later.
         String refusal = uploadManager.uploadRefusalReason(hisNick);
         if (refusal != null) {
-            handler.send_msg("$MaxedOut");
+            handler.maxedOut();
             Log.i("andcpp", "Upload refused to " + hisNick + " (" + refusal + "); sent $MaxedOut");
             return false;
         }
@@ -451,13 +637,13 @@ public class PeerConnectionHandler implements Runnable {
                 return replyNotReadyYet(handler, requestedFile);
             }
             if (xml == null) {
-                handler.send_msg("$Error File Not Available");
+                handler.notAvailable();
                 Log.w("andcpp", "Partial list requested for unknown directory: " + requestedFile);
                 return true;
             }
-            handler.send_msg("$ADCSND list " + DCMessage.escapeAdc(requestedFile) + " 0 " + xml.length);
-            handler.os.write(xml);
-            handler.os.flush();
+            handler.snd("list", requestedFile, 0, xml.length);
+            handler.out().write(xml);
+            handler.out().flush();
             uploadManager.addUploadedBytes(xml.length);
             Log.d("andcpp", "Sent $ADCSND list " + requestedFile + (req.adc_recursive ? " (recursive)" : "")
                     + " 0 " + xml.length);
@@ -469,7 +655,7 @@ public class PeerConnectionHandler implements Runnable {
             return replyNotReadyYet(handler, requestedFile);
         }
         if (fileToUpload == null || !fileToUpload.exists()) {
-            handler.send_msg("$Error File Not Available");
+            handler.notAvailable();
             Log.w("andcpp", "Requested file not available: " + requestedFile);
             return adc; // $ADCGET clients may ask for something else on the same connection
         }
@@ -478,19 +664,19 @@ public class PeerConnectionHandler implements Runnable {
         if (req.is_tthl) {
             List<byte[]> leaves = com.phinmadvader.andcpp.util.TTH.getLeaves(fileToUpload);
             long len = leaves.size() * 24L;
-            handler.send_msg("$ADCSND tthl " + DCMessage.escapeAdc(requestedFile) + " 0 " + len);
+            handler.snd("tthl", requestedFile, 0, len);
             Log.d("andcpp", "Sent $ADCSND tthl " + requestedFile + " 0 " + len);
             for (byte[] leaf : leaves) {
-                handler.os.write(leaf);
+                handler.out().write(leaf);
             }
-            handler.os.flush();
+            handler.out().flush();
             return true;
         }
 
         long fileSize = fileToUpload.length();
         long offset = Math.max(0, req.startOffset - 1);
         if (offset > fileSize) {
-            handler.send_msg("$Error Offset out of range");
+            handler.offsetError();
             Log.w("andcpp", "Offset out of range: " + offset + "/" + fileSize + " for " + requestedFile);
             return adc;
         }
@@ -505,7 +691,7 @@ public class PeerConnectionHandler implements Runnable {
         if (!isFileList && !haveSlot) {
             if (!uploadManager.requestSlot(this)) {
                 uploadManager.releaseSlot(this); // do not leave this connection in the waiting queue
-                handler.send_msg("$MaxedOut");
+                handler.maxedOut();
                 Log.d("andcpp", "Upload slots full; sent $MaxedOut to " + hisNick);
                 return false;
             }
@@ -518,27 +704,13 @@ public class PeerConnectionHandler implements Runnable {
 
         if (adc) {
             // $ADCGET: announce and start sending immediately (no $Send).
-            handler.send_msg("$ADCSND file " + DCMessage.escapeAdc(requestedFile) + " " + offset + " " + length);
+            handler.snd("file", requestedFile, offset, length);
             Log.d("andcpp", "Sent $ADCSND file " + requestedFile + " " + offset + " " + length);
         } else {
             // Legacy $Get: $FileLength, then wait for $Send.
-            handler.send_msg("$FileLength " + length);
+            handler.fileLength(length);
             Log.d("andcpp", "Sent $FileLength " + length);
-            long start = System.currentTimeMillis();
-            DCMessage sendMsg = null;
-            while (sendMsg == null && (System.currentTimeMillis() - start < FIRST_REQUEST_TIMEOUT_MS)) {
-                DCMessage m = handler.getNextMessage(1000, TimeUnit.MILLISECONDS);
-                if (m == null) continue;
-                if ("Send".equals(m.command)) {
-                    sendMsg = m;
-                    Log.d("andcpp", "Received $Send");
-                } else if ("HubQuit".equals(m.command)) {
-                    throw new IOException("Peer closed connection before $Send");
-                }
-            }
-            if (sendMsg == null) {
-                throw new IOException("Peer did not acknowledge with $Send");
-            }
+            handler.awaitSend();
         }
 
         streamFile(handler, fileToUpload, offset, length);
@@ -552,7 +724,7 @@ public class PeerConnectionHandler implements Runnable {
     }
 
     /** Streams [offset, offset+length) of the file to the peer with progress callbacks. */
-    private void streamFile(MessageHandler handler, File file, long offset, long length) throws IOException {
+    private void streamFile(Responder handler, File file, long offset, long length) throws IOException {
         state = ConnectionState.UPLOADING;
         Log.d("andcpp", "Starting upload: " + fileName + " to " + hisNick + " (Offset: " + offset + ", Size: " + length + ")");
         this.startTime = System.currentTimeMillis();
@@ -578,7 +750,7 @@ public class PeerConnectionHandler implements Runnable {
                 bytesRead = fis.read(buffer, 0, toRead);
                 if (bytesRead == -1) break;
 
-                handler.os.write(buffer, 0, bytesRead);
+                handler.out().write(buffer, 0, bytesRead);
                 totalSent += bytesRead;
                 this.bytesSent.set(totalSent);
                 uploadManager.addUploadedBytes(bytesRead);
@@ -597,7 +769,7 @@ public class PeerConnectionHandler implements Runnable {
                     lastNotifyTime = now;
                 }
             }
-            handler.os.flush();
+            handler.out().flush();
 
             if (totalSent < length && !Thread.currentThread().isInterrupted()) {
                 throw new IOException("Connection lost during transfer. Sent " + totalSent + "/" + length);

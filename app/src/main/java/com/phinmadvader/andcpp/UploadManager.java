@@ -250,6 +250,11 @@ public class UploadManager {
         }
     }
 
+    /** An ADC peer downloading from us (handshake done): served like NMDC uploads (slots, list, progress). */
+    public void serveAdcUpload(com.phinvader.libjdcpp.adc.AdcClientConnection conn, String hisNick) {
+        registerAndExecute(new PeerConnectionHandler(conn, this, hisNick));
+    }
+
     private void registerAndExecute(PeerConnectionHandler handler) {
         long id = System.identityHashCode(handler);
         activeUploads.put(id, handler);

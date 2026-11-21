@@ -26,6 +26,13 @@ public interface HubEventListener {
     /** The hub's name (and topic, may be null) arrived or changed. */
     void onHubInfo(String name, String topic);
 
+    /**
+     * A peer wants a client-to-client connection (ADC). {@code reverse} false: DCTM, the peer listens on
+     * {@code port} and we connect to it; true: DRCM, the peer asks us to send it a CTM. {@code token} ties the
+     * connection to the request.
+     */
+    void onConnectRequest(DCUser peer, String protocol, int port, String token, boolean reverse);
+
     /** A status or error message from the hub, worth showing in the hub chat. */
     void onStatus(String message);
 

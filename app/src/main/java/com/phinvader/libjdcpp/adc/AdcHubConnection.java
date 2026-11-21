@@ -64,6 +64,9 @@ public final class AdcHubConnection implements HubConnection {
 
         /** Base32 TTHs of our shared files, for the BLOM filter. Called off the reader thread. */
         java.util.Collection<String> sharedTths();
+
+        /** True if peers can connect to us (TCP4 + I4 in our INF, and we send CTMs instead of RCMs). */
+        boolean active();
     }
 
     private final HubAddress address;
@@ -273,7 +276,7 @@ public final class AdcHubConnection implements HubConnection {
                 break;
             case "DCTM":
             case "DRCM":
-                refuseTransfer(c); // phase 8
+                handleConnectRequest(c);
                 break;
             case "IGET":
                 if ("blom".equals(c.param(0))) sendBloomLater(c);
@@ -474,14 +477,56 @@ public final class AdcHubConnection implements HubConnection {
         listener.onPrivateMessage(conversation, from, me ? "* " + from + " " + text : text);
     }
 
-    private void refuseTransfer(AdcCommand c) {
+    /**
+     * DCTM &lt;from&gt; &lt;us&gt; &lt;proto&gt; &lt;port&gt; &lt;token&gt; (the peer listens: we connect to it) or
+     * DRCM &lt;from&gt; &lt;us&gt; &lt;proto&gt; &lt;token&gt; (the peer asks us to send a CTM). Passed to the app.
+     */
+    private void handleConnectRequest(AdcCommand c) {
         if (mySid == null || c.fromSid == null || !mySid.equals(c.toSid)) return;
-        String token = c.name().equals("DCTM") ? c.param(2) : c.param(1);
-        AdcCommand.Builder b = AdcCommand.of('D', "STA").from(mySid).to(c.fromSid)
-                .param("141").param("Android DC++ can't transfer files on ADC hubs yet")
-                .named("PR", c.param(0));
+        boolean reverse = c.cmd.equals("RCM");
+        String proto = c.param(0);
+        int port = reverse ? 0 : (int) parseLong(c.param(1));
+        String token = reverse ? c.param(1) : c.param(2);
+        DCUser peer = users.get(c.fromSid);
+        if (peer == null || proto == null || token == null) return;
+        listener.onConnectRequest(peer, proto, port, token, reverse);
+    }
+
+    /** Asks the peer to connect to us: DCTM &lt;us&gt; &lt;peer&gt; &lt;proto&gt; &lt;port&gt; &lt;token&gt;. */
+    public void sendConnectToMe(String peerSid, String proto, int port, String token) {
+        send(AdcCommand.of('D', "CTM").from(mySid).to(peerSid).param(proto).param(String.valueOf(port))
+                .param(token).build());
+    }
+
+    /** Asks the peer to send us a CTM (we can't accept connections): DRCM &lt;us&gt; &lt;peer&gt; &lt;proto&gt; &lt;token&gt;. */
+    public void sendRevConnectToMe(String peerSid, String proto, String token) {
+        send(AdcCommand.of('D', "RCM").from(mySid).to(peerSid).param(proto).param(token).build());
+    }
+
+    /** DSTA to a peer, e.g. refusing its RCM when we're passive too. */
+    public void sendDirectStatus(String peerSid, String code, String text, String token, String proto) {
+        AdcCommand.Builder b = AdcCommand.of('D', "STA").from(mySid).to(peerSid).param(code).param(text);
+        if (proto != null) b.named("PR", proto);
         if (token != null) b.named("TO", token);
         send(b.build());
+    }
+
+    /** The user with this nick (case-insensitive), or null. */
+    public DCUser userByNick(String nickName) {
+        if (nickName == null) return null;
+        for (DCUser u : users.values()) {
+            if (u.nick != null && u.nick.equalsIgnoreCase(nickName)) return u;
+        }
+        return null;
+    }
+
+    /** The user with this CID, or null. */
+    public DCUser userByCid(String cid) {
+        if (cid == null) return null;
+        for (DCUser u : users.values()) {
+            if (cid.equals(u.cid)) return u;
+        }
+        return null;
     }
 
     private String nickOf(String sid) {
@@ -520,16 +565,24 @@ public final class AdcHubConnection implements HubConnection {
         now.put("HR", String.valueOf(h[1]));
         now.put("HO", String.valueOf(h[2]));
         now.put("VE", CLIENT_VERSION);
+        // Active: TCP4 in SU, and I4 0.0.0.0 asks the hub to fill in the address it sees (our public IP).
+        // Passive: both empty, which removes them ("" = not set).
+        boolean active = myInfo.active();
+        now.put("SU", active ? "TCP4" : "");
+        now.put("I4", active ? "0.0.0.0" : "");
 
         AdcCommand.Builder b = AdcCommand.of('B', "INF").from(sid);
         boolean any = false;
         synchronized (sentInf) {
             for (Map.Entry<String, String> e : now.entrySet()) {
-                if (full || !e.getValue().equals(sentInf.get(e.getKey()))) {
-                    b.named(e.getKey(), e.getValue());
+                String v = e.getValue();
+                String before = sentInf.get(e.getKey());
+                boolean changed = full ? !v.isEmpty() : !v.equals(before == null ? "" : before);
+                if (changed) {
+                    b.named(e.getKey(), v); // an empty value removes the field on the hub
                     any = true;
                 }
-                if (!e.getKey().equals("PD")) sentInf.put(e.getKey(), e.getValue());
+                if (!e.getKey().equals("PD")) sentInf.put(e.getKey(), v);
             }
         }
         if (any) send(b.build());

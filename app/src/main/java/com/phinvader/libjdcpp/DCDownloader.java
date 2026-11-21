@@ -37,6 +37,8 @@ public class DCDownloader {
 		 * A $ConnectToMe from the peer only answers a download that asked with $RevConnectToMe.
 		 */
 		public volatile boolean revConnectSent = false;
+		/** ADC downloads: the client-to-client connection, so pause / cancel / stall restarts can close it. */
+		public volatile java.io.Closeable adcConnection = null;
 	}
 
 	private HashMap<String, ArrayList<DownloadQueueEntity>> downloadQ;

@@ -371,6 +371,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				}
 				if (download_status != null && !is_finished_internal()) {
 					download_status.status = DCConstants.DownloadStatus.INTERUPTED;
+					closeAdcTransfer(download_status); // ADC download: close its connection
 					HubSession session = getSession(hubIp);
 					if (session != null && session.client != null) {
 						Thread stopThread = new Thread(() -> {
@@ -439,6 +440,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				if (download_status != null && !is_finished_internal()) {
 					download_status.status = DCConstants.DownloadStatus.INTERUPTED;
+					closeAdcTransfer(download_status); // ADC download: close its connection
 					HubSession session = getSession(hubIp);
 					if (session != null && session.client != null) {
 						new Thread(() -> {
@@ -562,6 +564,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				if (e.connectionHandler != null) e.connectionHandler.close();
 			} catch (Exception ignored) {}
+			closeAdcTransfer(e);
+			adcTransfers.forget(e); // an ADC request still waiting for the peer: drop its token
 		}
 
 		/**
@@ -673,6 +677,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			updateFolderStatus(this, DCConstants.DownloadStatus.STARTED);
 			set_start_download_time();
 
+			HubSession own = hubIp != null ? sessionForUi(hubIp) : null;
+			if (own != null && own.protocol.isAdc()) {
+				startAdcDownload(own);
+				return;
+			}
+
 			HubSession session = downloadSession(hubIp);
 			if (session == null) {
 				Log.w("andcpp", "No NMDC hub connected for " + (hubIp != null ? hubIp : "any hub") + " yet. Retrying download.");
@@ -726,6 +736,40 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			this.download_status.startOffset = this.pendingStartOffset;
 			if (this.download_status.downloadedSize < this.pendingStartOffset)
 				this.download_status.downloadedSize = this.pendingStartOffset;
+			lastSignalTime = System.currentTimeMillis();
+		}
+
+		/**
+		 * A download from a user on an ADC hub: same pre-flight as NMDC (hub up, user online, someone can accept
+		 * the connection), then AdcTransfers sends DCTM / DRCM; the entity is filled like the NMDC downloader's.
+		 */
+		private void startAdcDownload(HubSession session) {
+			if (session.status != DCClientStatus.CONNECTED || !(session.hub instanceof AdcHubConnection)) {
+				Log.d("andcpp", "[DLTRACE] " + file_name + ": ADC hub " + session.hubIp + " not connected yet; staying queued");
+				return;
+			}
+			AdcHubConnection hub = (AdcHubConnection) session.hub;
+			DCUser peer = hub.userByNick(target_nick);
+			if (peer == null || peer.sid == null) {
+				markWaiting("user offline");
+				return;
+			}
+			DCUser me = new DCUser();
+			me.nick = session.prefs != null ? session.prefs.getNick() : null;
+			DCDownloader.DownloadQueueEntity entity = this.download_status;
+			if (entity == null) {
+				entity = new DCDownloader.DownloadQueueEntity(peer, me, remote_file, local_file);
+			} else {
+				entity.permanentError = false;
+			}
+			entity.startOffset = this.pendingStartOffset;
+			if (entity.downloadedSize < this.pendingStartOffset) entity.downloadedSize = this.pendingStartOffset;
+			String why = adcTransfers.requestDownload(session, hub, peer, entity, remote_file);
+			if (why != null) {
+				markWaiting(why);
+				return;
+			}
+			this.download_status = entity;
 			lastSignalTime = System.currentTimeMillis();
 		}
 
@@ -1236,6 +1280,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								Log.w("andcpp", "Download made no progress for 2 minutes; restarting from byte "
 										+ currentProgressBytes + ": " + work.file_name);
 
+								closeAdcTransfer(work.download_status); // ADC download: close its connection
 								HubSession stalledSession = getSession(work.hubIp);
 								if (stalledSession != null && stalledSession.client != null) {
 									stalledSession.client.stopDownloadHandler(work.download_status);
@@ -1799,7 +1844,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					s.myuser.active = r.active;
 					s.myuser.tag = null; // regenerate the tag with M:A / M:P
 				}
-				if (s.status == DCClientStatus.CONNECTED && s.client != null && s.myuser != null) {
+				if (s.status == DCClientStatus.CONNECTED && s.hub != null && s.myuser != null) { // NMDC and ADC
 					try {
 						sendMyInfo(s);
 					} catch (Exception e) {
@@ -1912,8 +1957,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public void download_file(final String nick, final String local_file,
 			final String remote_file, final long file_size, final String groupLabel, final String groupName) {
-		String hubIp = null;
-		if (!sessions.isEmpty()) {
+		String hubIp = hubKeyWhereOnline(nick); // ADC users must be downloaded through their ADC hub
+		if (hubIp == null && !sessions.isEmpty()) {
 			hubIp = sessions.keySet().iterator().next();
 		}
 		download_file(hubIp, nick, local_file, remote_file, file_size, groupLabel, groupName);
@@ -2715,6 +2760,27 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return null;
 	}
 
+	/** Session key of a connected hub where this nick is online (an NMDC hub first), or null. */
+	String hubKeyWhereOnline(String nick) {
+		if (nick == null) return null;
+		String adcKey = null;
+		for (Map.Entry<String, HubSession> e : sessions.entrySet()) {
+			HubConnection h = e.getValue().hub;
+			if (e.getValue().status != DCClientStatus.CONNECTED || h == null) continue;
+			for (DCUser u : h.users()) {
+				if (u != null && nick.equalsIgnoreCase(u.nick)) {
+					if (e.getValue().protocol.isAdc()) {
+						if (adcKey == null) adcKey = e.getKey();
+					} else {
+						return e.getKey(); // NMDC: the long-tested path
+					}
+					break;
+				}
+			}
+		}
+		return adcKey;
+	}
+
 	/** True if the hub the UI names is an ADC / ADCS hub. */
 	public boolean isAdcHub(String hubIp) {
 		HubSession s = sessionForUi(hubIp);
@@ -3046,6 +3112,24 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	/** May be null before the service has started listening. */
+	/** ADC client-to-client transfers (connection setup, downloads; uploads go through UploadManager). */
+	private final AdcTransfers adcTransfers = new AdcTransfers(this);
+
+	AdcTransfers getAdcTransfers() {
+		return adcTransfers;
+	}
+
+	/** Closes an ADC download's client-to-client connection (pause / cancel / stall); no-op for NMDC. */
+	void closeAdcTransfer(DCDownloader.DownloadQueueEntity e) {
+		final java.io.Closeable c = e != null ? e.adcConnection : null;
+		if (c == null) return;
+		new Thread(() -> {
+			try {
+				c.close();
+			} catch (Exception ignored) {}
+		}, "adc-cc-close").start();
+	}
+
 	public UploadManager getUploadManager() {
 		return uploadManager;
 	}
@@ -3221,6 +3305,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					continue;
 				}
 
+				closeAdcTransfer(obj.download_status); // ADC download: no DCClient handler to stop
 				HubSession session = getSession(obj.hubIp);
 				if (session != null && session.client != null) {
 					try {
@@ -3367,7 +3452,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (s.prefs.getShare_size() == size && s.myuser.share_size == size) continue;
 			s.prefs.setShare_size(size);
 			s.myuser.share_size = size;
-			if (s.status == DCClientStatus.CONNECTED && s.client != null) {
+			if (s.status == DCClientStatus.CONNECTED && s.hub != null) { // NMDC and ADC
 				try {
 					sendMyInfo(s);
 					Log.i("andcpp", "Share size now " + size + " bytes; MyINFO re-sent to " + s.hubIp);
@@ -3793,6 +3878,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override public int slots() { return uploadManager != null ? uploadManager.getMaxSlots() : 1; }
 		@Override public int freeSlots() { return uploadManager != null ? uploadManager.getFreeSlots() : 1; }
 		@Override public long sharedFiles() { return uploadManager != null ? uploadManager.getSharedFileCount() : 0; }
+		@Override public boolean active() {
+			return isActiveNow() && uploadManager != null && uploadManager.isListening();
+		}
 		@Override public java.util.Collection<String> sharedTths() {
 			return uploadManager != null ? uploadManager.getSharedTths() : new ArrayList<String>();
 		}
@@ -3888,6 +3976,12 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public void onStatus(String message) {
 			Log.i("andcpp", "[ADC] " + session.hubIp + ": " + message);
 			onMainChat("*** " + message);
+		}
+
+		@Override
+		public void onConnectRequest(DCUser peer, String protocol, int port, String token, boolean reverse) {
+			AdcHubConnection c = connection;
+			if (c != null) adcTransfers.onConnectRequest(session, c, peer, protocol, port, token, reverse);
 		}
 
 		@Override

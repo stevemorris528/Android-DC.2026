@@ -51,6 +51,7 @@ public class AdcHubConnectionTest {
         public long sharedFiles() { return 42; }
         public int[] hubCounts() { return new int[] {1, 0, 0}; }
         public java.util.Collection<String> sharedTths() { return TTHS; }
+        public boolean active() { return false; }
     };
 
     /** Records listener events. */
@@ -69,6 +70,10 @@ public class AdcHubConnectionTest {
         public void onPrivateMessage(String conv, String from, String text) { pms.add(conv + "|" + from + "|" + text); }
         public void onHubInfo(String name, String topic) { hubName = name; }
         public void onStatus(String m) { status.add(m); }
+        final List<String> connectRequests = new CopyOnWriteArrayList<>();
+        public void onConnectRequest(DCUser peer, String proto, int port, String token, boolean reverse) {
+            connectRequests.add(peer.nick + "|" + proto + "|" + port + "|" + token + "|" + reverse);
+        }
         public void onDisconnected(String reason, String redirect) {
             disconnected.add(reason + (redirect != null ? " -> " + redirect : ""));
         }
