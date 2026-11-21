@@ -21,7 +21,7 @@
         android:showAsAction="never"
         android:checkable="true"
         android:checked="false"
-        android:title="Wi-Fi Only (DL + UL)"/>
+        android:title="WiFi Only"/>
 
     <item
         android:id="@+id/action_settings"
