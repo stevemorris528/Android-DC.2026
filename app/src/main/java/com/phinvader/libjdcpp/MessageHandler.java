@@ -365,10 +365,10 @@ public class MessageHandler {
 		if (myuser.description == null)
 			myuser.description = "";
 
-		// LibreTorrent/Modern client style tag: <++ V:0.8.7,M:A,H:1/0/0,S:3>
+		// Client tag: <Android-DC++ V:<build>,M:A,H:1/0/0,S:3>
 		// M:A for Active, M:P for Passive
 		if (myuser.tag == null) {
-			myuser.tag = "<++ V:" + DCConstants.version_short + ","
+			myuser.tag = "<Android-DC++ V:" + com.phinmadvader.andcpp.BuildConfig.BUILD_NUMBER + ","
 					+ (isActive ? "M:A" : "M:P") + "," + "H:1/0/0,S:3>";
 		}
 		if (myuser.connection_speed == null || myuser.connection_speed.equals("1")) {
