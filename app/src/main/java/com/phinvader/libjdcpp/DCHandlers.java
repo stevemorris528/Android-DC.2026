@@ -93,9 +93,38 @@ public class DCHandlers {
 				}
 
 				String peerNick = hisNick.hisinfo.nick;
-				// Only a download we asked for with $RevConnectToMe is answered by the peer's $ConnectToMe.
-				// If we asked with $ConnectToMe, this is the peer's own download request: serve it as an upload.
-				DCDownloader.DownloadQueueEntity entity = downloaderManager.claimRevConnectAnswer(peerNick);
+				// A peer that answers our $RevConnectToMe says "$Direction Upload". One that connected because IT
+				// wants to download from us says "Download" (or sends its request). With downloads pending both
+				// ways (we're passive towards this peer), taking every connection for our download starved the
+				// peer: its file list / downloads from us only ever got "Connecting" / "Timed out". So look at
+				// the peer's $Direction first, as the incoming-connection path does.
+				java.util.List<DCMessage> early = new java.util.ArrayList<DCMessage>();
+				boolean peerWantsToDownload = false;
+				if (downloaderManager.hasPendingFor(peerNick)) {
+					long dirDeadline = System.currentTimeMillis() + 5000;
+					while (System.currentTimeMillis() < dirDeadline) {
+						DCMessage m = h.getNextMessage(500, java.util.concurrent.TimeUnit.MILLISECONDS);
+						if (m == null) continue;
+						if ("HubQuit".equals(m.command)) throw new java.io.IOException("Peer closed connection during handshake");
+						early.add(m);
+						if ("Direction".equals(m.command)) {
+							peerWantsToDownload = m.dir_download;
+							break;
+						}
+						if ("Get".equals(m.command) || "ADCGET".equals(m.command)) {
+							peerWantsToDownload = true;
+							break;
+						}
+					}
+				}
+				DCDownloader.DownloadQueueEntity entity = peerWantsToDownload ? null
+						: downloaderManager.claimRevConnectAnswer(peerNick);
+				if (peerWantsToDownload) {
+					android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: " + peerNick + " wants to download from us:"
+							+ " serving it as an upload (our pending download from " + peerNick + " stays queued)");
+				}
+				// Give the messages read above back to whoever handles the connection now (same order).
+				for (DCMessage m : early) h.addMessage(m);
 				android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: peer=" + peerNick + ", revConnectDownloadFound="
 						+ (entity != null) + (entity == null && downloaderManager.hasPendingFor(peerNick)
 						? " (our pending download asked with $ConnectToMe: serving the peer's upload request)" : ""));

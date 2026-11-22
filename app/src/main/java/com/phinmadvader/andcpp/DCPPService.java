@@ -1913,6 +1913,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 * local socket address if it is public, or if the hub itself is on the same private network. Never the hub's
 	 * own address. Returns null when nothing usable is known (callers then fall back to passive).
 	 */
+	/** Public IP the last hub reported for us ($UserIP); cleared when the network changes. */
+	private volatile String lastHubReportedPublicIp;
+
 	private String resolveAdvertiseIp(HubSession s) {
 		if (s == null) return null;
 		try {
@@ -1924,6 +1927,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (r != null && r.active && r.externalIp != null) {
 				return r.externalIp; // public address found by detection (own IP or the router's, via UPnP)
 			}
+			// Some hubs never send $UserIP (e.g. bigchill). Our public address is the same for every hub on
+			// this network (the VPN's exit IP with PIA), so use what another hub told us.
+			String other = lastHubReportedPublicIp;
+			if (other != null) return other;
 			if (s.client != null && s.client.getSocket() != null && s.client.getSocket().getLocalAddress() != null) {
 				String local = s.client.getSocket().getLocalAddress().getHostAddress();
 				if (local != null && !local.isEmpty() && !"0.0.0.0".equals(local)) {
@@ -2325,6 +2332,18 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	/** Menu "Refresh File List (Share)": rescan + hash new/changed files now, toast the result when done. */
+	public boolean refreshMyFileListNow() {
+		if (uploadManager == null) return false;
+		return uploadManager.requestFileListRefreshNow((ok, files, bytes) -> {
+			final String text = ok
+					? "Share refreshed: " + files + " files, " + android.text.format.Formatter.formatFileSize(getApplicationContext(), bytes)
+					: "File list refresh failed";
+			new Handler(Looper.getMainLooper()).post(() ->
+					Toast.makeText(getApplicationContext(), text, Toast.LENGTH_LONG).show());
+		});
+	}
+
 	/**
 	 * Absolute paths of downloads that are not complete (queued, running, paused, failed or cancelled).
 	 * These files are partial on disk, so they are left out of our shared file list.
@@ -2716,6 +2735,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 			if (detectedIp != null && !detectedIp.isEmpty()) {
 				Log.d("andcpp", "Hub reported our IP as: " + detectedIp);
+				if (!isPrivateOrLoopbackIp(detectedIp)) lastHubReportedPublicIp = detectedIp;
 				HubSession session = getSession(hubKey);
 				if (session != null && session.prefs != null) {
 					session.prefs.set_self_ip(detectedIp);
@@ -3270,13 +3290,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		StringBuilder key = new StringBuilder().append(info.getType()).append('|').append(extra != null ? extra : "");
 		if (cm != null && Build.VERSION.SDK_INT >= 23) {
 			try {
+				// Only networks of the kind we're actually using. On Wi-Fi, Android keeps bringing mobile data
+				// networks up and down in the background (new id, new carrier address every few seconds); they
+				// carry none of our traffic, but counting them made every blip look like a network change and
+				// all hubs reconnected every ~30 s, so peers could never reach us.
+				boolean onCellular = info.getType() == ConnectivityManager.TYPE_MOBILE;
 				List<String> parts = new ArrayList<>();
 				for (android.net.Network n : cm.getAllNetworks()) {
 					android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(n);
 					if (caps == null || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) continue;
-					if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
-							&& !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)
-							&& !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) continue;
+					boolean cellular = caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR);
+					boolean local = caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+							|| caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET);
+					if (onCellular ? !cellular : !local) continue;
 					StringBuilder p = new StringBuilder(n.toString()); // network id: new for every (re)connection
 					android.net.LinkProperties lp = cm.getLinkProperties(n);
 					if (lp != null) {
@@ -3342,6 +3368,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 * reconnects and resumes where it stopped, and the hubs reconnect from the new network.
 	 */
 	private void closeTransfersOfOldNetwork() {
+		lastHubReportedPublicIp = null; // new network: the old public address no longer applies
 		if (uploadManager != null && isVpnActive()) {
 			// Through the VPN our address stays the same and an upload usually survives the switch: closing it
 			// made the other client wait minutes before retrying. Only close the ones that stopped moving.

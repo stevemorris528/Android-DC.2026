@@ -458,6 +458,13 @@ public class MainActivity extends FragmentActivity implements
 		if (id == R.id.action_public_hubs) {
 			showPublicHubsDialog();
 			return true;
+		} else if (id == R.id.action_refresh_share) {
+			if (mService != null && mService.refreshMyFileListNow()) {
+				Toast.makeText(this, "Refreshing file list… new files will be hashed", Toast.LENGTH_SHORT).show();
+			} else {
+				Toast.makeText(this, "File list refresher not running yet", Toast.LENGTH_SHORT).show();
+			}
+			return true;
 		} else if (id == R.id.action_about) {
 			showAboutDialog();
 			return true;
