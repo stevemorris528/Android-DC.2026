@@ -4711,18 +4711,27 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	/** Downloads in the Transfers list: {completed, failed, active, queued/waiting, paused}. Cancelled ones aren't counted. */
 	public int[] getDownloadCounts() {
+		// Counted per row of the Transfers tab: a folder download is one item, not one per file in it.
 		int[] c = new int[5];
-		if (initiated_downloads == null) return c;
-		synchronized (initiated_downloads) {
-			for (DownloadObject obj : initiated_downloads) {
-				if (obj.isCancelled) continue;
-				if (obj.isPaused) { c[4]++; continue; }
-				switch (obj.get_status()) {
-					case COMPLETED: c[0]++; break;
-					case FAILED: case SHUTDOWN: c[1]++; break;
-					case INITIATED: case STARTED: case DOWNLOADING: c[2]++; break;
-					default: c[3]++; break; // queued, waiting for the peer / Wi-Fi
+		for (DownloadItem item : get_download_queue()) {
+			boolean cancelled = true, paused = true;
+			if (item instanceof FolderDownloadItem) {
+				for (DownloadObject o : ((FolderDownloadItem) item).downloads) {
+					if (!o.isCancelled) cancelled = false;
+					if (!o.isPaused && !o.is_finished()) paused = false;
 				}
+				if (item.is_finished()) paused = false;
+			} else if (item instanceof DownloadObject) {
+				cancelled = ((DownloadObject) item).isCancelled;
+				paused = ((DownloadObject) item).isPaused;
+			}
+			if (cancelled) continue;
+			if (paused) { c[4]++; continue; }
+			switch (item.get_status()) {
+				case COMPLETED: c[0]++; break;
+				case FAILED: case SHUTDOWN: c[1]++; break;
+				case INITIATED: case STARTED: case DOWNLOADING: c[2]++; break;
+				default: c[3]++; break; // queued, waiting for the peer / Wi-Fi
 			}
 		}
 		return c;
