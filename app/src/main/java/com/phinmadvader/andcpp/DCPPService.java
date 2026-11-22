@@ -4706,6 +4706,25 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return uploadManager.getUploadStats();
 	}
 
+	/** Downloads in the Transfers list: {completed, failed, active, queued/waiting, paused}. Cancelled ones aren't counted. */
+	public int[] getDownloadCounts() {
+		int[] c = new int[5];
+		if (initiated_downloads == null) return c;
+		synchronized (initiated_downloads) {
+			for (DownloadObject obj : initiated_downloads) {
+				if (obj.isCancelled) continue;
+				if (obj.isPaused) { c[4]++; continue; }
+				switch (obj.get_status()) {
+					case COMPLETED: c[0]++; break;
+					case FAILED: case SHUTDOWN: c[1]++; break;
+					case INITIATED: case STARTED: case DOWNLOADING: c[2]++; break;
+					default: c[3]++; break; // queued, waiting for the peer / Wi-Fi
+				}
+			}
+		}
+		return c;
+	}
+
 	// ---- All-time transfer totals (persisted) ----
 	private static final String PREF_ALLTIME_DL = "alltime_dl_bytes";
 	private static final String PREF_ALLTIME_UL = "alltime_ul_bytes";

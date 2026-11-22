@@ -21,6 +21,7 @@ public class TotalsFragment extends Fragment {
     private TextView sessionDl;
     private TextView sessionUl;
     private TextView uploadStats;
+    private TextView downloadStats;
     private TextView connectionMode;
 
     @Override
@@ -31,6 +32,7 @@ public class TotalsFragment extends Fragment {
         sessionDl = (TextView) root.findViewById(R.id.totals_session_dl);
         sessionUl = (TextView) root.findViewById(R.id.totals_session_ul);
         uploadStats = (TextView) root.findViewById(R.id.totals_upload_stats);
+        downloadStats = (TextView) root.findViewById(R.id.totals_download_stats);
         connectionMode = (TextView) root.findViewById(R.id.totals_connection_mode);
 
         // DL figures in the same colour as the download progress bars (theme accent).
@@ -89,8 +91,14 @@ public class TotalsFragment extends Fragment {
         sessionUl.setText("UL: " + formatSize(stats.totalBytes));
 
         uploadStats.setText(String.format(java.util.Locale.US,
-                "Completed: %d\nFailed: %d\nActive: %d\nQueued: %d\nHandshake failures: %d\nConnection errors: %d",
+                "Uploads\nCompleted: %d\nFailed: %d\nActive: %d\nQueued: %d\nHandshake failures: %d\nConnection errors: %d",
                 stats.completedCount, stats.failedCount, stats.activeCount, stats.queueLength,
                 stats.handshakeFailures, stats.connectionErrors));
+        if (downloadStats != null) {
+            int[] dl = service.getDownloadCounts();
+            downloadStats.setText(String.format(java.util.Locale.US,
+                    "Downloads\nCompleted: %d\nFailed: %d\nActive: %d\nQueued: %d\nPaused: %d",
+                    dl[0], dl[1], dl[2], dl[3], dl[4]));
+        }
     }
 }
