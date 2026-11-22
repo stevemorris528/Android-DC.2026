@@ -43,6 +43,8 @@ public class PublicHubsDialog {
     public static class PublicHub {
         public String name = "";
         public String address = "";
+        /** Encrypted address (adcs:// or nmdcs://) from the list's "Secure" column, or "". */
+        public String secure = "";
         public String description = "";
         public int users = 0;
         public long shared = 0;
@@ -312,16 +314,36 @@ public class PublicHubsDialog {
 
     private void showHubActionDialog(final PublicHub hub) {
         final String cleanAddress = cleanAddress(hub.address);
-        String[] options = new String[] {
-                "Connect to Hub",
-                "Add to Favorite Hubs",
-                "Copy Address"
-        };
+        final String secureAddress = hub.secure != null && !hub.secure.isEmpty() ? cleanAddress(hub.secure) : null;
+        String[] options = secureAddress == null
+                ? new String[] {
+                        "Connect to Hub",
+                        "Add to Favorite Hubs",
+                        "Copy Address" }
+                : new String[] {
+                        "Connect to Hub",
+                        "Add to Favorite Hubs",
+                        "Copy Address",
+                        "Connect (Secure)",
+                        "Add Secure to Favorite Hubs",
+                        "Copy Secure Address" };
 
         new AlertDialog.Builder(activity)
                 .setTitle(hub.name != null && !hub.name.isEmpty() ? hub.name : cleanAddress)
                 .setItems(options, (d, which) -> {
                     switch (which) {
+                        case 3: // Connect (secure)
+                            connectToHub(secureAddress);
+                            if (dialog != null && dialog.isShowing()) {
+                                dialog.dismiss();
+                            }
+                            break;
+                        case 4: // Add secure address to Favorite Hubs
+                            addToFavorites(secureAddress);
+                            break;
+                        case 5: // Copy secure address
+                            copyToClipboard(secureAddress);
+                            break;
                         case 0: // Connect
                             connectToHub(cleanAddress);
                             if (dialog != null && dialog.isShowing()) {
@@ -462,6 +484,7 @@ public class PublicHubsDialog {
                             PublicHub hub = new PublicHub();
                             hub.name = getAttr(parser, "Name");
                             hub.address = getAttr(parser, "Address");
+                            hub.secure = getAttr(parser, "Secure").trim();
                             hub.description = getAttr(parser, "Description");
                             hub.country = getAttr(parser, "Country");
 
@@ -578,7 +601,11 @@ public class PublicHubsDialog {
 
             nameView.setText(hub.name != null && !hub.name.isEmpty() ? hub.name : cleanAddress(hub.address));
             usersView.setText(hub.users + " users");
-            addressView.setText(cleanAddress(hub.address));
+            // Lists without a "Secure" column (dchublist.org) put adcs:// / nmdcs:// straight in Address.
+            String mainAddr = hub.address != null ? hub.address.trim().toLowerCase() : "";
+            boolean mainSecure = mainAddr.startsWith("adcs://") || mainAddr.startsWith("nmdcs://");
+            addressView.setText((mainSecure ? "🔒 " : "") + cleanAddress(hub.address)
+                    + (hub.secure != null && !hub.secure.isEmpty() ? "\n🔒 " + cleanAddress(hub.secure) : ""));
 
             if (hub.description != null && !hub.description.isEmpty()) {
                 descView.setVisibility(View.VISIBLE);

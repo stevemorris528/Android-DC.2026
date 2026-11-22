@@ -41,7 +41,7 @@
         android:layout_marginTop="2dp"
         android:textAppearance="?android:attr/textAppearanceSmall"
         android:textColor="?attr/appTextColorSecondary"
-        android:singleLine="true"
+        android:maxLines="2"
         android:ellipsize="end" />
 
     <TextView
