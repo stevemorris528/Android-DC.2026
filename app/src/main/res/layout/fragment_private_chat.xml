@@ -33,6 +33,20 @@
             android:textSize="12sp"
             android:paddingLeft="10dp"
             android:paddingRight="10dp" />
+
+        <Button
+            android:id="@+id/chat_close_button"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginStart="6dp"
+            android:layout_marginLeft="6dp"
+            android:background="@drawable/btn_blue_rounded"
+            android:text="Close"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:paddingLeft="10dp"
+            android:paddingRight="10dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <View

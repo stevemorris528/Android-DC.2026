@@ -103,6 +103,14 @@ public class PrivateChatViewFragment extends Fragment {
             });
         }
 
+        Button closeButton = (Button) view.findViewById(R.id.chat_close_button);
+        if (closeButton != null) {
+            closeButton.setVisibility(View.VISIBLE);
+            closeButton.setOnClickListener(v -> {
+                if (mainActivity != null) mainActivity.close_private_chat(chatIndex);
+            });
+        }
+
         updateHeaderInfo();
         loadMessages();
         return view;

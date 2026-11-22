@@ -149,15 +149,29 @@ public class DCClient {
 		handler.send_validatenick(pref.getNick());
 
 		long startTime = System.currentTimeMillis();
+		String hubSaid = null; // hubs usually explain a refusal in main chat, then close the connection
+		String refusal = null; // or with $ValidateDenide / $HubIsFull / $ForceMove
 		while (true) {
 			if (System.currentTimeMillis() - startTime > 30000) {
-				throw new IOException("Hub handshake timeout (waiting for Hello)");
+				throw new IOException("Hub handshake timeout (waiting for Hello)"
+						+ (refusal != null ? ": " + refusal : hubSaid != null ? ": " + hubSaid : ""));
 			}
 			DCMessage msg = handler.getNextMessage();
 			if (msg == null || "HubQuit".equals(msg.command)) {
+				if (refusal != null || hubSaid != null) {
+					throw new IOException(refusal != null ? refusal : hubSaid);
+				}
 				throw new IOException("Connection closed by hub during handshake: " + (msg != null ? msg.quit_s : "null"));
 			}
 			DCLogger.Log(msg.toString());
+			if ("BoardMessage".equals(msg.command) && msg.msg_s != null && !msg.msg_s.trim().isEmpty()) {
+				hubSaid = msg.msg_s.trim();
+			} else if (msg.command == null && msg.msg_s != null) {
+				String raw = msg.msg_s.trim();
+				if (raw.startsWith("$ValidateDenide")) refusal = "Hub refused the nick " + pref.getNick() + " (taken or not allowed)";
+				else if (raw.startsWith("$HubIsFull")) refusal = "Hub is full";
+				else if (raw.startsWith("$ForceMove")) refusal = "Hub redirected us to " + raw.substring("$ForceMove".length()).trim();
+			}
 			if ("Hello".equals(msg.command) && pref.getNick().equals(msg.hello_s))
 				break;
 			

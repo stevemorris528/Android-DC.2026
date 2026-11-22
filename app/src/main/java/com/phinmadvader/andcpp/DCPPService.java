@@ -179,6 +179,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		public volatile String pendingNewKeyprint;
 		/** Hub software (ADC VE), for hub details. */
 		public volatile String hubSoftware;
+		/**
+		 * Main chat from earlier connections plus our "*** Connected / Disconnected" status lines. The live
+		 * chat lives in the connection object, which is dropped on every disconnect; this keeps what the hub
+		 * said (e.g. why it kicked us) visible in hub chat afterwards, as in desktop DC clients.
+		 */
+		public final java.util.ArrayDeque<String> chatHistory = new java.util.ArrayDeque<>();
+		/** Last status line added, so repeated identical reconnect failures aren't listed over and over. */
+		String lastStatusText;
 
 		public HubSession(String ip, int port) {
 			this.hubIp = ip;
@@ -2818,15 +2826,66 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return hub != null ? hub.users() : new ArrayList<>();
 	}
 
+	private static final int CHAT_HISTORY_MAX = 500;
+
+	/** The live main chat of a session's current connection (empty when not connected). */
+	private List<String> liveBoardMessages(HubSession session) {
+		ArrayList<String> ret = new ArrayList<>();
+		DCClient client = session.client;
+		HubConnection hub = session.hub;
+		if (client != null) {
+			for (DCMessage msg : client.getBoardMessages()) ret.add(msg.msg_s);
+		} else if (hub instanceof AdcHubConnection) {
+			ret.addAll(((AdcHubConnection) hub).boardMessages());
+		}
+		return ret;
+	}
+
+	private void addChatHistory(HubSession session, java.util.Collection<String> lines) {
+		synchronized (session.chatHistory) {
+			for (String l : lines) {
+				if (l == null) continue;
+				session.chatHistory.addLast(l);
+				while (session.chatHistory.size() > CHAT_HISTORY_MAX) session.chatHistory.removeFirst();
+			}
+		}
+	}
+
+	/**
+	 * A "*** ..." status line in this hub's main chat (connected, disconnected and why), shown now if the chat is
+	 * open and kept across reconnects. A text equal to the previous status line is skipped (reconnect loops).
+	 */
+	private void postHubStatus(HubSession session, String text) {
+		if (session == null || text == null) return;
+		synchronized (session.chatHistory) {
+			if (text.equals(session.lastStatusText)) return;
+			session.lastStatusText = text;
+		}
+		String line = "*** [" + new java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(new java.util.Date())
+				+ "] " + text;
+		addChatHistory(session, java.util.Collections.singletonList(line));
+		DCCommand h = session.board_message_handler;
+		if (h != null) {
+			DCMessage m = new DCMessage();
+			m.command = "BoardMessage";
+			m.msg_s = line;
+			m.hubname_s = session.hubIp;
+			try {
+				h.onCommand(m);
+			} catch (Exception e) {
+				Log.w("andcpp", "Could not show hub status line: " + e);
+			}
+		}
+	}
+
 	public List<String> get_board_messages(String hubIp) {
 		ArrayList<String> ret = new ArrayList<String>();
 		HubSession session = sessionForUi(hubIp);
-		if (session != null && session.client != null) {
-			for(DCMessage msg: session.client.getBoardMessages()) {
-				ret.add(msg.msg_s);
+		if (session != null) {
+			synchronized (session.chatHistory) {
+				ret.addAll(session.chatHistory);
 			}
-		} else if (session != null && session.hub instanceof AdcHubConnection) {
-			ret.addAll(((AdcHubConnection) session.hub).boardMessages());
+			ret.addAll(liveBoardMessages(session));
 		}
 		return ret;
 	}
@@ -4162,6 +4221,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 				session.status = DCClientStatus.CONNECTED;
 				session.reconnectAttempts = 0; // Reset on success
+				postHubStatus(session, "Connected to " + session.address().toUrl());
 				// A hub we connected to stays in the saved hubs list (until "Delete Hub"), so it survives restarts.
 				HubListFragment.saveHub(DCPPService.this, session.address().id()); // NMDC: host[:port] as before
 				ensureForeground(session.hubIp);
@@ -4188,6 +4248,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 	
 	private void handleConnectionFailure(final String hubKey, final HubSession session, String message) {
+		// Keep what the hub said on this connection (often the kick / refusal reason) before it's dropped.
+		boolean wasLoggedIn = session.status == DCClientStatus.CONNECTED;
+		addChatHistory(session, liveBoardMessages(session));
 		if (session.client != null) {
 			if (session.client.downloadHandler != null) {
 				session.keptDownloads = session.client.downloadHandler; // build m
@@ -4204,8 +4267,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			session.hub = null;
 		}
 
+		String why = (message == null || message.trim().isEmpty()) ? "connection lost" : message.trim();
 		if (session.keyprintProblem != null) {
 			// Wrong / changed certificate: retrying can't help and may mean someone is in the middle.
+			postHubStatus(session, "Not connecting: the hub's certificate doesn't match its keyprint");
 			Log.w("andcpp", "Not reconnecting to " + session.address().toUrl() + ": " + session.keyprintProblem.replace('\n', ' '));
 			session.status = DCClientStatus.DISCONNECTED;
 			manageWakeLock();
@@ -4215,11 +4280,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 		if (session.blockedReason != null) {
 			Log.w("andcpp", "Not reconnecting to " + session.address().toUrl() + " (the hub asked us not to): " + session.blockedReason);
+			postHubStatus(session, (wasLoggedIn ? "Disconnected: " : "Hub refused the login: ") + session.blockedReason
+					+ " (not reconnecting automatically; press Connect to try again)");
 			session.status = DCClientStatus.DISCONNECTED;
 			manageWakeLock();
 			mySendBroadcast(session.hubIp, true, true);
 			return;
 		}
+		postHubStatus(session, (wasLoggedIn ? "Disconnected: " : "Could not connect: ") + why + " (reconnecting)");
 		if (session.status == DCClientStatus.RECONNECTING) {
 			return;
 		}

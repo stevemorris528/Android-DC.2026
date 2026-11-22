@@ -161,9 +161,10 @@ public class HubListFragment extends Fragment {
             optionsList.add("Connect");
             optionsList.add("Delete Hub");
         }
-        if (isFav) {
-            optionsList.add("Remove Hub");
-        } else {
+        if (isConnected || isConnectingOrReconnecting) {
+            optionsList.add("Disconnect Hub");
+        }
+        if (!isFav) {
             optionsList.add("Add to Favorite Hubs");
         }
         optionsList.add("Edit Nick & Password");
@@ -214,8 +215,15 @@ public class HubListFragment extends Fragment {
                         case "Connect":
                             adapter.connectToHub(entry.hubIp);
                             break;
+                        case "Disconnect Hub":
+                            // Disconnect only: the hub stays in the list (and favorites) to connect again later.
+                            if (mainActivity.mService != null && entry.session != null) {
+                                mainActivity.mService.shutdownSession(entry.session.address().sessionKey());
+                                Toast.makeText(getActivity(), "Disconnected from " + entry.session.hubIp, Toast.LENGTH_SHORT).show();
+                            }
+                            refresh();
+                            break;
                         case "Add to Favorite Hubs":
-                        case "Remove Hub":
                             adapter.toggleFavorite(entry.hubIp);
                             refresh();
                             break;

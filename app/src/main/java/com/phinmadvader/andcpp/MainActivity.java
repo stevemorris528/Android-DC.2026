@@ -651,6 +651,19 @@ public class MainActivity extends FragmentActivity implements
 				} else {
 					finish();
 				}
+				// Closing the screens and stopping the service leaves the app's process alive, and with it every
+				// in-memory state (e.g. PIA port forwarding's gateway / login state from the previous Wi-Fi), so a
+				// restart of the app could carry it over; only a phone reboot cleared it. End the process so Shutdown
+				// really turns the app off. The service is already stopped, so Android won't restart it. The delay
+				// lets the cleanup threads started above finish (router port mapping removal, state saving).
+				new Thread(() -> {
+					try {
+						Thread.sleep(1500);
+					} catch (InterruptedException ignored) {}
+					Log.i("andcpp", "Shutdown: ending the app process");
+					android.os.Process.killProcess(android.os.Process.myPid());
+					System.exit(0);
+				}, "AppShutdownKill").start();
 			});
 		}, "AppShutdown").start();
 	}
@@ -1141,6 +1154,24 @@ public class MainActivity extends FragmentActivity implements
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_PRIVATECHAT,
 					null, "PM: " + targetNick);
 			tab_page_adapter.move_to_last_page();
+		}
+	}
+
+	/** Closes one PM tab (the Close button on the tab). The messages stay in the service if the chat is reopened. */
+	public void close_private_chat(int index) {
+		if (privatechat_manager == null || tab_page_adapter == null) return;
+		if (index < 0 || index >= privatechat_manager.chat_stack.size()) return;
+		if (privatechat_manager.chat_stack.size() == 1) {
+			// Last PM: remove it and the PM tab together, so the pager never counts a visible but empty PM tab.
+			privatechat_manager.chat_stack.remove(index);
+			tab_page_adapter.hide_tab(TabPagerAdapter.TAB_PRIVATECHAT);
+			return;
+		}
+		privatechat_manager.closeChat(index); // notifies the pager
+		PrivateChatManager.PrivateChatEntry last =
+				privatechat_manager.getEntry(privatechat_manager.getStackSize() - 1);
+		if (last != null) {
+			tab_page_adapter.add_tab(TabPagerAdapter.TAB_PRIVATECHAT, null, "PM: " + last.nick, false);
 		}
 	}
 
