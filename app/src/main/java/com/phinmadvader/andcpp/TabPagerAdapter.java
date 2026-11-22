@@ -76,16 +76,108 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 			boolean notified = false;
 			if (tab_list[tabid] != null) {
 				if (actionbar != null) {
-					// Removing a tab makes the action bar select another one, which moves the pager.
 					// The pager must already know the new page count, or it throws
 					// "PagerAdapter changed the adapter's contents without calling notifyDataSetChanged".
 					notifyDataSetChanged();
 					notified = true;
-					actionbar.removeTab(tab_list[tabid]);
+					// Removing a tab makes the action bar select another one: ignore that, then put the
+					// action bar back on the page the user is actually on.
+					structuralChange = true;
+					try {
+						actionbar.removeTab(tab_list[tabid]);
+					} finally {
+						structuralChange = false;
+					}
 				}
 				tab_list[tabid] = null;
 			}
 			if (notify && !notified) notifyDataSetChanged();
+			syncActionBarToPage();
+		}
+	}
+
+	// ---- Keep the user on the tab they are viewing when other tabs appear or disappear ----
+
+	/** True while tabs are added/removed: selection callbacks from that are not user navigation. */
+	private boolean structuralChange = false;
+	/** Tab the user is viewing (TAB_*), and the page inside it (file list folder / PM index). */
+	private int shownTabId = TAB_WELCOME;
+	private int shownSubPage = 0;
+
+	private int pagesOf(int tabid) {
+		if (tabid == TAB_FILELIST) return filelist_manager != null ? filelist_manager.getStackSize() : 0;
+		if (tabid == TAB_PRIVATECHAT) return privatechat_manager != null ? privatechat_manager.getStackSize() : 0;
+		return 1;
+	}
+
+	/** First pager page of a visible tab. */
+	private int firstPageOf(int tabid) {
+		int pos = 0;
+		for (int i = 0; i < tabid; i++) if (tab_is_visible[i]) pos += pagesOf(i);
+		return pos;
+	}
+
+	/** Action bar index of a visible tab. */
+	private int actionBarIndexOf(int tabid) {
+		int idx = 0;
+		for (int i = 0; i < tabid; i++) if (tab_list[i] != null) idx++;
+		return idx;
+	}
+
+	private void rememberShownPage(int position) {
+		int tabid = get_tabid(position);
+		if (tabid < 0) return;
+		shownTabId = tabid;
+		shownSubPage = position - firstPageOf(tabid);
+	}
+
+	/**
+	 * Every getItemPosition() is POSITION_NONE, so after a change the pager keeps its old page NUMBER:
+	 * when a tab is inserted or removed in front of it (hub Chat/Users on connect/disconnect, Search
+	 * Results, PM) the user was moved to a different tab. Put them back on the tab they were viewing.
+	 */
+	@Override
+	public void notifyDataSetChanged() {
+		boolean wasStructural = structuralChange;
+		structuralChange = true; // the pager may report a clamped page while it updates
+		try {
+			super.notifyDataSetChanged();
+			if (viewpager == null || viewpager.getAdapter() != this) return;
+			int target;
+			if (shownTabId >= 0 && tab_is_visible[shownTabId]) {
+				int pages = pagesOf(shownTabId);
+				target = firstPageOf(shownTabId) + Math.max(0, Math.min(shownSubPage, pages - 1));
+			} else {
+				// The tab being viewed went away (e.g. hub Chat after disconnect): show the hub list.
+				int fallback = tab_is_visible[TAB_HUBLIST] ? TAB_HUBLIST : TAB_WELCOME;
+				target = tab_is_visible[fallback] ? firstPageOf(fallback) : 0;
+			}
+			int count = getCount();
+			if (count > 0 && target >= 0 && target < count && viewpager.getCurrentItem() != target) {
+				viewpager.setCurrentItem(target, false);
+			}
+		} finally {
+			structuralChange = wasStructural;
+		}
+		if (viewpager != null && viewpager.getAdapter() == this) rememberShownPage(viewpager.getCurrentItem());
+		syncActionBarToPage();
+	}
+
+	/** Highlights the action bar tab that owns the pager's current page, without moving the pager. */
+	private void syncActionBarToPage() {
+		if (actionbar == null || viewpager == null || viewpager.getAdapter() != this) return;
+		int tabid = get_tabid(viewpager.getCurrentItem());
+		if (tabid < 0 || tab_list[tabid] == null) return;
+		int idx = actionBarIndexOf(tabid);
+		if (idx >= actionbar.getTabCount() || actionbar.getSelectedNavigationIndex() == idx) return;
+		boolean was = structuralChange;
+		structuralChange = true;
+		try {
+			actionbar.setSelectedNavigationItem(idx);
+		} catch (Exception e) {
+			Log.e("andcpp", "Failed to sync selected tab", e);
+		} finally {
+			structuralChange = was;
 		}
 	}
 
@@ -112,7 +204,12 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 				if (tab_list[tabid] != null) {
 					tab_list[tabid].setTabListener(this);
 					active_tab_count++;
-					actionbar.addTab(tab_list[tabid], tabpos, false);
+					structuralChange = true;
+					try {
+						actionbar.addTab(tab_list[tabid], tabpos, false);
+					} finally {
+						structuralChange = false;
+					}
 				}
 			}
 		}
@@ -208,19 +305,11 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 
 	@Override
 	public void onPageSelected(int position) {
-		if (actionbar != null) {
-			// Set tab to filelist; (last tab) if position out of range
-			if (position >= active_tab_count)
-				position = active_tab_count - 1;
-			
-			if (position >= 0 && position < actionbar.getTabCount()) {
-				try {
-					actionbar.setSelectedNavigationItem(position);
-				} catch (Exception e) {
-					Log.e("andcpp", "Error setting selected tab at position " + position, e);
-				}
-			}
-		}
+		if (structuralChange) return; // pager settling after tabs changed, not the user moving
+		rememberShownPage(position);
+		// Pager pages and action bar tabs differ once a file list has several folders open (one tab,
+		// many pages): map through the tab id instead of using the page number as the tab index.
+		syncActionBarToPage();
 	}
 
 	public Fragment get_tab_fragment(int tabid) {
@@ -248,15 +337,27 @@ public class TabPagerAdapter extends FragmentStatePagerAdapter implements
 
 	@Override
 	public void onTabSelected(Tab tab, FragmentTransaction ft) {
+		if (structuralChange) return; // the action bar picked a tab because one was added/removed
 		if (viewpager != null) {
+			int tabid = -1;
+			for (int i = 0; i < TOTAL_TABS; i++) {
+				if (tab_list[i] == tab) {
+					tabid = i;
+					break;
+				}
+			}
+			if (tabid < 0) return;
+			// Already on a page of this tab (e.g. a deeper file list folder): don't move.
+			if (get_tabid(viewpager.getCurrentItem()) == tabid) return;
+			int page = get_tab_position(tabid);
 			try {
-				viewpager.setCurrentItem(tab.getPosition());
+				viewpager.setCurrentItem(page);
 			} catch (IllegalStateException e) {
 				// Page count changed without the pager being told yet: tell it, then retry once.
 				Log.w("andcpp", "Pager out of sync on tab select; refreshing", e);
 				notifyDataSetChanged();
 				try {
-					viewpager.setCurrentItem(tab.getPosition());
+					viewpager.setCurrentItem(get_tab_position(tabid));
 				} catch (IllegalStateException e2) {
 					Log.e("andcpp", "Could not switch tab after refresh", e2);
 				}
