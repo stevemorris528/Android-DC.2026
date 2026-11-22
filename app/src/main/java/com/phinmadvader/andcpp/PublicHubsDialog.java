@@ -37,6 +37,8 @@ import java.util.List;
 public class PublicHubsDialog {
     private static final String TAG = "PublicHubsDialog";
     public static final String DEFAULT_HUBLIST_URL = "http://hublist.pwiam.com/hublist.xml.bz2";
+    /** Second hub list saved on a fresh install. */
+    public static final String DCHUBLIST_URL = "https://dchublist.org/hublist.xml.bz2";
     private static final String PREF_HUBLIST_URLS = "saved_hublist_urls";
     private static final String PREF_SELECTED_HUBLIST_URL = "selected_hublist_url";
 
@@ -137,6 +139,7 @@ public class PublicHubsDialog {
         }
         if (list.isEmpty()) {
             list.add(DEFAULT_HUBLIST_URL);
+            list.add(DCHUBLIST_URL);
             saveUrls(list);
         }
         return list;

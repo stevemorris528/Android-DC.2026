@@ -4023,6 +4023,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	/** Remembers a hub's name for the hub list (also while offline) and refreshes the UI. */
 	private void rememberHubName(HubSession session, String name) {
 		if (name == null || name.trim().isEmpty()) return;
+		// ADC hubs resend their info (IINF) every minute or so. Each refresh rebuilt every tab (screen flicker,
+		// tab jumping), so only an actual name change is saved and broadcast.
+		if (name.equals(session.hubName)) return;
 		session.hubName = name;
 		try {
 			SharedPreferences p = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
