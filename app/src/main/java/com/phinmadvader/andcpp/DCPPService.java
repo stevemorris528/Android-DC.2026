@@ -1702,8 +1702,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 */
 	public boolean isConnectivityDecided() {
 		ConnectivityDetector.Result r = connectivityResult;
-		return r != null && !r.reason.startsWith("VPN active, waiting");
+		return r != null && !networkRecheckPending && !r.reason.startsWith("VPN active, waiting");
 	}
+
+	/**
+	 * Set when the network changed and active/passive is being re-checked (through the VPN: PIA confirming the
+	 * forwarded port). Hubs reconnect only once this is cleared, so they log in once, with the final mode.
+	 */
+	private volatile boolean networkRecheckPending = false;
+	/** Bumped on every network change; a pending hub reconnect for an older change is dropped. */
+	private int networkReconnectGen = 0;
 
 	/**
 	 * Runs action on the main thread as soon as active/passive is decided, or after timeoutMs at the latest
@@ -1841,6 +1849,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	/** Sets every hub session to the detected mode; re-sends $MyINFO where it changed. Runs off the UI thread. */
 	private void applyConnectivity(ConnectivityDetector.Result r, String why) {
 		ConnectivityDetector.Result old = connectivityResult;
+		boolean waitingForPia = r.reason.startsWith("VPN active, waiting");
+		if (waitingForPia && networkRecheckPending && old != null && old.active) {
+			// Network changed and PIA is re-checking the port: stay active meanwhile. Going passive here
+			// re-announced us to the hubs as passive and then active again a second later.
+			Log.i("andcpp", "Connection mode (" + why + "): keeping " + old.describe() + " while PiA re-checks the port");
+			return;
+		}
+		if (!waitingForPia) networkRecheckPending = false;
 		connectivityResult = r;
 		Log.i("andcpp", "Connection mode (" + why + "): " + r.describe());
 		boolean changed = old == null || old.active != r.active
@@ -3186,12 +3202,32 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			retryPendingDownloads();
 		}
 		// When it becomes blocked, running downloads park themselves in the worker loop.
-		// Uploads are stopped here: peers retry later and get $MaxedOut until Wi-Fi is back.
-		if (!wasBlocked && blocked && uploadManager != null) {
-			int n = uploadManager.stopAllUploads();
-			Log.i("andcpp", "Wi-Fi only is on and we're on mobile data: stopped " + n + " upload connection(s)");
+		// Uploads get a grace period first: a Wi-Fi to Wi-Fi switch passes through mobile data for a few
+		// seconds, and stopping the upload then made the other client wait minutes before it retried.
+		if (!wasBlocked && blocked) {
+			uploadBlockedSince = System.currentTimeMillis();
+			networkEventHandler.removeCallbacks(stopUploadsOnMobileData);
+			networkEventHandler.postDelayed(stopUploadsOnMobileData, WIFI_ONLY_UPLOAD_GRACE_MS);
+			Log.i("andcpp", "Wi-Fi only is on and we're on mobile data: uploads stop in "
+					+ (WIFI_ONLY_UPLOAD_GRACE_MS / 1000) + " s unless Wi-Fi is back");
+		} else if (!blocked) {
+			uploadBlockedSince = 0L;
+			networkEventHandler.removeCallbacks(stopUploadsOnMobileData);
 		}
 	}
+
+	/** How long uploads keep going on mobile data with Wi-Fi only on (covers a Wi-Fi to Wi-Fi handover). */
+	private static final long WIFI_ONLY_UPLOAD_GRACE_MS = 20000L;
+	/** After a network change through the VPN: uploads that send nothing for this long are closed. */
+	private static final long UPLOAD_STALL_CHECK_MS = 30000L;
+	/** When Wi-Fi only started blocking (we went onto mobile data), or 0. */
+	private volatile long uploadBlockedSince = 0L;
+
+	private final Runnable stopUploadsOnMobileData = () -> {
+		if (!downloadsBlockedByNetwork || uploadManager == null) return;
+		int n = uploadManager.stopAllUploads();
+		Log.i("andcpp", "Wi-Fi only is on and we're still on mobile data: stopped " + n + " upload connection(s)");
+	};
 
 	/** May be null before the service has started listening. */
 	/** ADC client-to-client transfers (connection setup, downloads; uploads go through UploadManager). */
@@ -3218,7 +3254,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	/** True while "Wi-Fi only" is on and the active link is mobile data: no uploads are served. */
 	public boolean isUploadBlockedByNetwork() {
-		return downloadsBlockedByNetwork;
+		long since = uploadBlockedSince;
+		return downloadsBlockedByNetwork
+				&& (since == 0L || System.currentTimeMillis() - since >= WIFI_ONLY_UPLOAD_GRACE_MS);
 	}
 
 	/**
@@ -3285,6 +3323,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			long now = System.currentTimeMillis();
 			if (networkChanged && now - lastNetworkRestartAt > 5000) {
 				lastNetworkRestartAt = now;
+				networkRecheckPending = true; // before anything waits on the mode: hubs reconnect after the re-check
 				Log.i("andcpp", "Network changed; restarting active downloads");
 				closeTransfersOfOldNetwork();
 				restartDownloadsAfterNetworkChange();
@@ -3303,17 +3342,40 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 * reconnects and resumes where it stopped, and the hubs reconnect from the new network.
 	 */
 	private void closeTransfersOfOldNetwork() {
-		if (uploadManager != null) {
+		if (uploadManager != null && isVpnActive()) {
+			// Through the VPN our address stays the same and an upload usually survives the switch: closing it
+			// made the other client wait minutes before retrying. Only close the ones that stopped moving.
+			final Map<PeerConnectionHandler, Long> before = uploadManager.snapshotUploadProgress();
+			if (!before.isEmpty()) {
+				Log.i("andcpp", "Network changed (VPN): keeping " + before.size()
+						+ " upload connection(s); closing any that send nothing in " + (UPLOAD_STALL_CHECK_MS / 1000) + " s");
+				networkEventHandler.postDelayed(() -> {
+					int n = uploadManager.stopStalledUploads(before);
+					if (n > 0) Log.i("andcpp", "Network changed: closed " + n + " stalled upload connection(s); peers will reconnect");
+				}, UPLOAD_STALL_CHECK_MS);
+			}
+		} else if (uploadManager != null) {
 			int n = uploadManager.stopAllUploads();
 			if (n > 0) Log.i("andcpp", "Network changed: closed " + n + " upload connection(s); peers will reconnect");
 		}
-		for (HubSession s : getActiveSessions()) {
-			if (s.status == DCClientStatus.CONNECTED || s.status == DCClientStatus.CONNECTING) {
-				Log.i("andcpp", "Network changed: reconnecting hub " + s.hubIp);
-				reconnectHub(s.hubIp);
+		// Reconnect the hubs once, after port forwarding is confirmed for the new network, so they log in
+		// with the final active/passive mode instead of connecting now and again when the port comes back.
+		final int gen = ++networkReconnectGen;
+		Log.i("andcpp", "Network changed: hubs reconnect once the connection mode is confirmed");
+		whenConnectivityDecided(() -> {
+			if (gen != networkReconnectGen) return; // a newer network change reconnects them
+			networkRecheckPending = false; // timed out waiting: go on with what we have
+			for (HubSession s : getActiveSessions()) {
+				if (s.status == DCClientStatus.CONNECTED || s.status == DCClientStatus.CONNECTING) {
+					Log.i("andcpp", "Network changed: reconnecting hub " + s.hubIp);
+					reconnectHub(s.hubIp);
+				}
 			}
-		}
+		}, NETWORK_RECHECK_TIMEOUT_MS);
 	}
+
+	/** Longest wait for the connection mode after a network change before the hubs reconnect anyway. */
+	private static final long NETWORK_RECHECK_TIMEOUT_MS = 20000L;
 
 	private ConnectivityManager.NetworkCallback physicalNetworkCallback;
 	private final Handler networkEventHandler = new Handler(Looper.getMainLooper());
@@ -3441,7 +3503,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private void handlePIAPortBound(String portStr) {
 		ConnectivityDetector.Result r = connectivityResult;
 		String expected = "PiA port forwarding, port " + portStr; // must match the reason text set in detection
-		if (r != null && r.active && expected.equals(r.reason)
+		if (!networkRecheckPending && r != null && r.active && expected.equals(r.reason)
 				&& uploadManager != null && String.valueOf(uploadManager.getPort()).equals(portStr)) {
 			return; // keep-alive of the port we already use
 		}

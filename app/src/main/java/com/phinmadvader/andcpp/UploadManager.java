@@ -403,6 +403,30 @@ public class UploadManager {
         return n;
     }
 
+    /** Bytes sent so far by each open upload connection, for {@link #stopStalledUploads}. */
+    public Map<PeerConnectionHandler, Long> snapshotUploadProgress() {
+        Map<PeerConnectionHandler, Long> m = new java.util.HashMap<>();
+        for (PeerConnectionHandler h : activeUploads.values()) {
+            if (!h.isFinished()) m.put(h, h.getBytesSent());
+        }
+        return m;
+    }
+
+    /**
+     * Closes the uploads from {@code before} that sent nothing since then (the connection died with the old
+     * network). Uploads that kept going are left alone. Returns how many were closed.
+     */
+    public int stopStalledUploads(Map<PeerConnectionHandler, Long> before) {
+        int n = 0;
+        for (Map.Entry<PeerConnectionHandler, Long> e : before.entrySet()) {
+            PeerConnectionHandler h = e.getKey();
+            if (h.isFinished() || h.getBytesSent() != e.getValue()) continue;
+            h.stop("no data sent since the network changed");
+            n++;
+        }
+        return n;
+    }
+
     /** Closes every upload connection to this nick. Returns how many were closed. */
     public int stopUploadsTo(String nick) {
         int n = 0;
