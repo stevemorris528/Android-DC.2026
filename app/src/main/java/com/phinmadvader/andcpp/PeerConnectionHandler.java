@@ -437,6 +437,32 @@ public class PeerConnectionHandler implements Runnable {
         throw new IOException("Handshake failed: Peer identity or challenge not received");
     }
 
+    /** How long an incoming connection waits for the peer's $Direction to tell our download from its download. */
+    private static final long DIRECTION_WAIT_MS = 5000;
+
+    /**
+     * Waits for the peer's $Direction (or its first request) after the $Lock exchange; keeps whatever phase 2
+     * needs ($Key, $Direction, the request) in the early* fields. Returns without throwing on timeout.
+     */
+    private void awaitDirection(MessageHandler handler, long deadline) throws IOException, InterruptedException {
+        while (System.currentTimeMillis() < deadline) {
+            DCMessage m = handler.getNextMessage(500, TimeUnit.MILLISECONDS);
+            if (m == null) continue;
+            if ("HubQuit".equals(m.command)) throw new IOException("Peer closed connection during handshake");
+            if ("Key".equals(m.command)) {
+                earlyKey = true;
+            } else if ("Direction".equals(m.command)) {
+                earlyDirection = m;
+                Log.d("andcpp", "Received $Direction from " + hisNick + ": " + (m.dir_download ? "Download" : "Upload"));
+                return;
+            } else if ("Get".equals(m.command) || "ADCGET".equals(m.command)) {
+                earlyRequest = m;
+                return;
+            }
+        }
+        Log.d("andcpp", "No $Direction from " + hisNick + " within " + DIRECTION_WAIT_MS + " ms");
+    }
+
     private boolean performHandshake(MessageHandler handler, DCUser myUser) throws IOException, InterruptedException {
         long handshakeTimeout = 15000;
         long startTime = System.currentTimeMillis();
@@ -489,39 +515,49 @@ public class PeerConnectionHandler implements Runnable {
             this.hisNick = hisNickMsg.hisinfo.nick;
 
             if (isServer) {
-                com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity pendingDownload = null;
+                // Do we have a download pending from this peer? Only look for now (claiming removes it from the
+                // queue): the peer may have connected to download from US.
                 com.phinvader.libjdcpp.DCClient matchClient = null;
                 DCUser correctMyUser = null;
                 for (DCPPService.HubSession s : uploadManager.getService().getActiveSessions()) {
                     if (s.client != null && s.client.downloadHandler != null
                             && s.client.downloadHandler.hasPendingFor(hisNick)) {
-                        pendingDownload = s.client.downloadHandler.getDownloadEntityCaseInsensitive(hisNick);
-                        if (pendingDownload != null) {
-                            correctMyUser = s.myuser;
-                            matchClient = s.client;
-                            break;
-                        }
+                        correctMyUser = s.myuser;
+                        matchClient = s.client;
+                        break;
                     }
                 }
-                if (pendingDownload != null) {
-                    // The peer connected to our listening port because we sent it $ConnectToMe: this is our download.
-                    Log.d("andcpp", "Intercepted incoming connection as pending active download for " + hisNick);
-                    handler.send_mynick(correctMyUser);
-                    handler.send_lock();
-                    if (hisLock == null) hisLock = awaitLock(handler, startTime + handshakeTimeout);
-
-                    DCMessage rlockMsg = new DCMessage();
-                    rlockMsg.lock_s = hisLock;
-                    matchClient.startDownloadingFile(pendingDownload, matchClient, rlockMsg, handler);
-
-                    return false;
-                }
-
-                // Normal upload server path: answer with $MyNick then $Lock.
-                handler.send_mynick(myUser);
+                handler.send_mynick(matchClient != null && correctMyUser != null ? correctMyUser : myUser);
                 handler.send_lock();
                 sentOrder.append("MyNick, Lock, ");
                 if (hisLock == null) hisLock = awaitLock(handler, startTime + handshakeTimeout);
+
+                if (matchClient != null) {
+                    // A peer that connects because of our $ConnectToMe says "$Direction Upload". One that wants to
+                    // download from us says "Download" (or sends its request): that's an upload, not our download.
+                    // Taking every such connection for our download hid the peer's upload (not in Transfers) and
+                    // stalled it until the peer reconnected another way.
+                    if (earlyDirection == null && earlyRequest == null) {
+                        awaitDirection(handler, System.currentTimeMillis() + DIRECTION_WAIT_MS);
+                    }
+                    boolean peerWantsToDownload = earlyRequest != null
+                            || (earlyDirection != null && earlyDirection.dir_download);
+                    if (!peerWantsToDownload) {
+                        com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity pendingDownload =
+                                matchClient.downloadHandler.getDownloadEntityCaseInsensitive(hisNick);
+                        if (pendingDownload != null) {
+                            Log.d("andcpp", "Intercepted incoming connection as pending active download for " + hisNick);
+                            DCMessage rlockMsg = new DCMessage();
+                            rlockMsg.lock_s = hisLock;
+                            matchClient.startDownloadingFile(pendingDownload, matchClient, rlockMsg, handler);
+                            return false;
+                        }
+                    } else {
+                        Log.d("andcpp", hisNick + " connected to download from us: serving it as an upload"
+                                + " (our pending download from " + hisNick + " stays queued)");
+                    }
+                }
+                // Upload server path: continue with phase 2 below.
             }
         }
 
