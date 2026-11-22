@@ -20,6 +20,7 @@ public class DCMessage {
 	public DCUser myinfo;
 	public DCUser hisinfo;
 	public String quit_s;
+	public String[] oplist; // $OpList: operator nicks
 	public String error_s;
 	public String host_name; // ConnectToMe
 	public int port_number; // ConnectToMe
@@ -369,6 +370,16 @@ public class DCMessage {
 					} else {
 						quit_s = "";
 					}
+				} else if (command.equals("OpList")) {
+					// $OpList nick1$$nick2$$
+					java.util.List<String> ops = new java.util.ArrayList<String>();
+					if (input.length > beg + 1) {
+						for (String n : latin1(input, beg + 1, input.length - beg - 1).split("\\$\\$")) {
+							n = n.replace("|", "").trim();
+							if (!n.isEmpty()) ops.add(n);
+						}
+					}
+					oplist = ops.toArray(new String[0]);
 				} else if (command.equals("MaxedOut")) {
 					parse_success = true;
 				} else if (command.equals("Error")) {

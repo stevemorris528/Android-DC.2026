@@ -323,6 +323,23 @@ public class UserListFragment extends Fragment {
 		});
 	}
 
+	/** NMDC $OpList: mark the listed users as operators so their icon changes. */
+	public void markOps(final DCMessage msg) {
+		if (msg == null || msg.oplist == null) return;
+		if (currentHubIp != null && msg.hubname_s != null) {
+			if (!currentHubIp.equals(msg.hubname_s) && !currentHubIp.startsWith(msg.hubname_s) && !msg.hubname_s.startsWith(currentHubIp)) {
+				return;
+			}
+		}
+		workerExecutor.execute(() -> {
+			for (String n : msg.oplist) {
+				DCUserComparable u = nickMap.get(n.toLowerCase());
+				if (u != null) u.op = true;
+			}
+			scheduleFilterUpdate();
+		});
+	}
+
 	public void clearNicklistConstraints() {
 		if (mainActivity == null || !is_ready) return;
 		workerExecutor.execute(() -> {

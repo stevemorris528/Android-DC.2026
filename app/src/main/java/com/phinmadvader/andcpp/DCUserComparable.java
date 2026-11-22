@@ -12,6 +12,7 @@ public class DCUserComparable extends DCUser implements Comparable<DCUser>{
 	public int compareTo(DCUser another) {
 		if (another == null || another.nick == null) return 1;
 		if (this.nick == null) return -1;
+		if (this.op != another.op) return this.op ? -1 : 1; // operators always at the top
 		return this.nick.compareToIgnoreCase(another.nick);
 	}
 
@@ -43,6 +44,7 @@ public class DCUserComparable extends DCUser implements Comparable<DCUser>{
 
 		@Override
 		public int compare(DCUserComparable arg0, DCUserComparable arg1) {
+			if (arg0.op != arg1.op) return arg0.op ? -1 : 1; // operators always at the top
 			return (int)arg0.share_size - (int)arg1.share_size;
 		}
 		

@@ -220,6 +220,10 @@ public class MainActivity extends FragmentActivity implements
 					if (userlist_fragment != null && userlist_fragment.is_ready)
 						userlist_fragment.delNick(msg);
 					break;
+				case "OpList":
+					if (userlist_fragment != null && userlist_fragment.is_ready)
+						userlist_fragment.markOps(msg);
+					break;
 				case "SR":
 					if (searchresult_fragment != null)
 						searchresult_fragment.add_search_result(msg);

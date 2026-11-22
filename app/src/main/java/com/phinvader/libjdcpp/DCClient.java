@@ -220,6 +220,7 @@ public class DCClient {
 
 		mainMessageRouter.subscribe("MyINFO", mainUserHandler);
 		mainMessageRouter.subscribe("Quit", mainUserHandler);
+		mainMessageRouter.subscribe("OpList", mainUserHandler);
 		mainMessageRouter.subscribe("BoardMessage", mainBoardMessageHandler);
 		mainMessageRouter.subscribe("ConnectToMe", mainDownloader);
 		Thread routing_thread = new Thread(mainMessageRouter);
@@ -245,6 +246,7 @@ public class DCClient {
 	public void setCustomUserChangeHandler(DCCommand handler) {
 		mainMessageRouter.customSubscribe("MyINFO", handler);
 		mainMessageRouter.customSubscribe("Quit", handler);
+		mainMessageRouter.customSubscribe("OpList", handler);
 	}
 
 	public DCDownloader.DownloadQueueEntity startPassiveDownload(

@@ -15,6 +15,8 @@ public class UsersHandler implements DCCommand {
 	 * @author madhavan
 	 */
 	public final Set<DCUser> nick_q = new HashSet<DCUser>();
+	/** Nicks named in $OpList (NMDC operators). */
+	private final Set<String> opNicks = java.util.Collections.synchronizedSet(new HashSet<String>());
 
 	/**
 	 * Add a user to the list-of-online-users Updated when there is a MYINFO
@@ -77,8 +79,23 @@ public class UsersHandler implements DCCommand {
 			if (nick_to_delete != null)
 				deleteNick(nick_to_delete);
 		} else if (command.equals("MyINFO")) {
-			if (msg.myinfo != null)
+			if (msg.myinfo != null) {
+				if (msg.myinfo.nick != null && opNicks.contains(msg.myinfo.nick)) msg.myinfo.op = true;
+				// Replace the stored entry: HashSet.add keeps the old one, so updates (mode, op) never showed.
+				synchronized (nick_q) {
+					nick_q.remove(msg.myinfo);
+				}
 				addNick(msg.myinfo);
+			}
+		} else if (command.equals("OpList")) {
+			// NMDC: often arrives after the users' $MyINFO. Mark those already listed; later $MyINFO use opNicks.
+			if (msg.oplist == null) return;
+			synchronized (nick_q) {
+				for (String n : msg.oplist) opNicks.add(n);
+				for (DCUser u : nick_q) {
+					if (u.nick != null && opNicks.contains(u.nick)) u.op = true;
+				}
+			}
 		}
 	}
 
