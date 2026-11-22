@@ -500,7 +500,7 @@ public class MainActivity extends FragmentActivity implements
 				+ "<p>Full credit to the original developers for their open-source contribution. This project builds upon their original work.</p>"
 				+ "<p>Original project: AnDCpp</p>"
 				+ "<p>Developed further by the Android DC++ project.</p>"
-				+ "<p>GitHub Source Code: <a href=\"https://github.com/stevemorris528/Android-DC.2026/blob/master/README.md\">&#x2B07;&#xFE0F;</a></p>"
+				+ "<p>APK &amp; Source Code:&nbsp;&nbsp;&nbsp;<a href=\"https://github.com/stevemorris528/Android-DC.2026\"><b><big>&#x2B07;&#xFE0E;</big></b></a></p>"
 				// Filled in by Gradle on every build (see app/build.gradle)
 				+ "<p>Version " + BuildConfig.VERSION_NAME + " &middot; " + BuildConfig.BUILD_DATE + "</p>"
 				// Our identity on ADC / secure hubs (long-press the text to copy it)
@@ -514,6 +514,7 @@ public class MainActivity extends FragmentActivity implements
 			textView.setText(Html.fromHtml(aboutHtml));
 		}
 		textView.setMovementMethod(LinkMovementMethod.getInstance());
+		textView.setLinkTextColor(0xFF2E7D32); // green download arrow (the only link)
 		int padding = (int) (18 * getResources().getDisplayMetrics().density);
 		textView.setPadding(padding, padding / 2, padding, padding / 2);
 		textView.setTextSize(14);
