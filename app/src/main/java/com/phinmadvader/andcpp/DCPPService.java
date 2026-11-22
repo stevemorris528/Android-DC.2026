@@ -1963,6 +1963,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public void download_file(final String nick, final String local_file,
 			final String remote_file, final long file_size, final String groupLabel, final String groupName) {
 		String hubIp = hubKeyWhereOnline(nick); // ADC users must be downloaded through their ADC hub
+		if (hubIp == null) { // user not seen: prefer a connected hub over whichever is first in the map
+			for (Map.Entry<String, HubSession> e : sessions.entrySet()) {
+				if (e.getValue().status == DCClientStatus.CONNECTED) { hubIp = e.getKey(); break; }
+			}
+		}
 		if (hubIp == null && !sessions.isEmpty()) {
 			hubIp = sessions.keySet().iterator().next();
 		}
@@ -2731,6 +2736,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			hubIp = sessions.keySet().iterator().next();
 		}
 		return get_status(hubIp);
+	}
+
+	/**
+	 * True if a download from this user can be queued: a connected hub has the user, or (user not seen)
+	 * at least one hub is connected. Unlike get_status(), a down hub that happens to be first in the
+	 * session map (e.g. one stuck reconnecting) doesn't block downloads from users on the other hubs.
+	 */
+	public boolean canDownloadFrom(String nick) {
+		if (hubKeyWhereOnline(nick) != null) return true;
+		for (HubSession s : sessions.values()) {
+			if (s.status == DCClientStatus.CONNECTED) return true;
+		}
+		return false;
 	}
 
 	/**

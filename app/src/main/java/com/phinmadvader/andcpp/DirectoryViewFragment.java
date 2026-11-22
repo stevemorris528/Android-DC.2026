@@ -71,7 +71,7 @@ public class DirectoryViewFragment extends Fragment {
 							.setTitle("Download Folder")
 							.setMessage("Do you want to download the entire folder '" + selectedFile.name + "' and all its contents?")
 							.setPositiveButton("Download", (dialog, which) -> {
-								if (mainActivity.mService != null && mainActivity.mService.get_status() == DCPPService.DCClientStatus.CONNECTED) {
+								if (mainActivity.mService != null && mainActivity.mService.canDownloadFrom(nickAtPress)) {
 									String remotePath = remotePathAtPress;
 
 									String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + selectedFile.name;
@@ -105,7 +105,7 @@ public class DirectoryViewFragment extends Fragment {
 						.setMessage(String.format(java.util.Locale.US, "Do you want to download the file '%s' (%.2f %s)?",
 								selectedFile.name, fs.fileSize, fs.unit))
 						.setPositiveButton("Download", (dialog, which) -> {
-							if (mainActivity.mService != null && mainActivity.mService.get_status() == DCPPService.DCClientStatus.CONNECTED) {
+							if (mainActivity.mService != null && mainActivity.mService.canDownloadFrom(nickAtPress)) {
 								mainActivity.mService.download_file(nickAtPress, localPath, remotePathAtPress, selectedFile.size);
 								Toast.makeText(getActivity(), "Started download: " + selectedFile.name, Toast.LENGTH_SHORT).show();
 							} else {
@@ -138,7 +138,7 @@ public class DirectoryViewFragment extends Fragment {
 								return;
 							}
 
-							if (mainActivity == null || mainActivity.mService == null || mainActivity.mService.get_status() != DCPPService.DCClientStatus.CONNECTED) {
+							if (mainActivity == null || mainActivity.mService == null || !mainActivity.mService.canDownloadFrom(mainActivity.chosenNick)) {
 								Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
 								return;
 							}
