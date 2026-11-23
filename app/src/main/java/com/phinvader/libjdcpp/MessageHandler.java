@@ -26,6 +26,7 @@ public class MessageHandler {
 	public static final java.util.concurrent.atomic.AtomicLong totalDownloadedBytes =
 			new java.util.concurrent.atomic.AtomicLong(0);
 	private final ArrayBlockingQueue<DCMessage> message_queue;
+	private int shareDiagCount = 0; // TEMP diagnostic
 	Thread input_handler_thread;
 	private long dump_bytes_limit = 0;
 	private volatile long lastReceivedAt = System.currentTimeMillis();
@@ -113,7 +114,16 @@ public class MessageHandler {
 							break;
 						}
 						if (b == '|') {
-							addMessage(DCMessage.parse_message(messageBuffer.toByteArray()));
+							byte[] raw = messageBuffer.toByteArray();
+							if (raw.length > 8 && raw[0] == '$' && raw[1] == 'M' && raw[3] == 'I') {
+								// TEMP diagnostic: first few raw $MyINFO lines from the hub, and every one about us
+								String rs = new String(raw, "ISO-8859-1");
+								if (shareDiagCount < 6 || rs.contains(" AndroidDC++(")) {
+									shareDiagCount++;
+									android.util.Log.i("andcpp", "[SHARE] raw " + rs.replace('\u0001', '#'));
+								}
+							}
+							addMessage(DCMessage.parse_message(raw));
 							messageBuffer.reset();
 						} else {
 							messageBuffer.write(b);
@@ -391,6 +401,7 @@ public class MessageHandler {
 		msg += (char) myuser.speed_id;
 		msg += "$" + myuser.email + "$";
 		msg += Long.toString(myuser.share_size) + "$";
+		android.util.Log.i("andcpp", "[SHARE] sending " + msg.replace((char) myuser.speed_id, '#')); // TEMP diagnostic
 		send_msg(msg);
 	}
 }

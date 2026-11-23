@@ -2669,6 +2669,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	private volatile long lastShareDiagLog = 0; // TEMP diagnostic, see MyUserInfoHandler
+
 	private class MyUserInfoHandler implements DCCommand {
 		private String hubKey;
 		public MyUserInfoHandler(String hubKey) { this.hubKey = hubKey; }
@@ -2678,6 +2680,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (session != null && session.myuser != null && msg.myinfo != null && msg.myinfo.nick.equals(session.myuser.nick)) {
 				// Some hubs send our IP in $MyINFO
 				// The parser doesn't extract IP from MyINFO, but we could check if needed.
+			}
+			// TEMP diagnostic (share not shown): what the hub says about us, and a sample of other users.
+			if (msg.myinfo != null && msg.myinfo.nick != null) {
+				boolean ours = session != null && session.myuser != null && msg.myinfo.nick.equals(session.myuser.nick);
+				long now = System.currentTimeMillis();
+				if (ours || now - lastShareDiagLog > 60000) {
+					if (!ours) lastShareDiagLog = now;
+					Log.i("andcpp", "[SHARE] " + hubKey + " $MyINFO for " + msg.myinfo.nick + (ours ? " (us)" : "")
+							+ ": share=" + msg.myinfo.share_size + " tag=" + msg.myinfo.tag);
+				}
 			}
 			if (msg.myinfo != null && msg.myinfo.nick != null) {
 				retryDownloadsOfUserBackOnline(msg.myinfo.nick);

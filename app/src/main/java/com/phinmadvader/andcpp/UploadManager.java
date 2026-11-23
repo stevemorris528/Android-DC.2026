@@ -50,8 +50,6 @@ public class UploadManager {
 
     private final Object fileListLock = new Object();
     private volatile long cachedShareSize = -1;
-    /** Files in the published list (duplicates included), or -1 before the first refresh. */
-    private volatile int cachedShareFileCount = -1;
 
     /** Result of a manual refresh: ok=false if it failed. */
     public interface RefreshListener {
@@ -696,7 +694,7 @@ public class UploadManager {
         try {
             s.execute(() -> {
                 boolean ok = refreshFileListSafe();
-                if (listener != null) listener.onRefreshed(ok, cachedShareFileCount, cachedShareSize);
+                if (listener != null) listener.onRefreshed(ok, fileByTth.size(), cachedShareSize);
             });
             return true;
         } catch (java.util.concurrent.RejectedExecutionException e) {
@@ -788,17 +786,11 @@ public class UploadManager {
             Map<String, File> byTth = new ConcurrentHashMap<>();
             collectTths(tree, byTth);
             fileByTth = byTth;
-            // Share size/count = exactly the files in the published list (hashed ones). Files still
-            // unhashed or unreadable are on disk but not in the list, so they must not be counted.
-            long[] listed = {0, 0}; // files, bytes
-            countListed(tree, listed);
-            cachedShareFileCount = (int) listed[0];
-            cachedShareSize = listed[1];
-            service.onShareSizeChanged(listed[1]);
+            cachedShareSize = totalSize[0];
+            service.onShareSizeChanged(totalSize[0]);
             shareIndexReady = true;
 
-            Log.i("andcpp", "File list refreshed: " + listed[0] + " files (" + byTth.size() + " unique TTHs), "
-                    + listed[1] + " bytes listed of " + totalSize[0] + " on disk, "
+            Log.i("andcpp", "File list refreshed: " + byTth.size() + " files, " + totalSize[0] + " bytes, "
                     + hashed + " newly hashed, in " + (System.currentTimeMillis() - started) + " ms");
         }
     }
@@ -829,16 +821,6 @@ public class UploadManager {
 
     private static String cacheKey(File f, long size) {
         return f.getAbsolutePath() + "|" + size + "|" + f.lastModified();
-    }
-
-    private static void countListed(ShareDir dir, long[] out) {
-        for (ShareFile f : dir.files) {
-            if (f.tth != null) {
-                out[0]++;
-                out[1] += f.size;
-            }
-        }
-        for (ShareDir d : dir.dirs) countListed(d, out);
     }
 
     private void collectTths(ShareDir dir, Map<String, File> out) {
@@ -1194,17 +1176,11 @@ public class UploadManager {
 
     /** Number of shared files we know the TTH of (the ADC SF field). */
     public int getSharedFileCount() {
-        int n = cachedShareFileCount;
-        return n >= 0 ? n : fileByTth.size();
+        return fileByTth.size();
     }
 
     public long getSharedSize() {
         if (cachedShareSize >= 0) return cachedShareSize;
-        // Before the first refresh: count only files we already have a hash for (warmed from the cache),
-        // so we never advertise partial downloads or unhashed files that aren't in our list.
-        long size = 0;
-        for (File f : fileByTth.values()) size += f.length();
-        if (size > 0) return size;
         String downloadDir = Settings.getDCDownloadsDirectory(service);
         return getDirectorySize(new File(downloadDir));
     }
