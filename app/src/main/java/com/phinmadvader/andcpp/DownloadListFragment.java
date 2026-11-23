@@ -55,16 +55,9 @@ public class DownloadListFragment extends Fragment {
         
         downloadListView = (ListView) root.findViewById(R.id.downloadListView);
         adapter = new DownloadListAdapter(mainActivity, downloadList);
-
-        // Totals + uploads scroll with the downloads: move the block out of the fixed layout and make it
-        // the list's header, so several running uploads no longer push the downloads off screen.
-        uploadStatsLayout = root.findViewById(R.id.uploadStatsLayout);
-        ((ViewGroup) uploadStatsLayout.getParent()).removeView(uploadStatsLayout);
-        uploadStatsLayout.setLayoutParams(new ListView.LayoutParams(
-                ListView.LayoutParams.MATCH_PARENT, ListView.LayoutParams.WRAP_CONTENT));
-        downloadListView.addHeaderView(uploadStatsLayout, null, false);
         downloadListView.setAdapter(adapter);
 
+        uploadStatsLayout = root.findViewById(R.id.uploadStatsLayout);
         txtUploadSpeed = (android.widget.TextView) root.findViewById(R.id.txtUploadSpeed);
         txtUploadStats = (android.widget.TextView) root.findViewById(R.id.txtUploadStats);
         uploadRowsContainer = (android.widget.LinearLayout) root.findViewById(R.id.uploadRowsContainer);
@@ -91,9 +84,7 @@ public class DownloadListFragment extends Fragment {
         });
 
         downloadListView.setOnItemClickListener((parent, view, position, id) -> {
-            int index = position - downloadListView.getHeaderViewsCount();
-            if (index < 0 || index >= downloadList.size()) return;
-            DownloadItem download = downloadList.get(index);
+            DownloadItem download = downloadList.get(position);
             DCConstants.DownloadStatus status = download.get_status();
             if (status == DCConstants.DownloadStatus.COMPLETED) {
                 openDownloadedFile(download);
@@ -103,9 +94,7 @@ public class DownloadListFragment extends Fragment {
         });
 
         downloadListView.setOnItemLongClickListener((parent, view, position, id) -> {
-            int index = position - downloadListView.getHeaderViewsCount();
-            if (index < 0 || index >= downloadList.size()) return false;
-            DownloadItem download = downloadList.get(index);
+            DownloadItem download = downloadList.get(position);
             showPauseResumeDialog(download);
             return true;
         });
