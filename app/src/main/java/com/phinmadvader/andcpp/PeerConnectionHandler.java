@@ -787,7 +787,9 @@ public class PeerConnectionHandler implements Runnable {
 
         streamFile(handler, fileToUpload, offset, length);
 
-        if (!isFileList) {
+        // DC++ fetches big files in chunks (one $ADCGET per chunk): count a finished upload only when the
+        // chunk that reaches the end of the file has been sent in full, not once per chunk.
+        if (!isFileList && bytesSent.get() >= length && offset + length >= fileSize) {
             uploadManager.incrementCompletedTransfers();
         }
         state = ConnectionState.CONNECTED;

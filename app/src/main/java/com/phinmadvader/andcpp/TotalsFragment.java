@@ -11,7 +11,7 @@ import android.widget.TextView;
 
 import com.phinmadvader.andcpp.DCPPService.FileSize;
 
-/** "Totals" tab: all-time and this-session transfer totals plus upload statistics. */
+/** "Network Stats" tab: all-time and this-session transfer totals plus upload statistics. */
 public class TotalsFragment extends Fragment {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private Runnable updateRunnable;
@@ -51,7 +51,7 @@ public class TotalsFragment extends Fragment {
                 try {
                     update();
                 } catch (Exception e) {
-                    android.util.Log.e("andcpp", "Totals tab update failed", e);
+                    android.util.Log.e("andcpp", "Network Stats tab update failed", e);
                 }
                 handler.postDelayed(this, 1000);
             }

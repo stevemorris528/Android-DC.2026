@@ -337,9 +337,9 @@ public class MainActivity extends FragmentActivity implements
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_DOWNLOADS,
 				downloadlist_fragment, "Transfers", false);
 
-		// Totals tab (all-time and session DL/UL), right after Downloads
+		// Network Stats tab (all-time and session DL/UL), right after Transfers
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_TOTALS,
-				totals_fragment, "Totals", false);
+				totals_fragment, "Network Stats", false);
 
 		// Always make Hub Users tab visible
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_USERLIST,
@@ -1066,7 +1066,7 @@ public class MainActivity extends FragmentActivity implements
 		}
 		if (totals_fragment != null) {
 			tab_page_adapter.add_tab(TabPagerAdapter.TAB_TOTALS,
-					totals_fragment, "Totals", false);
+					totals_fragment, "Network Stats", false);
 		}
 		// Build k: tabs above were added with notify=false; tell the pager or it crashes
 		// ("PagerAdapter changed the adapter's contents without calling notifyDataSetChanged").
