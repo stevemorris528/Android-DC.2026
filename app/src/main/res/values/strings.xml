@@ -2,6 +2,7 @@
 <resources>
 
     <string name="app_name">Android DC++</string>
+    <string name="action_bar_title">Android DC++ 2026</string>
     <string name="action_public_hubs">Public Hub\'s</string>
     <string name="action_refresh_share">Refresh File List (Share)</string>
     <string name="action_about">About</string>
