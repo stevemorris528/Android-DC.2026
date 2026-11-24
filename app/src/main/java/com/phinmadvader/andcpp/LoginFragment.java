@@ -89,11 +89,38 @@ public class LoginFragment extends Fragment {
 		// this.is_connected = is_connected; // No longer just a single state
 		if (connectButton == null || nickText == null || ipText == null)
 			return;
-		// For now we allow multiple connects from the same UI, 
+		// For now we allow multiple connects from the same UI,
 		// but a more robust multi-hub UI would list active sessions.
-		connectButton.setText(ConnectString);
+		long showConnectedFor = connectedUntil - System.currentTimeMillis();
+		if (showConnectedFor > 0) {
+			// The hub the user just connected to is up: say so briefly, then back to "Connect".
+			connectButton.setText(ConnectedString);
+			final Button button = connectButton;
+			button.postDelayed(() -> {
+				if (System.currentTimeMillis() >= connectedUntil) button.setText(ConnectString);
+			}, showConnectedFor);
+		} else {
+			connectButton.setText(ConnectString);
+		}
 		nickText.setEnabled(true);
 		ipText.setEnabled(true);
+	}
+
+	private final static String ConnectedString = "Connected";
+	private final static long CONNECTED_SHOW_MILLIS = 3000;
+	/** Host of the hub the user last tapped Connect for, until it connects. Static: the fragment gets recreated. */
+	private static volatile String pendingConnectHost;
+	/** "Connected" stays on the button until this time. */
+	private static volatile long connectedUntil;
+
+	/** Called when a hub reports connected; shows "Connected" if it is the hub the user just connected to. */
+	public void onHubConnected(String hubIp) {
+		String host = pendingConnectHost;
+		if (host == null || hubIp == null) return;
+		if (MainActivity.isSameHubHost(hubIp, host)) {
+			pendingConnectHost = null;
+			connectedUntil = System.currentTimeMillis() + CONNECTED_SHOW_MILLIS;
+		}
 	}
 
 	public void setHubAddress(String hubAddress) {
@@ -147,7 +174,10 @@ public class LoginFragment extends Fragment {
 
 		// Connect (NMDC, NMDCS, ADC or ADCS, from the address)
 		if (mainActivity != null) {
-			mainActivity.startBackgroundService(nick, addr, true);
+			pendingConnectHost = addr.host; // shown as "Connected" on the button once this hub is up
+			if (mainActivity.startBackgroundService(nick, addr, true)) {
+				mainActivity.openChatForUserConnect(addr.host); // this hub's main chat, while connecting and once connected
+			}
 		}
 	}
 	public static class Connectivity {

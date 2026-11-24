@@ -548,7 +548,9 @@ public class HubListFragment extends Fragment {
                 return;
             }
 
-            mainActivity.startBackgroundService(nick, addr, true);
+            if (mainActivity.startBackgroundService(nick, addr, true)) {
+                mainActivity.openChatForUserConnect(addr.host); // this hub's main chat, while connecting and once connected
+            }
         }
 
         private void toggleFavorite(String hubIp) {

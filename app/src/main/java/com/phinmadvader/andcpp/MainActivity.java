@@ -113,6 +113,28 @@ public class MainActivity extends FragmentActivity implements
 		}
 	}
 
+	/** Host of the hub the user just connected from the Login or Hubs tab, until it connects. */
+	private String userConnectHost;
+	private long userConnectStarted;
+	private static final long USER_CONNECT_WAIT_MILLIS = 60000;
+
+	/**
+	 * The user connected a hub from the Login or Hubs tab: open its main chat now (while it connects), and again
+	 * once it is connected (onConnectUIChanges), so other hubs' updates can't take the chat over meanwhile.
+	 */
+	public void openChatForUserConnect(String host) {
+		userConnectHost = host;
+		userConnectStarted = System.currentTimeMillis();
+		openChatForHub(host);
+	}
+
+	/** True if hubIp (a session's hub key) is the hub at host. */
+	static boolean isSameHubHost(String hubIp, String host) {
+		if (hubIp == null || host == null) return false;
+		return hubIp.equalsIgnoreCase(host)
+				|| hubIp.toLowerCase(java.util.Locale.US).startsWith(host.toLowerCase(java.util.Locale.US) + ":");
+	}
+
 	public void openUsersForHub(String hubIp) {
 		if (tab_page_adapter == null) return;
 
@@ -1045,20 +1067,29 @@ public class MainActivity extends FragmentActivity implements
 			searchmenuitem.setVisible(true); // connected: search is available
 		}
 		if (login_fragment != null) {
+			login_fragment.onHubConnected(hubIp);
 			login_fragment.setViewState(true);
 		}
-		
+
+		// A hub the user is connecting from the Login or Hubs tab: its chat is shown while it connects; other
+		// hubs' broadcasts mustn't take Chat/Users over meanwhile. Given up after a minute (hub never came up).
+		if (userConnectHost != null && System.currentTimeMillis() - userConnectStarted > USER_CONNECT_WAIT_MILLIS) {
+			userConnectHost = null;
+		}
+		boolean userHubConnected = userConnectHost != null && isSameHubHost(hubIp, userConnectHost);
+		boolean waitingForUserHub = userConnectHost != null && !userHubConnected;
+
 		// Add tabs if they aren't already visible (do not automatically jump/switch to them).
 		// Chat and Users keep showing the hub the user picked: this runs for every status broadcast
 		// of every hub (connect, reconnect, hub name), so with two hubs connected the last hub to
 		// broadcast used to take over both tabs. Only follow the new hub if no live hub is shown yet.
-		if (messageboard_fragment != null && !isShowingConnectedHub(messageboard_fragment.getHubIp())) {
+		if (messageboard_fragment != null && !waitingForUserHub && !isShowingConnectedHub(messageboard_fragment.getHubIp())) {
 			messageboard_fragment.setHubIp(hubIp);
 		}
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_HUBCHAT,
 				messageboard_fragment, "Chat", false);
 
-		if (userlist_fragment != null && !isShowingConnectedHub(userlist_fragment.getHubIp())) {
+		if (userlist_fragment != null && !waitingForUserHub && !isShowingConnectedHub(userlist_fragment.getHubIp())) {
 			userlist_fragment.setHubIp(hubIp);
 		}
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_USERLIST,
@@ -1094,6 +1125,22 @@ public class MainActivity extends FragmentActivity implements
 		}
 
 		refreshWelcomeFragment();
+
+		if (userHubConnected) {
+			userConnectHost = null;
+			openChatForHub(hubIp); // the hub the user connected is up: its Chat and Users tabs, staying on Chat
+			// The hub sends its user list in the seconds after it reports connected, so Users would load
+			// (nearly) empty now: load it again a few times while it still shows this hub.
+			final String connectedHub = hubIp;
+			Handler h = new Handler(Looper.getMainLooper());
+			for (long delay : new long[] {2000, 5000, 15000}) {
+				h.postDelayed(() -> {
+					if (userlist_fragment != null && connectedHub.equals(userlist_fragment.getHubIp())) {
+						userlist_fragment.clearNicklistConstraints();
+					}
+				}, delay);
+			}
+		}
 	}
 
 	/** True if a tab is already showing a hub that has a connected session (exact host match, no fallback). */
