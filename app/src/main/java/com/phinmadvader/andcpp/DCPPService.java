@@ -2344,6 +2344,103 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		});
 	}
 
+	/** Called on the main thread when deleteFromShare() has finished. */
+	public interface ShareDeleteListener {
+		void onDone(boolean ok, int filesDeleted, int downloadsRemoved);
+	}
+
+	/**
+	 * "My Share" delete: deletes a file or folder inside the download (share) folder, first removing every download
+	 * that saves into it (so nothing downloads into it again), then rebuilds the shared file list so the hubs and
+	 * peers see the new share. Runs on a background thread. Refuses anything outside the share folder, and the
+	 * share folder itself.
+	 */
+	public void deleteFromShare(final File target, final ShareDeleteListener listener) {
+		new Thread(() -> {
+			boolean ok = false;
+			int[] filesDeleted = new int[1];
+			int downloadsRemoved = 0;
+			try {
+				File root = new File(Settings.getDCDownloadsDirectory(this)).getCanonicalFile();
+				File t = target.getCanonicalFile();
+				if (!t.getPath().startsWith(root.getPath() + File.separator)) {
+					Log.w("andcpp", "[SHARE] not deleting " + t.getPath() + ": not inside the share folder " + root.getPath());
+				} else {
+					String tPath = t.getPath();
+					List<DownloadObject> hit = new ArrayList<>();
+					if (initiated_downloads != null) {
+						synchronized (initiated_downloads) {
+							for (DownloadObject o : initiated_downloads) {
+								if (isSameOrInside(o.local_file, tPath)) hit.add(o);
+							}
+						}
+					}
+					if (normal_queue != null) {
+						for (DownloadObject o : normal_queue) {
+							if (!hit.contains(o) && isSameOrInside(o.local_file, tPath)) hit.add(o);
+						}
+					}
+					for (DownloadObject o : hit) {
+						o.cancel_download();
+						downloadsRemoved++;
+					}
+					if (!hit.isEmpty()) Thread.sleep(1000); // let stopped transfers close their files
+					ok = deleteRecursive(t, filesDeleted);
+					Log.i("andcpp", "[SHARE] My Share deleted " + tPath + ": " + filesDeleted[0] + " files, "
+							+ downloadsRemoved + " downloads removed" + (ok ? "" : " (some files could not be deleted)"));
+				}
+			} catch (Exception e) {
+				Log.e("andcpp", "[SHARE] delete failed for " + target, e);
+			}
+			if (uploadManager != null) uploadManager.requestFileListRefreshNow(null); // share changed: rebuild it
+			final boolean fOk = ok;
+			final int fFiles = filesDeleted[0];
+			final int fRemoved = downloadsRemoved;
+			if (listener != null) {
+				new Handler(Looper.getMainLooper()).post(() -> listener.onDone(fOk, fFiles, fRemoved));
+			}
+		}, "ShareDelete").start();
+	}
+
+	private static boolean isSameOrInside(String path, String target) {
+		if (path == null) return false;
+		String p;
+		try {
+			p = new File(path).getCanonicalPath();
+		} catch (java.io.IOException e) {
+			p = new File(path).getAbsolutePath();
+		}
+		return p.equals(target) || p.startsWith(target + File.separator);
+	}
+
+	/** Deletes a file, or a folder and everything in it; counts deleted files. False if anything is left. */
+	private static boolean deleteRecursive(File f, int[] filesDeleted) {
+		boolean ok = true;
+		if (f.isDirectory()) {
+			File[] kids = f.listFiles();
+			if (kids != null) {
+				for (File k : kids) {
+					if (!deleteRecursive(k, filesDeleted)) ok = false;
+				}
+			}
+		}
+		boolean wasFile = f.isFile();
+		boolean gone = false;
+		for (int i = 0; i < 5; i++) { // a file may still be locked for a moment after its transfer stopped
+			if (f.delete() || !f.exists()) {
+				gone = true;
+				break;
+			}
+			try {
+				Thread.sleep(200);
+			} catch (InterruptedException e) {
+				break;
+			}
+		}
+		if (gone && wasFile) filesDeleted[0]++;
+		return ok && gone;
+	}
+
 	/**
 	 * Absolute paths of downloads that are not complete (queued, running, paused, failed or cancelled).
 	 * These files are partial on disk, so they are left out of our shared file list.
@@ -5120,8 +5217,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						editor.putString("group_label_" + count, obj.groupLabel);
 						editor.putString("group_name_" + count, obj.groupName);
 						editor.putLong("bytes_done_" + count, obj.bytes_done());
-						editor.putBoolean("is_paused_" + count, obj.isPaused);
-						backup.put(toBackupJson(obj));
+						editor.putBoolean("is_paused_" + count, isUserPaused(obj));
+						backup.put(toBackupJson(obj, isUserPaused(obj)));
 						count++;
 					}
 				} else if (item instanceof FolderDownloadItem) {
@@ -5136,8 +5233,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							editor.putString("group_label_" + count, obj.groupLabel);
 							editor.putString("group_name_" + count, obj.groupName);
 							editor.putLong("bytes_done_" + count, obj.bytes_done());
-							editor.putBoolean("is_paused_" + count, obj.isPaused);
-							backup.put(toBackupJson(obj));
+							editor.putBoolean("is_paused_" + count, isUserPaused(obj));
+							backup.put(toBackupJson(obj, isUserPaused(obj)));
 							count++;
 						}
 					}
@@ -5215,7 +5312,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				== android.content.pm.PackageManager.PERMISSION_GRANTED;
 	}
 
-	private static org.json.JSONObject toBackupJson(DownloadObject obj) throws org.json.JSONException {
+	private static org.json.JSONObject toBackupJson(DownloadObject obj, boolean userPaused) throws org.json.JSONException {
 		org.json.JSONObject j = new org.json.JSONObject();
 		j.put("hubIp", obj.hubIp);
 		j.put("nick", obj.target_nick);
@@ -5225,8 +5322,21 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		j.put("groupLabel", obj.groupLabel);
 		j.put("groupName", obj.groupName);
 		j.put("done", obj.bytes_done());
-		j.put("paused", obj.isPaused);
+		j.put("paused", userPaused);
 		return j;
+	}
+
+	/**
+	 * Restored downloads that were NOT paused by the user when saved. addSavedDownloads() restores every download
+	 * paused, and resumeRestoredDownloadsSoon() resumes only the ones in this set, so downloads the user paused stay
+	 * paused after a restart or update.
+	 */
+	private final Set<DownloadObject> restoredToResume =
+			java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<DownloadObject, Boolean>()));
+
+	/** Paused by the user, as opposed to paused only until the restore resumes it a few seconds after start. */
+	private boolean isUserPaused(DownloadObject obj) {
+		return obj.isPaused && !restoredToResume.contains(obj);
 	}
 
 	private void writeDownloadsBackup(org.json.JSONArray list) {
@@ -5257,6 +5367,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private static final class SavedDownload {
 		String hubIp, nick, localFile, remoteFile, groupLabel, groupName;
 		long fileSize, bytesDone;
+		boolean paused; // paused by the user when saved
 	}
 
 	private static String optStr(org.json.JSONObject j, String key) {
@@ -5286,6 +5397,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			d.groupName = optStr(j, "groupName");
 			d.fileSize = j.optLong("size", 0);
 			d.bytesDone = j.optLong("done", 0);
+			d.paused = j.optBoolean("paused", false);
 			out.add(d);
 		}
 		return out;
@@ -5305,6 +5417,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			d.groupLabel = prefs.getString("group_label_" + i, null);
 			d.groupName = prefs.getString("group_name_" + i, null);
 			d.bytesDone = prefs.getLong("bytes_done_" + i, 0);
+			d.paused = prefs.getBoolean("is_paused_" + i, false);
 			out.add(d);
 		}
 		return out;
@@ -5333,8 +5446,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 							d.remoteFile, DCPPService.this, d.groupLabel, d.groupName);
 					obj.set_total_bytes(d.fileSize);
 					obj.pendingStartOffset = existingLength;
-					// Restored paused; resumeRestoredDownloadsSoon() resumes it via the normal unpause path (resume_download()).
+					// Restored paused; resumeRestoredDownloadsSoon() resumes it via the normal unpause path (resume_download()),
+					// unless the user had paused it: then it stays paused.
 					obj.isPaused = true;
+					if (!d.paused) restoredToResume.add(obj);
 					if (obj.mBuilder2 != null) {
 						obj.mBuilder2.setContentText("Download Paused").setOngoing(false);
 					}
@@ -5347,12 +5462,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return added;
 	}
 
-	/** Resumes the restored (paused) downloads after 10 seconds, giving the hub time to connect. */
+	/**
+	 * Resumes the restored downloads after 10 seconds, giving the hub time to connect. Downloads the user had paused
+	 * (not in restoredToResume) stay paused.
+	 */
 	private void resumeRestoredDownloadsSoon() {
 		new Handler(Looper.getMainLooper()).postDelayed(() -> {
 			synchronized (initiated_downloads) {
 				for (DownloadObject obj : initiated_downloads) {
-					if (obj.isPaused && !obj.is_finished()) {
+					boolean restored = restoredToResume.remove(obj);
+					if (restored && obj.isPaused && !obj.is_finished()) {
 						obj.resume_download();
 					}
 				}

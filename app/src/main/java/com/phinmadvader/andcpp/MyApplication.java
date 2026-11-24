@@ -32,7 +32,7 @@ import java.util.Locale;
  * - on Android 11+, the system's own exit record (crash, low memory, killed, ANR, ...).
  * On every start it shows a toast and a notification with the previous exit reason
  * and where the log was saved (or why saving failed). The log is written to three places:
- *   1. Download/Android-DC++/last_exit.txt
+ *   1. Download/Android-DC++ Logs/last_exit.txt (outside the shared download folder)
  *   2. Android/data/com.phinmadvader.andcpp/files/last_exit.txt
  *   3. the app's internal storage (always works; summary is also in the notification)
  * No download behaviour is changed.
@@ -64,15 +64,38 @@ public class MyApplication extends Application {
     }
 
     // ---- Build l: copy this app's own log lines (tags andcpp, libjdcpp, crashes) to a file ----
-    private static final long TRACE_MAX_BYTES = 3L * 1024 * 1024;
+    // 25 MB per file, plus one older file (dltrace_old.txt) of the same size.
+    private static final long TRACE_MAX_BYTES = 25L * 1024 * 1024;
+
+    /**
+     * Folder for the app's log files: Download/Android-DC++ Logs. It sits next to the download folder, not inside
+     * it, because everything in the download folder is shared. If the user's download folder contains it anyway
+     * (e.g. the download folder was set to Download itself), the app's own files folder is used instead.
+     */
+    private File logDir() {
+        try {
+            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Android-DC++ Logs");
+            if (!isInsideShare(dir) && (dir.isDirectory() || dir.mkdirs())) return dir;
+        } catch (Throwable ignored) {
+        }
+        File ext = getExternalFilesDir(null);
+        return ext != null ? ext : getFilesDir();
+    }
+
+    private boolean isInsideShare(File dir) {
+        try {
+            String share = new File(Settings.getDCDownloadsDirectory(this)).getCanonicalPath();
+            String d = dir.getCanonicalPath();
+            return d.equals(share) || d.startsWith(share + File.separator);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 
     private File traceFile() {
         try {
-            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Android-DC++");
-            if (dir.isDirectory() || dir.mkdirs()) {
-                File f = new File(dir, "dltrace.txt");
-                if (f.exists() || f.createNewFile()) return f;
-            }
+            File f = new File(logDir(), "dltrace.txt");
+            if (f.exists() || f.createNewFile()) return f;
         } catch (Throwable ignored) {
         }
         File ext = getExternalFilesDir(null);
@@ -264,12 +287,14 @@ public class MyApplication extends Application {
         boolean anyOk = false;
         File dl = null;
         try {
-            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Android-DC++");
-            dl = new File(dir, "last_exit.txt");
+            dl = new File(logDir(), "last_exit.txt"); // outside the shared download folder
         } catch (Throwable ignored) {
         }
         String r1 = writeReport(dl, sb.toString());
-        String r2 = writeReport(getExternalFilesDir(null) != null ? new File(getExternalFilesDir(null), "last_exit.txt") : null, sb.toString());
+        File appFiles = getExternalFilesDir(null) != null ? new File(getExternalFilesDir(null), "last_exit.txt") : null;
+        // logDir() falls back to the app's files folder; don't write the same file twice.
+        String r2 = (appFiles != null && dl != null && appFiles.getAbsolutePath().equals(dl.getAbsolutePath()))
+                ? "same as above" : writeReport(appFiles, sb.toString());
         String r3 = writeReport(new File(getFilesDir(), "last_exit.txt"), sb.toString());
         where.append("Download: ").append(r1).append('\n')
                 .append("App files: ").append(r2).append('\n')

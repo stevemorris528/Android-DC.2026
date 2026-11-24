@@ -201,6 +201,22 @@ public class DCDownloader {
 			handler.send_key(DCFunctions.convert_lock_to_key(rlock.lock_s
 					.getBytes()));
 
+			// The local file or its folder may have been deleted since the download was queued (e.g. the share
+			// folder was cleaned): recreate the folder, and never resume past what is really on disk, or the rest
+			// of the file would be written into a new empty file and the result would be corrupt.
+			java.io.File localFile = new java.io.File(save_file_name);
+			java.io.File localDir = localFile.getParentFile();
+			if (localDir != null && !localDir.isDirectory() && !localDir.mkdirs()) {
+				Log.w("andcpp", "[DLTRACE] could not create folder " + localDir.getPath());
+			}
+			long onDisk = localFile.isFile() ? localFile.length() : 0;
+			if (entity.startOffset > onDisk) {
+				Log.w("andcpp", "[DLTRACE] " + localFile.getName() + ": only " + onDisk + " bytes on disk, not "
+						+ entity.startOffset + "; downloading from " + onDisk);
+				entity.startOffset = onDisk;
+				entity.downloadedSize = onDisk;
+			}
+
 			// Notify target_user about file to download
 			handler.send_msg("$Get " + fname + "$" + (entity.startOffset + 1));
 			

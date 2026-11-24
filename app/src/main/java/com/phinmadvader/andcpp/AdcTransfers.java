@@ -308,6 +308,21 @@ final class AdcTransfers {
         e.adcConnection = conn;
         e.status = DCConstants.DownloadStatus.INITIATED;
         long start = Math.max(0, e.startOffset);
+        // The local file or its folder may have been deleted since the download was queued (e.g. the share folder
+        // was cleaned): never resume past what is really on disk, or the result would be corrupt.
+        File local = new File(e.local_filename);
+        File localDir = local.getParentFile();
+        if (localDir != null && !localDir.isDirectory() && !localDir.mkdirs()) {
+            Log.w("andcpp", "[DLTRACE] could not create folder " + localDir.getPath());
+        }
+        long onDisk = local.isFile() ? local.length() : 0;
+        if (start > onDisk) {
+            Log.w("andcpp", "[DLTRACE] " + local.getName() + ": only " + onDisk + " bytes on disk, not " + start
+                    + "; downloading from " + onDisk);
+            start = onDisk;
+            e.startOffset = onDisk;
+            e.downloadedSize = onDisk;
+        }
         try {
             AdcClientConnection.Reply r = conn.request("file", p.identifier, start, -1);
             if (!r.ok()) {

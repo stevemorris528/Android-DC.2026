@@ -481,6 +481,10 @@ public class DownloadListFragment extends Fragment {
                     } else {
                         Toast.makeText(getActivity(), "Removed " + download.getFileName(), Toast.LENGTH_SHORT).show();
                     }
+                    // The file is gone from the share folder: rebuild the shared file list so peers stop seeing it.
+                    if (mainActivity != null && mainActivity.mService != null) {
+                        mainActivity.mService.refreshMyFileListSoon();
+                    }
                     updateList();
                 })
                 .setNegativeButton("Cancel", null)
