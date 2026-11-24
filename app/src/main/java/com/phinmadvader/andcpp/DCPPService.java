@@ -2363,8 +2363,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			try {
 				File root = new File(Settings.getDCDownloadsDirectory(this)).getCanonicalFile();
 				File t = target.getCanonicalFile();
-				if (!t.getPath().startsWith(root.getPath() + File.separator)) {
-					Log.w("andcpp", "[SHARE] not deleting " + t.getPath() + ": not inside the share folder " + root.getPath());
+				// Inside the download folder or inside an extra shared folder; never one of those folders itself.
+				boolean insideShare = t.getPath().startsWith(root.getPath() + File.separator);
+				for (File extra : ShareFolders.getExtra(this)) {
+					if (t.getPath().startsWith(ShareFolders.canonical(extra).getPath() + File.separator)) insideShare = true;
+				}
+				if (!insideShare) {
+					Log.w("andcpp", "[SHARE] not deleting " + t.getPath() + ": not inside a shared folder");
 				} else {
 					String tPath = t.getPath();
 					List<DownloadObject> hit = new ArrayList<>();

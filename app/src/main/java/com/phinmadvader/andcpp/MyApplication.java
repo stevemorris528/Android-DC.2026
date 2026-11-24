@@ -86,7 +86,12 @@ public class MyApplication extends Application {
         try {
             String share = new File(Settings.getDCDownloadsDirectory(this)).getCanonicalPath();
             String d = dir.getCanonicalPath();
-            return d.equals(share) || d.startsWith(share + File.separator);
+            if (d.equals(share) || d.startsWith(share + File.separator)) return true;
+            for (File extra : ShareFolders.getExtra(this)) { // extra shared folders (Settings > Shared folders)
+                String e = extra.getCanonicalPath();
+                if (d.equals(e) || d.startsWith(e + File.separator)) return true;
+            }
+            return false;
         } catch (Throwable t) {
             return false;
         }

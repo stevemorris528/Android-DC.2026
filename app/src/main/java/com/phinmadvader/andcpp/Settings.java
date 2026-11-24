@@ -73,6 +73,7 @@ public class Settings extends Activity{
 
 		card = addSection(root, "Transfers");
 		addRow(card, "Downloads folder", () -> getDCDownloadsDirectory(this), this::changeDownloadsDirectory);
+		addRow(card, "Shared folders", this::sharedFoldersSummary, this::changeSharedFolders);
 		addRow(card, "Upload slots", () -> getUploadSlots(this) + " at a time", this::changeUploadSlots);
 
 		card = addSection(root, "Connection");
@@ -275,6 +276,70 @@ public class Settings extends Activity{
 				"Save", positive, 
 				"Cancel", null,
 				inputDirectoryTextView);
+	}
+
+	// ---- Extra shared folders (shared as well as the download folder; downloads don't go into them) ----
+
+	private String sharedFoldersSummary() {
+		java.util.List<File> dirs = ShareFolders.getExtra(this);
+		if (dirs.isEmpty()) return "Download folder only. Tap to share more folders";
+		StringBuilder sb = new StringBuilder("Download folder + ");
+		for (int i = 0; i < dirs.size(); i++) {
+			if (i > 0) sb.append(", ");
+			sb.append(dirs.get(i).getName());
+		}
+		return sb.toString();
+	}
+
+	public void changeSharedFolders() {
+		final java.util.List<File> dirs = ShareFolders.getExtra(this);
+		final String[] items = new String[dirs.size()];
+		for (int i = 0; i < dirs.size(); i++) {
+			File d = dirs.get(i);
+			items[i] = d.getName() + (d.isDirectory() ? "" : "  (missing)") + "\n" + d.getPath();
+		}
+		AlertDialog.Builder b = new AlertDialog.Builder(this)
+				.setTitle("Shared folders")
+				.setPositiveButton("Add folder", (d, w) -> FolderPickerDialog.show(this, "Share a folder", "Share this folder",
+						android.os.Environment.getExternalStorageDirectory(), folder -> {
+							String why = ShareFolders.add(this, folder);
+							if (why != null) {
+								Toast.makeText(this, why, Toast.LENGTH_LONG).show();
+							} else {
+								Toast.makeText(this, "Sharing " + folder.getName() + "; hashing new files may take a while",
+										Toast.LENGTH_LONG).show();
+								shareChanged();
+							}
+							refreshSummaries();
+						}))
+				.setNegativeButton("Close", null);
+		if (items.length == 0) {
+			b.setMessage("Only the download folder is shared.\n\nAdd folders to share them as well. Other users see "
+					+ "each one as a folder inside your share. Downloads still go to the download folder.");
+		} else {
+			b.setItems(items, (d, which) -> {
+				final File dir = dirs.get(which);
+				new AlertDialog.Builder(this)
+						.setTitle("Stop sharing " + dir.getName() + "?")
+						.setMessage(dir.getPath() + "\n\nThe folder and its files are not deleted; other users just "
+								+ "won't see them any more.")
+						.setPositiveButton("Stop sharing", (d2, w2) -> {
+							ShareFolders.remove(this, dir);
+							Toast.makeText(this, "Stopped sharing " + dir.getName(), Toast.LENGTH_SHORT).show();
+							shareChanged();
+							refreshSummaries();
+						})
+						.setNegativeButton("Cancel", null)
+						.show();
+			});
+		}
+		b.show();
+	}
+
+	/** The shared folders changed: rebuild the share now (if the app is running), so hubs see the change. */
+	private void shareChanged() {
+		DCPPService s = DCPPService.getRunningInstance();
+		if (s != null) s.refreshMyFileListNow();
 	}
 
 	public void changeUploadSlots() {

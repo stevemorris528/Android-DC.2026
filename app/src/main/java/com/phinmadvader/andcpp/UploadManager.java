@@ -61,6 +61,8 @@ public class UploadManager {
     private volatile Map<String, File> fileByTth = new ConcurrentHashMap<>();
     /** In-memory share tree of the last published list, for partial ($ADCGET list) requests. */
     private volatile ShareDir shareTree = null;
+    /** Extra shared folders by the name they have inside "Share", as of the last file list build. */
+    private volatile Map<String, File> extraRoots = java.util.Collections.emptyMap();
     /** True once the first full file list refresh of this run has finished. */
     private volatile boolean shareIndexReady = false;
     private java.util.concurrent.ScheduledExecutorService fileListScheduler;
@@ -518,6 +520,35 @@ public class UploadManager {
         // DC paths use '\' separators.
         requestPath = requestPath.replace('\\', '/');
 
+        // A file in an extra shared folder: "Share/<folder name>/...".
+        int slash = requestPath.indexOf('/');
+        if (slash > 0) {
+            String first = requestPath.substring(0, slash);
+            File extra = extraRoots.get(first);
+            if (extra == null) {
+                for (Map.Entry<String, File> e : extraRoots.entrySet()) {
+                    if (e.getKey().equalsIgnoreCase(first)) {
+                        extra = e.getValue();
+                        break;
+                    }
+                }
+            }
+            if (extra != null) {
+                try {
+                    File root = extra.getCanonicalFile();
+                    File requested = new File(root, requestPath.substring(slash + 1)).getCanonicalFile();
+                    if (!requested.getPath().startsWith(root.getPath() + File.separator)) {
+                        Log.w("andcpp", "Rejected request outside share: " + requestPath);
+                        return null;
+                    }
+                    return requested.isFile() ? requested : null;
+                } catch (IOException e) {
+                    Log.w("andcpp", "Could not resolve requested path: " + requestPath, e);
+                    return null;
+                }
+            }
+        }
+
         try {
             File root = new File(downloadDir).getCanonicalFile();
             File requested = new File(root, requestPath).getCanonicalFile();
@@ -738,6 +769,12 @@ public class UploadManager {
             long[] totalSize = {0};
 
             ShareDir tree = scanDir(root, "Share", incomplete, seenKeys, needHash, totalSize, true);
+            // Extra shared folders (Settings > Shared folders): each one is a folder inside "Share".
+            Map<String, File> extras = ShareFolders.namedRoots(service);
+            for (Map.Entry<String, File> e : extras.entrySet()) {
+                tree.dirs.add(scanDir(e.getValue(), e.getKey(), incomplete, seenKeys, needHash, totalSize, false));
+            }
+            extraRoots = extras;
 
             File xmlOut = myFileListXml(downloadDir);
             File bz2Out = myFileListBz2();
@@ -986,8 +1023,14 @@ public class UploadManager {
     /** DC path ("Share\a\b.mkv") of a shared file, or null if it is outside the share. */
     private String sharePathOf(File f) {
         try {
-            String root = new File(Settings.getDCDownloadsDirectory(service)).getCanonicalPath() + File.separator;
             String p = f.getCanonicalPath();
+            for (Map.Entry<String, File> e : extraRoots.entrySet()) {
+                String er = e.getValue().getCanonicalPath() + File.separator;
+                if (p.startsWith(er)) {
+                    return "Share\\" + e.getKey() + "\\" + p.substring(er.length()).replace(File.separatorChar, '\\');
+                }
+            }
+            String root = new File(Settings.getDCDownloadsDirectory(service)).getCanonicalPath() + File.separator;
             if (!p.startsWith(root)) return null;
             return "Share\\" + p.substring(root.length()).replace(File.separatorChar, '\\');
         } catch (IOException e) {
@@ -1182,7 +1225,9 @@ public class UploadManager {
     public long getSharedSize() {
         if (cachedShareSize >= 0) return cachedShareSize;
         String downloadDir = Settings.getDCDownloadsDirectory(service);
-        return getDirectorySize(new File(downloadDir));
+        long size = getDirectorySize(new File(downloadDir));
+        for (File extra : ShareFolders.namedRoots(service).values()) size += getDirectorySize(extra);
+        return size;
     }
 
     private long getDirectorySize(File dir) {

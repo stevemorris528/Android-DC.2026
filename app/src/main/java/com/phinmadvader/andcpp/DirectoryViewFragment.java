@@ -66,32 +66,19 @@ public class DirectoryViewFragment extends Fragment {
 				for (int j = 1; j <= depth && j < stack.size(); j++) dirPath.append(stack.get(j).name).append('\\');
 				final String remotePathAtPress = dirPath + selectedFile.name;
 
+				final String defaultDir = Settings.getDCDownloadsDirectory(getActivity());
+
 				if (selectedFile.isDirectory()) {
 					new android.app.AlertDialog.Builder(getActivity())
 							.setTitle("Download Folder")
-							.setMessage("Do you want to download the entire folder '" + selectedFile.name + "' and all its contents?")
-							.setPositiveButton("Download", (dialog, which) -> {
-								if (mainActivity.mService != null && mainActivity.mService.canDownloadFrom(nickAtPress)) {
-									String remotePath = remotePathAtPress;
-
-									String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + selectedFile.name;
-									
-									// Folder Download with statistics
-									String groupLabel = "folder_" + System.currentTimeMillis();
-									int[] stats = {0};
-									long[] sizeStats = {0};
-									countFolderStats(selectedFile, stats, sizeStats);
-									
-									if (mainActivity.mService != null) {
-										mainActivity.mService.startFolderDownload(groupLabel, selectedFile.name, stats[0], sizeStats[0]);
-									}
-									
-									downloadDirectoryRecursive(nickAtPress, localPath, remotePath, selectedFile, groupLabel, selectedFile.name);
-									Toast.makeText(getActivity(), "Started folder download: " + selectedFile.name + " (" + stats[0] + " files)", Toast.LENGTH_SHORT).show();
-								} else {
-									Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
-								}
-							})
+							.setMessage("Do you want to download the entire folder '" + selectedFile.name + "' and all its contents?\n\n"
+									+ "Download: into " + defaultDir + "\nDownload to: choose a folder")
+							.setPositiveButton("Download", (dialog, which) ->
+									startFolderDownload(nickAtPress, defaultDir, remotePathAtPress, selectedFile))
+							.setNeutralButton("Download to...", (dialog, which) ->
+									FolderPickerDialog.show(getActivity(), "Download folder to", "Download here",
+											new File(defaultDir), folder ->
+													startFolderDownload(nickAtPress, folder.getPath(), remotePathAtPress, selectedFile)))
 							.setNegativeButton("Cancel", null)
 							.show();
 					return true;
@@ -99,19 +86,17 @@ public class DirectoryViewFragment extends Fragment {
 
 				// Individual file: same kind of box as a folder.
 				DCPPService.FileSize fs = new DCPPService.FileSize(selectedFile.size);
-				final String localPath = Settings.getDCDownloadsDirectory(getActivity()) + "/" + selectedFile.name;
 				new android.app.AlertDialog.Builder(getActivity())
 						.setTitle("Download File")
-						.setMessage(String.format(java.util.Locale.US, "Do you want to download the file '%s' (%.2f %s)?",
-								selectedFile.name, fs.fileSize, fs.unit))
-						.setPositiveButton("Download", (dialog, which) -> {
-							if (mainActivity.mService != null && mainActivity.mService.canDownloadFrom(nickAtPress)) {
-								mainActivity.mService.download_file(nickAtPress, localPath, remotePathAtPress, selectedFile.size);
-								Toast.makeText(getActivity(), "Started download: " + selectedFile.name, Toast.LENGTH_SHORT).show();
-							} else {
-								Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
-							}
-						})
+						.setMessage(String.format(java.util.Locale.US, "Do you want to download the file '%s' (%.2f %s)?\n\n"
+										+ "Download: into %s\nDownload to: choose a folder",
+								selectedFile.name, fs.fileSize, fs.unit, defaultDir))
+						.setPositiveButton("Download", (dialog, which) ->
+								startFileDownload(nickAtPress, defaultDir, remotePathAtPress, selectedFile))
+						.setNeutralButton("Download to...", (dialog, which) ->
+								FolderPickerDialog.show(getActivity(), "Download file to", "Download here",
+										new File(defaultDir), folder ->
+												startFileDownload(nickAtPress, folder.getPath(), remotePathAtPress, selectedFile)))
 						.setNegativeButton("Cancel", null)
 						.show();
 				return true;
@@ -178,6 +163,35 @@ public class DirectoryViewFragment extends Fragment {
 
 		is_ready = true;
 		return rootview;
+	}
+
+	/** Downloads a whole folder from nick into baseDir/<folder name>. */
+	private void startFolderDownload(String nick, String baseDir, String remotePath, DCFileList folder) {
+		if (getActivity() == null) return;
+		if (mainActivity.mService == null || !mainActivity.mService.canDownloadFrom(nick)) {
+			Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
+			return;
+		}
+		String localPath = baseDir + "/" + folder.name;
+		// Folder Download with statistics
+		String groupLabel = "folder_" + System.currentTimeMillis();
+		int[] stats = {0};
+		long[] sizeStats = {0};
+		countFolderStats(folder, stats, sizeStats);
+		mainActivity.mService.startFolderDownload(groupLabel, folder.name, stats[0], sizeStats[0]);
+		downloadDirectoryRecursive(nick, localPath, remotePath, folder, groupLabel, folder.name);
+		Toast.makeText(getActivity(), "Started folder download: " + folder.name + " (" + stats[0] + " files)", Toast.LENGTH_SHORT).show();
+	}
+
+	/** Downloads one file from nick into baseDir. */
+	private void startFileDownload(String nick, String baseDir, String remotePath, DCFileList file) {
+		if (getActivity() == null) return;
+		if (mainActivity.mService == null || !mainActivity.mService.canDownloadFrom(nick)) {
+			Toast.makeText(getActivity(), "Cannot start download while disconnected.", Toast.LENGTH_SHORT).show();
+			return;
+		}
+		mainActivity.mService.download_file(nick, baseDir + "/" + file.name, remotePath, file.size);
+		Toast.makeText(getActivity(), "Started download: " + file.name, Toast.LENGTH_SHORT).show();
 	}
 
 	private void countFolderStats(DCFileList dir, int[] count, long[] size) {
