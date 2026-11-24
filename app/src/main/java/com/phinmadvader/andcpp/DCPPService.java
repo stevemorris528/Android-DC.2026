@@ -5078,6 +5078,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		synchronized (initiated_downloads) {
 			for (DownloadObject obj : initiated_downloads) {
 				if (!obj.is_finished() && !obj.isPaused) {
+					// Paused by Shutdown, not by the user: saved as not paused, so it resumes after the restart.
+					pausedByShutdown.add(obj);
 					try {
 						obj.pause_download();
 					} catch (Exception e) {
@@ -5339,9 +5341,16 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	private final Set<DownloadObject> restoredToResume =
 			java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<DownloadObject, Boolean>()));
 
-	/** Paused by the user, as opposed to paused only until the restore resumes it a few seconds after start. */
+	/** Running downloads that Shutdown (onDestroy) paused; they were not paused by the user. */
+	private final Set<DownloadObject> pausedByShutdown =
+			java.util.Collections.synchronizedSet(java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<DownloadObject, Boolean>()));
+
+	/**
+	 * Paused by the user, as opposed to paused only until the restore resumes it a few seconds after start, or
+	 * paused by Shutdown.
+	 */
 	private boolean isUserPaused(DownloadObject obj) {
-		return obj.isPaused && !restoredToResume.contains(obj);
+		return obj.isPaused && !restoredToResume.contains(obj) && !pausedByShutdown.contains(obj);
 	}
 
 	private void writeDownloadsBackup(org.json.JSONArray list) {
