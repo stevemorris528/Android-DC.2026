@@ -289,6 +289,13 @@ public class HubListFragment extends Fragment {
         layout.setOrientation(android.widget.LinearLayout.VERTICAL);
         layout.setPadding(32, 32, 32, 32);
 
+        final android.widget.EditText addrInput = new android.widget.EditText(getActivity());
+        addrInput.setHint("Hub address (e.g. host:port, adcs://host:port)");
+        addrInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        addrInput.setSingleLine(true);
+        addrInput.setText(hubIp);
+        layout.addView(addrInput);
+
         final android.widget.EditText nickInput = new android.widget.EditText(getActivity());
         nickInput.setHint("Enter nickname for this hub");
         SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
@@ -312,8 +319,31 @@ public class HubListFragment extends Fragment {
                 .setPositiveButton("Save", (dialog, which) -> {
                     String nick = nickInput.getText().toString();
                     String pass = passInput.getText().toString();
+
+                    String newRaw = addrInput.getText().toString().trim();
+                    if (!newRaw.equals(hubIp)) {
+                        HubAddress newAddr = HubAddress.tryParse(newRaw);
+                        if (newAddr == null) {
+                            Toast.makeText(getActivity(), "Invalid Hub Address", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        String newId = newAddr.id();
+                        // Replace the saved hub with the new address, keeping its auto-connect tick.
+                        boolean wasAuto = HubAutoConnect.isOn(mainActivity, hubIp);
+                        removeSavedHub(mainActivity, hubIp);
+                        SharedPreferences.Editor editor = prefs.edit();
+                        putHubPref(editor, "favorite_nicks_", newId, nick);
+                        putHubPref(editor, "favorite_passwords_", newId, pass);
+                        editor.apply();
+                        saveHub(mainActivity, newId);
+                        HubAutoConnect.set(mainActivity, newId, wasAuto);
+                        refresh();
+                        Toast.makeText(getActivity(), "Saved details for " + newId, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
                     SharedPreferences.Editor editor = prefs.edit();
-                    
+
                     putHubPref(editor, "favorite_nicks_", hubIp, nick);
                     putHubPref(editor, "favorite_passwords_", hubIp, pass);
                     editor.apply();
