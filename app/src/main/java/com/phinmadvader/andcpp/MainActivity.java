@@ -1048,6 +1048,12 @@ public class MainActivity extends FragmentActivity implements
 	 * Called by Poller or BroadcastReceiver when background dcppservice connects.
 	 * Only UI changes to be carried out (called on UI Thread)
 	 */
+	/** True if adding this tab would change the pager: the tab is hidden or shows a different fragment. */
+	private boolean tabChanges(int tabid, Fragment fragment) {
+		return tab_page_adapter.get_tab_position(tabid) < 0
+				|| tab_page_adapter.get_tab_fragment(tabid) != fragment;
+	}
+
 	public void onConnectUIChanges(String hubIp) {
 		Log.d("andcpp", "Running Connect UI changes for " + hubIp);
 		if (mService != null) {
@@ -1079,6 +1085,13 @@ public class MainActivity extends FragmentActivity implements
 		boolean userHubConnected = userConnectHost != null && isSameHubHost(hubIp, userConnectHost);
 		boolean waitingForUserHub = userConnectHost != null && !userHubConnected;
 
+		// Only refresh the pager when the set of tabs actually changes: every getItemPosition() is
+		// POSITION_NONE, so a refresh rebuilds every loaded page (Transfers flickered on each reconnect).
+		boolean tabsChanged = tabChanges(TabPagerAdapter.TAB_HUBCHAT, messageboard_fragment)
+				|| tabChanges(TabPagerAdapter.TAB_USERLIST, userlist_fragment)
+				|| (downloadlist_fragment != null && tabChanges(TabPagerAdapter.TAB_DOWNLOADS, downloadlist_fragment))
+				|| (totals_fragment != null && tabChanges(TabPagerAdapter.TAB_TOTALS, totals_fragment));
+
 		// Add tabs if they aren't already visible (do not automatically jump/switch to them).
 		// Chat and Users keep showing the hub the user picked: this runs for every status broadcast
 		// of every hub (connect, reconnect, hub name), so with two hubs connected the last hub to
@@ -1105,8 +1118,10 @@ public class MainActivity extends FragmentActivity implements
 		}
 		// Build k: tabs above were added with notify=false; tell the pager or it crashes
 		// ("PagerAdapter changed the adapter's contents without calling notifyDataSetChanged").
-		tab_page_adapter.notifyDataSetChanged();
-		
+		if (tabsChanged) {
+			tab_page_adapter.notifyDataSetChanged();
+		}
+
 		// Refresh saved lists when service connects
 		Fragment savedFrag = tab_page_adapter.get_tab_fragment(TabPagerAdapter.TAB_SAVED_FILELISTS);
 		if (savedFrag instanceof SavedFileListsFragment) {
