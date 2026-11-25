@@ -313,12 +313,19 @@ public class HubListFragment extends Fragment {
         passInput.setText(savedPass);
         layout.addView(passInput);
 
+        final android.widget.EditText descInput = new android.widget.EditText(getActivity());
+        descInput.setHint("Description (shown next to your nick)");
+        descInput.setSingleLine(true);
+        descInput.setText(getHubPref(prefs, "favorite_descriptions_", hubIp));
+        layout.addView(descInput);
+
         new AlertDialog.Builder(getActivity())
                 .setTitle("Edit Nick & Password for " + hubIp)
                 .setView(layout)
                 .setPositiveButton("Save", (dialog, which) -> {
                     String nick = nickInput.getText().toString();
                     String pass = passInput.getText().toString();
+                    String desc = descInput.getText().toString().trim();
 
                     String newRaw = addrInput.getText().toString().trim();
                     if (!newRaw.equals(hubIp)) {
@@ -334,6 +341,7 @@ public class HubListFragment extends Fragment {
                         SharedPreferences.Editor editor = prefs.edit();
                         putHubPref(editor, "favorite_nicks_", newId, nick);
                         putHubPref(editor, "favorite_passwords_", newId, pass);
+                        putHubPref(editor, "favorite_descriptions_", newId, desc);
                         editor.apply();
                         saveHub(mainActivity, newId);
                         HubAutoConnect.set(mainActivity, newId, wasAuto);
@@ -346,6 +354,7 @@ public class HubListFragment extends Fragment {
 
                     putHubPref(editor, "favorite_nicks_", hubIp, nick);
                     putHubPref(editor, "favorite_passwords_", hubIp, pass);
+                    putHubPref(editor, "favorite_descriptions_", hubIp, desc);
                     editor.apply();
                     saveHub(mainActivity, hubIp); // details saved for a hub = keep the hub in the list
                     refresh();
@@ -359,6 +368,7 @@ public class HubListFragment extends Fragment {
                             if (session.myuser != null && !nick.isEmpty()) {
                                 session.myuser.nick = nick;
                             }
+                            mainActivity.mService.onDescriptionChanged(session, desc);
                         }
                     }
                     Toast.makeText(getActivity(), "Saved details for " + hubIp, Toast.LENGTH_SHORT).show();

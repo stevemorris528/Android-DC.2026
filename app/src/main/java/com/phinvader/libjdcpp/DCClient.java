@@ -195,6 +195,7 @@ public class DCClient {
 		myuser.nick = pref.getNick();
 		myuser.share_size = pref.getShare_size();
 		myuser.active = pref.active;
+		myuser.description = pref.description;
 
 		handler.send_myinfo(myuser, pref);
 	}

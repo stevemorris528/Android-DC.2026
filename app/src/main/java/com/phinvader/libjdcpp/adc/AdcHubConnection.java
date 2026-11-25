@@ -87,6 +87,7 @@ public final class AdcHubConnection implements HubConnection {
     private volatile String nick;
     private volatile String password;
     private volatile long shareSize;
+    private volatile String description = "";
 
     /** Latest INF fields per SID (INF updates are deltas, merged here). */
     private final Map<String, Map<String, String>> infs = new ConcurrentHashMap<>();
@@ -606,6 +607,7 @@ public final class AdcHubConnection implements HubConnection {
             now.put("PD", identity.pid); // only ever sent to the hub, in this first INF
         }
         now.put("NI", nick);
+        now.put("DE", description); // empty = not sent (or removed on the hub)
         now.put("SS", String.valueOf(Math.max(0, shareSize)));
         now.put("SF", String.valueOf(Math.max(0, myInfo.sharedFiles())));
         now.put("SL", String.valueOf(myInfo.slots()));
@@ -676,7 +678,13 @@ public final class AdcHubConnection implements HubConnection {
     public void updateMyInfo(DCUser me, DCPreferences prefs) {
         if (prefs != null && prefs.getShare_size() > 0) shareSize = prefs.getShare_size();
         else if (me != null) shareSize = me.share_size;
+        if (me != null) setDescription(me.description);
         sendInf(false);
+    }
+
+    /** Our description (DE), shown next to our nick. Set before connect; later changes go out via updateMyInfo. */
+    public void setDescription(String d) {
+        description = d == null ? "" : d.trim();
     }
 
     @Override

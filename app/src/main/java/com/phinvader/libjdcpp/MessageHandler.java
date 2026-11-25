@@ -374,6 +374,8 @@ public class MessageHandler {
 		}
 		if (myuser.description == null)
 			myuser.description = "";
+		// '$' and '|' end fields / commands in NMDC, and a '<' would be read as the start of the tag.
+		myuser.description = myuser.description.replace('$', ' ').replace('|', ' ').replace('<', '(').replace('>', ')');
 
 		// Client tag: <Android-DC++ V:<build>,M:A,H:1/0/0,S:3>
 		// M:A for Active, M:P for Passive

@@ -6,6 +6,7 @@ public class DCPreferences {
 	public long share_size; //
 	public String server_ip; // IP address of the server
 	public String password = null; // Password for registered nick if required
+	public String description = ""; // shown next to our nick ($MyINFO description / ADC DE)
 	public int upload_port = 4111;
 	public boolean active = true;
 	public String self_ip;

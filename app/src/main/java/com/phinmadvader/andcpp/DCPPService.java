@@ -3748,6 +3748,24 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	/** New description for a hub (edit dialog): stored on the session and, when connected, sent to the hub. */
+	public void onDescriptionChanged(final HubSession s, String description) {
+		if (s == null || s.myuser == null) return;
+		final String d = description == null ? "" : description.trim();
+		if (d.equals(s.myuser.description == null ? "" : s.myuser.description)) return;
+		s.myuser.description = d;
+		if (s.prefs != null) s.prefs.description = d; // used by the next login's $MyINFO
+		if (s.status != DCClientStatus.CONNECTED || s.hub == null) return;
+		new Thread(() -> { // network: never on the UI thread
+			try {
+				sendMyInfo(s);
+				Log.i("andcpp", "Description now \"" + d + "\"; MyINFO re-sent to " + s.hubIp);
+			} catch (Exception e) {
+				Log.w("andcpp", "Could not re-send MyINFO to " + s.hubIp, e);
+			}
+		}, "DescriptionUpdate").start();
+	}
+
 	/**
 	 * User-requested reconnect (hub list "Reconnect"): drops the hub link and logs in again through the normal
 	 * reconnect path, so pending download requests are kept (build m) and parked downloads restart afterwards.
@@ -4024,6 +4042,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			session.myuser.nick = nick;
 			session.myuser.active = activeMode;
 			session.myuser.share_size = sharedSize;
+			session.myuser.description = session.hubPref(prefs, "favorite_descriptions_");
+			session.prefs.description = session.myuser.description;
 
 			connectToHub(hubKey, session);
 		} else {
@@ -4056,7 +4076,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					|| !twin.hubIp.equalsIgnoreCase(ip)) continue;
 			Log.i("andcpp", "Replacing " + twin.address().id() + " with " + target.id() + " (same hub; it allows our nick once)");
 			SharedPreferences.Editor ed = prefs.edit();
-			for (String prefix : new String[] {"favorite_nicks_", "favorite_passwords_"}) {
+			for (String prefix : new String[] {"favorite_nicks_", "favorite_passwords_", "favorite_descriptions_"}) {
 				String v = twin.hubPref(prefs, prefix);
 				if (!v.isEmpty() && prefs.getString(prefix + target.prefKey(), "").isEmpty()) {
 					for (String k : target.prefKeysToWrite()) ed.putString(prefix + k, v);
@@ -4227,6 +4247,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			socket = new java.net.Socket();
 			socket.connect(new java.net.InetSocketAddress(session.hubIp, session.hubPort), 15000);
 		}
+		if (session.myuser != null) adc.setDescription(session.myuser.description);
 		adc.connect(socket, session.prefs.getNick(), session.prefs.password, session.prefs.getShare_size(), 30000);
 		if (adc.hubName() != null) rememberHubName(session, adc.hubName());
 		session.hubSoftware = adc.hubSoftware();
@@ -4385,6 +4406,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					if (!savedPass.isEmpty()) {
 						session.prefs.password = savedPass;
 					}
+					session.prefs.description = session.hubPref(prefs, "favorite_descriptions_");
+					if (session.myuser != null) session.myuser.description = session.prefs.description;
 					String savedNick = session.hubPref(prefs, "favorite_nicks_");
 					if (!savedNick.isEmpty()) {
 						session.prefs.nick = savedNick;
