@@ -23,7 +23,7 @@ public class Constants {
     /** Many hubs refuse users with fewer than 3 upload slots, so 3 is both the default and the minimum. */
     public static int MIN_UPLOAD_SLOTS = 3;
     public static int DEFAULT_UPLOAD_SLOTS = 3;
-    public static int DEFAULT_DOWNLOAD_WORKERS = 3;
+    public static int DEFAULT_DOWNLOAD_WORKERS = 5;
     public static String SETTINGS_DOWNLOAD_WORKERS_KEY = "dc_download_workers";
     public static int MAX_DOWNLOAD_Q = 1024;
     public static int DOWNLOAD_TIMEOUT_MILLIS = 60000;
