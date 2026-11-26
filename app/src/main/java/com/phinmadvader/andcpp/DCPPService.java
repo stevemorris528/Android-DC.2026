@@ -310,6 +310,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		boolean isFolder();
 		void pause_download();
 		void resume_download();
+		/** Like DC++'s "Force attempt": retry a waiting download now instead of after its retry delay. */
+		void force_attempt();
 		void cancel_download();
 		boolean delete_download();
 		String getLocalFilePath();
@@ -456,6 +458,25 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			} catch (Exception e) {
 				Log.e("andcpp", "Error in resume_download", e);
 			}
+		}
+
+		/**
+		 * Queued, or waiting for the peer (e.g. "no free slots", "no response"): drop the rest of any retry delay
+		 * and move it to the front of the download queue, so the next free worker tries it. Nothing else changes
+		 * (retry count, connection mode, per-user limit, wait reason until the attempt runs). Ignored while paused,
+		 * cancelled, finished, waiting for Wi-Fi, or while an attempt is running.
+		 */
+		public void force_attempt() {
+			if (isCancelled || isPaused || WAIT_REASON_WIFI.equals(waitReason)) return;
+			if (isActiveWorkerObject(this) || isRunning(download_status)) return; // an attempt is running right now
+			nextRetryAt = 0L; // start_download() sees the delay elapsed and retries
+			Log.i("andcpp", "[DLTRACE] Force attempt: " + file_name + " (" + target_nick + ")"
+					+ (waitReason != null ? ", was waiting: " + waitReason : ", was queued"));
+			if (normal_queue != null) {
+				normal_queue.remove(this);
+				normal_queue.offerFirst(this);
+			}
+			startNormalWorkersIfNeeded();
 		}
 
 		public void cancel_download() {
@@ -1021,6 +1042,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 
 		@Override
+		public void force_attempt() {
+			// Each goes to the front of the queue: last file first, so the folder keeps its order.
+			List<DownloadObject> copy = new ArrayList<>(downloads);
+			for (int i = copy.size() - 1; i >= 0; i--) copy.get(i).force_attempt();
+		}
+
+		@Override
 		public void cancel_download() {
 			List<DownloadObject> copy = new ArrayList<>(downloads);
 			for (DownloadObject o : copy) o.cancel_download();
@@ -1505,7 +1533,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	/** Like modern DC++ clients: up to this many downloads from the same user at the same time. */
 	private static final int MAX_CONNECTIONS_PER_USER = 3;
 	private final Set<DownloadObject> activeWorkerObjects = new HashSet<>();
-	private LinkedBlockingQueue<DownloadObject> normal_queue; // unbounded: adding must never block (a full fixed-size queue froze the app)
+	private java.util.concurrent.LinkedBlockingDeque<DownloadObject> normal_queue; // unbounded: adding must never block (a full fixed-size queue froze the app)
 	private ArrayList<DownloadObject> initiated_downloads;
 
 	private final Object claimLock = new Object();
@@ -3348,7 +3376,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	public DCPPService() {
 		super();
 		initiated_downloads = new ArrayList<DownloadObject>();
-		normal_queue = new LinkedBlockingQueue<DownloadObject>();
+		normal_queue = new java.util.concurrent.LinkedBlockingDeque<DownloadObject>();
 	}
 
 	@Override
@@ -3362,7 +3390,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (initiated_downloads == null)
 			initiated_downloads = new ArrayList<DownloadObject>();
 		if (normal_queue == null)
-			normal_queue = new LinkedBlockingQueue<DownloadObject>();
+			normal_queue = new java.util.concurrent.LinkedBlockingDeque<DownloadObject>();
 		mNotifyManager2 = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 		
 		        uploadManager = new UploadManager(this);

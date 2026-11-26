@@ -439,7 +439,11 @@ public class DownloadListFragment extends Fragment {
         } else if (status == DCConstants.DownloadStatus.INTERUPTED || status == DCConstants.DownloadStatus.FAILED) {
             options.add("Resume");
         }
-        
+        if ((status == DCConstants.DownloadStatus.QUEUED || status == DCConstants.DownloadStatus.WAITING_FOR_PEER)
+                && !DCPPService.WAIT_REASON_WIFI.equals(download.getWaitReason())) {
+            options.add("Force attempt");
+        }
+
         if (status == DCConstants.DownloadStatus.COMPLETED) {
             options.add("Open File");
         }
@@ -457,6 +461,9 @@ public class DownloadListFragment extends Fragment {
                     } else if (selected.equals("Resume")) {
                         download.resume_download();
                         Toast.makeText(getActivity(), "Resuming...", Toast.LENGTH_SHORT).show();
+                    } else if (selected.equals("Force attempt")) {
+                        download.force_attempt();
+                        Toast.makeText(getActivity(), "Trying now...", Toast.LENGTH_SHORT).show();
                     } else if (selected.equals("Open File")) {
                         openDownloadedFile(download);
                     } else if (selected.equals("Remove Download")) {
