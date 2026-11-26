@@ -352,7 +352,11 @@ public class DownloadListFragment extends Fragment {
         final String optStopUser = "Stop All Uploads to " + nick;
         final String optBlock = blocked ? "Unblock " + nick : "Block " + nick + " (until app restart)";
         final String optStopAll = "Stop All Uploads";
-        final String[] options = {optStop, optStopUser, optBlock, optStopAll};
+        final String hubOfUser = mainActivity.mService.hubForUser(nick, null);
+        final String optOpenHub = hubOfUser != null ? "Open hub (" + hubOfUser + ")" : null;
+        final String[] options = optOpenHub != null
+                ? new String[] {optStop, optStopUser, optBlock, optStopAll, optOpenHub}
+                : new String[] {optStop, optStopUser, optBlock, optStopAll};
 
         new android.app.AlertDialog.Builder(getActivity())
                 .setTitle(title)
@@ -370,6 +374,8 @@ public class DownloadListFragment extends Fragment {
                     } else if (selected.equals(optStopAll)) {
                         int n = um.stopAllUploads();
                         Toast.makeText(getActivity(), "Stopped " + n + " upload(s)", Toast.LENGTH_SHORT).show();
+                    } else if (selected.equals(optOpenHub)) {
+                        mainActivity.openChatForHub(hubOfUser);
                     }
                     updateList();
                 })
@@ -448,6 +454,10 @@ public class DownloadListFragment extends Fragment {
             options.add("Open File");
         }
         
+        final String hubOfUser = mainActivity.mService.hubForUser(download.getTarget_nick(), download.getHubIp());
+        final String optOpenHub = hubOfUser != null ? "Open hub (" + hubOfUser + ")" : null;
+        if (optOpenHub != null) options.add(optOpenHub);
+
         options.add("Remove Download");
         options.add("Delete File");
 
@@ -466,6 +476,8 @@ public class DownloadListFragment extends Fragment {
                         Toast.makeText(getActivity(), "Trying now...", Toast.LENGTH_SHORT).show();
                     } else if (selected.equals("Open File")) {
                         openDownloadedFile(download);
+                    } else if (selected.equals(optOpenHub)) {
+                        mainActivity.openChatForHub(hubOfUser);
                     } else if (selected.equals("Remove Download")) {
                         download.cancel_download();
                         Toast.makeText(getActivity(), "Removed from list", Toast.LENGTH_SHORT).show();

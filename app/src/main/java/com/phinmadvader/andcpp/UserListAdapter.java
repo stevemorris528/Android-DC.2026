@@ -54,8 +54,11 @@ public class UserListAdapter extends ArrayAdapter<DCUserComparable> {
 
 		title.setText(user.nick);
 		FileSize fs = new FileSize((double)user.share_size);
+		// Client tag (e.g. <DC++ V:0.868,M:A,H:1/0/2,S:3>: client, active/passive mode, hubs, slots) on its own line.
+		String tag = user.tag != null ? user.tag.trim() : "";
 		support.setText("Share: "
-				+ String.format("%.4g %s", fs.fileSize, fs.unit)  + "  " + (user.email != null ? user.email : ""));
+				+ String.format("%.4g %s", fs.fileSize, fs.unit)  + "  " + (user.email != null ? user.email : "")
+				+ (tag.isEmpty() ? "" : "\n" + tag));
 		if (user.op && !user.active)
 			image.setImageResource(R.drawable.user_op_passive);
 		else if (user.op)

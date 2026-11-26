@@ -316,6 +316,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		boolean delete_download();
 		String getLocalFilePath();
 		String getWaitReason();
+		/** The hub this download goes through (session key), or null. */
+		String getHubIp();
 	}
 
 	public static class FolderProgress {
@@ -384,6 +386,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		public String getLocalFilePath() {
 			return local_file;
+		}
+
+		public String getHubIp() {
+			return hubIp;
 		}
 
 		public void pause_download() {
@@ -1042,6 +1048,14 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 
 		@Override
+		public String getHubIp() {
+			for (DownloadObject o : downloads) {
+				if (o.hubIp != null) return o.hubIp;
+			}
+			return null;
+		}
+
+		@Override
 		public void force_attempt() {
 			// Each goes to the front of the queue: last file first, so the folder keeps its order.
 			List<DownloadObject> copy = new ArrayList<>(downloads);
@@ -1528,10 +1542,19 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private final List<Thread> normalWorkers = new ArrayList<>();
-	/** Active downloads per peer (lower-case nick -> count), at most MAX_CONNECTIONS_PER_USER each. */
+	/** Active downloads per peer (lower-case nick -> count), at most maxConnectionsPerUser() each. */
 	private final Map<String, Integer> activeNicks = new HashMap<>();
-	/** Like modern DC++ clients: up to this many downloads from the same user at the same time. */
+	/** ADC hubs: up to this many downloads from the same user at the same time. */
 	private static final int MAX_CONNECTIONS_PER_USER = 3;
+	/**
+	 * NMDC hubs: one download per user. DC++-type clients keep one upload connection per user on NMDC and close
+	 * any further one right after our $Get, without a reply (seen in the log as "Expected FileLength, got HubQuit").
+	 */
+	private static final int MAX_CONNECTIONS_PER_USER_NMDC = 1;
+
+	private int maxConnectionsPerUser(boolean adc) {
+		return adc ? MAX_CONNECTIONS_PER_USER : MAX_CONNECTIONS_PER_USER_NMDC;
+	}
 	private final Set<DownloadObject> activeWorkerObjects = new HashSet<>();
 	private java.util.concurrent.LinkedBlockingDeque<DownloadObject> normal_queue; // unbounded: adding must never block (a full fixed-size queue froze the app)
 	private ArrayList<DownloadObject> initiated_downloads;
@@ -1542,7 +1565,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return w.target_nick == null ? "" : w.target_nick.toLowerCase(Locale.ROOT);
 	}
 
-	/** One worker per object and up to MAX_CONNECTIONS_PER_USER active downloads per peer. */
+	/** One worker per object and up to maxConnectionsPerUser() active downloads per peer. */
 	private static final class ClaimInfo {
 		Thread owner;
 		long since;
@@ -1619,7 +1642,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	 * it for an unfinished download from that peer. Builds the download's entity the way start_download() does
 	 * (resume offset, status INITIATED, wait reason cleared) and queues the item so a worker tracks progress and
 	 * completion (start_download() then leaves the running attempt alone). On ADC, an item whose worker is still
-	 * waiting for its own requested connection keeps its entity and worker. Respects MAX_CONNECTIONS_PER_USER.
+	 * waiting for its own requested connection keeps its entity and worker. Respects maxConnectionsPerUser().
 	 * Returns the entity to download into, or null if there is no such download.
 	 */
 	DCDownloader.DownloadQueueEntity adoptPeerConnection(String nick, boolean adc) {
@@ -1627,6 +1650,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		DownloadObject chosen = null;
 		DCDownloader.DownloadQueueEntity entity = null;
 		boolean enqueue = false;
+		final int maxPerUser = maxConnectionsPerUser(adc);
 		synchronized (initiated_downloads) {
 			synchronized (claimLock) {
 				String key = nick.toLowerCase(Locale.ROOT);
@@ -1649,7 +1673,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						continue;
 					}
 					if (isRunning(o.download_status)) continue;
-					if (busy >= MAX_CONNECTIONS_PER_USER) {
+					if (busy >= maxPerUser) {
 						Log.d("andcpp", "[DLTRACE] adoptPeerConnection: " + nick + " already has " + busy
 								+ " downloads running; not taking this connection for " + o.file_name);
 						return null;
@@ -1700,10 +1724,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private boolean tryClaim(DownloadObject w) {
+		final int maxPerUser = maxConnectionsPerUser(isAdcDownload(w)); // looked up outside claimLock
 		synchronized (claimLock) {
 			String nick = nickKey(w);
 			Integer active = activeNicks.get(nick);
-			if (activeWorkerObjects.contains(w) || (active != null && active >= MAX_CONNECTIONS_PER_USER)) {
+			if (activeWorkerObjects.contains(w) || (active != null && active >= maxPerUser)) {
 				return false;
 			}
 			activeWorkerObjects.add(w);
@@ -3190,6 +3215,28 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		if (session.client != null) return session.client.get_nick_list();
 		HubConnection hub = session.hub; // ADC
 		return hub != null ? hub.users() : new ArrayList<>();
+	}
+
+	/**
+	 * The hub (session key) where {@code nick} is online now: {@code preferredHub} if the nick is there, else the
+	 * first connected hub that lists it, else {@code preferredHub} (null if that is null too). For "Open hub" in
+	 * the Transfers menus: uploads don't record their hub, and a download's peer may be on another hub.
+	 */
+	public String hubForUser(String nick, String preferredHub) {
+		if (nick == null) return preferredHub;
+		if (preferredHub != null && listsNick(get_nick_list(preferredHub), nick)) return preferredHub;
+		for (HubSession s : getActiveSessions()) {
+			if (s.hubIp != null && listsNick(get_nick_list(s.hubIp), nick)) return s.hubIp;
+		}
+		return preferredHub;
+	}
+
+	private static boolean listsNick(List<DCUser> users, String nick) {
+		if (users == null) return false;
+		for (DCUser u : users) {
+			if (u != null && u.nick != null && u.nick.equalsIgnoreCase(nick)) return true;
+		}
+		return false;
 	}
 
 	private static final int CHAT_HISTORY_MAX = 500;
