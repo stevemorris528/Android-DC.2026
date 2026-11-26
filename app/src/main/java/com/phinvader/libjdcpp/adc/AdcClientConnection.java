@@ -194,8 +194,16 @@ public final class AdcClientConnection implements Closeable {
 
     // ---- lines ----
 
+    /** A command read by {@link #pollCommand} and given back with {@link #unread}: returned by the next read. */
+    private volatile AdcCommand pushedBack;
+
     /** Next command, skipping keep-alive empty lines. Null when the peer closed the connection. */
     public AdcCommand readCommand() throws IOException {
+        AdcCommand back = pushedBack;
+        if (back != null) {
+            pushedBack = null;
+            return back;
+        }
         while (true) {
             String line = readLine();
             if (line == null) return null;
@@ -208,15 +216,48 @@ public final class AdcClientConnection implements Closeable {
         }
     }
 
+    /**
+     * Waits at most {@code timeoutMs} for the peer's next command. Returns it, or null when nothing came in time
+     * (the connection stays usable: a partly received line is kept for the next read). Throws EOFException when
+     * the peer closed the connection.
+     */
+    public AdcCommand pollCommand(int timeoutMs) throws IOException {
+        if (pushedBack != null) return readCommand();
+        int old = socket.getSoTimeout();
+        socket.setSoTimeout(Math.max(1, timeoutMs));
+        try {
+            AdcCommand c = readCommand();
+            if (c == null) throw new EOFException("Peer closed the connection");
+            return c;
+        } catch (java.net.SocketTimeoutException e) {
+            return null;
+        } finally {
+            socket.setSoTimeout(old);
+        }
+    }
+
+    /** Gives a command back: the next {@link #readCommand} returns it first. */
+    public void unread(AdcCommand c) {
+        pushedBack = c;
+    }
+
+    /** The line being read; kept across a read timeout so {@link #pollCommand} loses no bytes. */
+    private final ByteArrayOutputStream lineBuf = new ByteArrayOutputStream(128);
+
     private String readLine() throws IOException {
-        ByteArrayOutputStream line = new ByteArrayOutputStream(128);
+        ByteArrayOutputStream line = lineBuf;
         while (true) {
             int b = in.read();
-            if (b < 0) return line.size() > 0 ? new String(line.toByteArray(), UTF8) : null;
+            if (b < 0) {
+                String rest = line.size() > 0 ? new String(line.toByteArray(), UTF8) : null;
+                line.reset();
+                return rest;
+            }
             if (b == '\n') break;
             if (line.size() < MAX_LINE) line.write(b);
         }
         String s = new String(line.toByteArray(), UTF8);
+        line.reset();
         return s.endsWith("\r") ? s.substring(0, s.length() - 1) : s;
     }
 

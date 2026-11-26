@@ -463,6 +463,23 @@ public class PeerConnectionHandler implements Runnable {
         Log.d("andcpp", "No $Direction from " + hisNick + " within " + DIRECTION_WAIT_MS + " ms");
     }
 
+    /**
+     * The peer connected to us as the uploader ($Direction Upload) with none of our requests pending: takes the
+     * connection for an unfinished download from it (see DCPPService.adoptPeerConnection). False if there is none.
+     */
+    private boolean startAdoptedDownload(com.phinvader.libjdcpp.DCClient client, MessageHandler handler, String hisLock) {
+        if (client == null) return false;
+        com.phinvader.libjdcpp.DCDownloader.DownloadQueueEntity e =
+                uploadManager.getService().adoptPeerConnection(hisNick, false);
+        if (e == null) return false;
+        Log.d("andcpp", "[DLTRACE] Incoming connection from " + hisNick + " ($Direction Upload) taken for our download "
+                + e.remote_filename);
+        DCMessage rlockMsg = new DCMessage();
+        rlockMsg.lock_s = hisLock;
+        client.startDownloadingFile(e, client, rlockMsg, handler);
+        return true;
+    }
+
     private boolean performHandshake(MessageHandler handler, DCUser myUser) throws IOException, InterruptedException {
         long handshakeTimeout = 15000;
         long startTime = System.currentTimeMillis();
@@ -527,10 +544,35 @@ public class PeerConnectionHandler implements Runnable {
                         break;
                     }
                 }
-                handler.send_mynick(matchClient != null && correctMyUser != null ? correctMyUser : myUser);
+                // Nothing pending, but an unfinished (e.g. parked after "no slots") download from this peer: a
+                // DC++-type uploader that frees or grants a slot connects to us itself, with "$Direction Upload".
+                DCPPService.HubSession resumeSession = null;
+                if (matchClient == null) {
+                    resumeSession = uploadManager.getService().resumableDownloadSession(hisNick);
+                    if (resumeSession != null && resumeSession.client != null) {
+                        correctMyUser = resumeSession.myuser;
+                    } else {
+                        resumeSession = null;
+                    }
+                }
+                handler.send_mynick(correctMyUser != null ? correctMyUser : myUser);
                 handler.send_lock();
                 sentOrder.append("MyNick, Lock, ");
                 if (hisLock == null) hisLock = awaitLock(handler, startTime + handshakeTimeout);
+
+                if (resumeSession != null) {
+                    if (earlyDirection == null && earlyRequest == null) {
+                        awaitDirection(handler, System.currentTimeMillis() + DIRECTION_WAIT_MS);
+                    }
+                    boolean peerSaidUpload = earlyRequest == null && earlyDirection != null && !earlyDirection.dir_download;
+                    if (peerSaidUpload && startAdoptedDownload(resumeSession.client, handler, hisLock)) {
+                        return false;
+                    }
+                    if (!peerSaidUpload) {
+                        Log.d("andcpp", hisNick + " connected to download from us (or sent no $Direction): serving it as"
+                                + " an upload (our download from " + hisNick + " stays queued)");
+                    }
+                }
 
                 if (matchClient != null) {
                     // A peer that connects because of our $ConnectToMe says "$Direction Upload". One that wants to
@@ -550,6 +592,11 @@ public class PeerConnectionHandler implements Runnable {
                             DCMessage rlockMsg = new DCMessage();
                             rlockMsg.lock_s = hisLock;
                             matchClient.startDownloadingFile(pendingDownload, matchClient, rlockMsg, handler);
+                            return false;
+                        }
+                        // The pending request was taken meanwhile: a parked download from this peer may use it.
+                        if (earlyDirection != null && !earlyDirection.dir_download
+                                && startAdoptedDownload(matchClient, handler, hisLock)) {
                             return false;
                         }
                     } else {

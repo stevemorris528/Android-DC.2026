@@ -96,15 +96,7 @@ final class AdcTransfers {
         String proto = tlsAvailable() && wantsTls ? PROTO_TLS : PROTO;
         Log.d("andcpp", "[CC] " + peer.nick + " SU=" + peer.features + (peer.kp != null ? " KP" : "") + " -> " + proto);
         String token = newToken();
-        // DC++ / AirDC++ serve files by TTH only (a path gets "151 File Not Available"): use the TTH from the
-        // peer's saved file list when we have it, else the path.
-        String tth = null;
-        if (!AdcClientConnection.isFileListName(remotePath)) {
-            tth = tthFromSavedList(peer.nick, remotePath);
-            if (tth == null) tth = rememberedTth(peer.nick, remotePath); // e.g. a search result
-        }
-        String identifier = tth != null ? "TTH/" + tth : AdcClientConnection.identifierFor(remotePath);
-        Pending p = new Pending(peer.cid, peer.nick, entity, identifier);
+        Pending p = new Pending(peer.cid, peer.nick, entity, downloadIdentifier(peer.nick, remotePath));
         p.hub = hub;
         pending.put(token, p);
         entity.status = DCConstants.DownloadStatus.QUEUED;
@@ -116,6 +108,19 @@ final class AdcTransfers {
             Log.d("andcpp", "[CC] DRCM to " + peer.nick + " for " + remotePath + " (" + proto + ", token " + token + ")");
         }
         return null;
+    }
+
+    /**
+     * What we CGET for this path. DC++ / AirDC++ serve files by TTH only (a path gets "151 File Not Available"):
+     * the TTH from the peer's saved file list when we have it, else from a search result, else the path.
+     */
+    private String downloadIdentifier(String nick, String remotePath) {
+        String tth = null;
+        if (!AdcClientConnection.isFileListName(remotePath)) {
+            tth = tthFromSavedList(nick, remotePath);
+            if (tth == null) tth = rememberedTth(nick, remotePath); // e.g. a search result
+        }
+        return tth != null ? "TTH/" + tth : AdcClientConnection.identifierFor(remotePath);
     }
 
     /**
@@ -289,14 +294,38 @@ final class AdcTransfers {
         });
     }
 
-    /** Handshake done: our download (known token) or the peer's (anything else). */
-    private void established(AdcClientConnection conn, String knownNick) {
+    /** How long a connection with an unknown token waits for the peer's CGET before we take it for our download. */
+    private static final int PEER_REQUEST_WAIT_MS = 2500;
+
+    /**
+     * Handshake done: our download (known token) or the peer's (anything else). A DC++-type uploader that frees
+     * or grants a slot for a user on its waiting list connects to that user itself, with its own token, and then
+     * waits for the user's CGET. So with an unknown token from a peer we have an unfinished download from, we
+     * wait briefly: a CGET means it downloads from us; silence means it waits for our request.
+     */
+    private void established(AdcClientConnection conn, String knownNick) throws IOException {
         Pending p = conn.token != null ? pending.remove(conn.token) : null;
         if (p != null && (p.peerCid == null || p.peerCid.equals(conn.peerCid))) {
             download(conn, p);
             return;
         }
+        DCUser user = userForCid(conn.peerCid);
         String nick = knownNick != null ? knownNick : nickForCid(conn.peerCid);
+        if (user != null && user.nick != null && service.findResumableDownloadFrom(user.nick, true) != null) {
+            com.phinvader.libjdcpp.adc.AdcCommand first = conn.pollCommand(PEER_REQUEST_WAIT_MS);
+            if (first != null) {
+                conn.unread(first); // the upload side reads it as the peer's first request
+                Log.d("andcpp", "[CC] " + user.nick + " sent C" + first.cmd + " (unknown token): serving it as an upload");
+            } else {
+                DCDownloader.DownloadQueueEntity e = service.adoptPeerConnection(user.nick, true);
+                if (e != null) {
+                    Log.d("andcpp", "[CC] " + user.nick + " connected (token " + conn.token + ") and waits for our"
+                            + " request: taking it for our download of " + e.remote_filename);
+                    download(conn, new Pending(conn.peerCid, user.nick, e, downloadIdentifier(user.nick, e.remote_filename)));
+                    return;
+                }
+            }
+        }
         Log.d("andcpp", "[CC] Upload connection from " + nick + " (CID " + conn.peerCid + ")");
         service.getUploadManager().serveAdcUpload(conn, nick);
     }

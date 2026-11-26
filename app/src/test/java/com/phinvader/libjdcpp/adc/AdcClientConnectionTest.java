@@ -161,4 +161,67 @@ public class AdcClientConnectionTest {
             down.close();
         }
     }
+
+    /**
+     * What AdcTransfers.established() relies on for a connection with an unknown token: pollCommand() returns
+     * null when the peer stays silent (it waits for our CGET) and leaves the connection usable, a line split
+     * across the timeout is not lost, and a command given back with unread() is read again first.
+     */
+    @Test
+    public void pollCommandAndUnread() throws Exception {
+        final BlockingQueue<Object> go = new LinkedBlockingQueue<>();
+        try (ServerSocket server = new ServerSocket(0)) {
+            Thread peer = new Thread(() -> {
+                try (Socket s = new Socket()) {
+                    s.connect(new InetSocketAddress("127.0.0.1", server.getLocalPort()), 5000);
+                    s.setSoTimeout(5000);
+                    AdcClientConnection p = new AdcClientConnection(s, null);
+                    p.handshakeAsConnector("PEER", "peertoken");
+                    go.take(); // silent until the test has polled once
+                    OutputStream o = p.rawOut();
+                    o.write("CGET file /a".getBytes("US-ASCII")); // half a line ...
+                    o.flush();
+                    go.take();
+                    o.write(" 0 -1\nCGET file /b 0 -1\n".getBytes("US-ASCII")); // ... the rest after a timeout
+                    o.flush();
+                    go.take(); // then close
+                } catch (Exception ignored) {
+                    // test thread asserts
+                }
+            });
+            peer.setDaemon(true);
+            peer.start();
+
+            Socket s = server.accept();
+            s.setSoTimeout(5000);
+            AdcClientConnection conn = new AdcClientConnection(s, null);
+            conn.handshakeAsAcceptor("ME");
+            assertEquals("peertoken", conn.token);
+
+            long t0 = System.currentTimeMillis();
+            assertEquals(null, conn.pollCommand(300)); // the peer waits for our request
+            assertTrue(System.currentTimeMillis() - t0 >= 250);
+            assertEquals(5000, s.getSoTimeout()); // restored
+
+            go.add(1);
+            Thread.sleep(200);
+            assertEquals(null, conn.pollCommand(300)); // only half a line so far
+            go.add(2);
+            AdcCommand first = conn.pollCommand(3000);
+            assertEquals("CGET file /a 0 -1", first.toString());
+
+            conn.unread(first);
+            assertEquals("CGET file /a 0 -1", conn.readCommand().toString());
+            assertEquals("CGET file /b 0 -1", conn.readCommand().toString());
+
+            go.add(3);
+            try {
+                conn.pollCommand(3000);
+                assertTrue("expected EOF", false);
+            } catch (java.io.EOFException expected) {
+                // the peer closed the connection
+            }
+            conn.close();
+        }
+    }
 }

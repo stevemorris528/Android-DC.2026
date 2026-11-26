@@ -29,6 +29,25 @@ public class DCHandlers {
 	}
 
 	/**
+	 * DC++-type uploaders give a free or granted slot to a queued user by connecting to it themselves
+	 * ($ConnectToMe / $RevConnectToMe), usually while our download from them is parked between attempts, so no
+	 * request of ours is pending. This lets such a connection ($Direction Upload) carry that download.
+	 */
+	public interface PeerConnectionAdopter {
+		/** True if we have an unfinished download from this peer that could use a connection now. */
+		boolean hasResumableDownloadFrom(String peerNick);
+
+		/** Prepares that download for this connection and returns its entity, or null if there is none. */
+		DCDownloader.DownloadQueueEntity adoptPeerConnection(String peerNick);
+	}
+
+	private static volatile PeerConnectionAdopter connectionAdopter = null;
+
+	public static void setConnectionAdopter(PeerConnectionAdopter adopter) {
+		connectionAdopter = adopter;
+	}
+
+	/**
 	 * The only consumer of $ConnectToMe. In NMDC msg.connect_nick is the RECIPIENT (our own nick), so the peer is
 	 * identified from its $MyNick during the handshake, never from connect_nick.
 	 */
@@ -98,9 +117,15 @@ public class DCHandlers {
 				// ways (we're passive towards this peer), taking every connection for our download starved the
 				// peer: its file list / downloads from us only ever got "Connecting" / "Timed out". So look at
 				// the peer's $Direction first, as the incoming-connection path does.
+				// A peer that grants us a slot connects for our download while it is parked (nothing pending): it
+				// says "$Direction Upload" too, so look at the direction when we have any unfinished download from it.
 				java.util.List<DCMessage> early = new java.util.ArrayList<DCMessage>();
 				boolean peerWantsToDownload = false;
-				if (downloaderManager.hasPendingFor(peerNick)) {
+				boolean peerSaidUpload = false;
+				boolean pending = downloaderManager.hasPendingFor(peerNick);
+				PeerConnectionAdopter adopter = connectionAdopter;
+				boolean resumable = !pending && adopter != null && adopter.hasResumableDownloadFrom(peerNick);
+				if (pending || resumable) {
 					long dirDeadline = System.currentTimeMillis() + 5000;
 					while (System.currentTimeMillis() < dirDeadline) {
 						DCMessage m = h.getNextMessage(500, java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -109,6 +134,7 @@ public class DCHandlers {
 						early.add(m);
 						if ("Direction".equals(m.command)) {
 							peerWantsToDownload = m.dir_download;
+							peerSaidUpload = !m.dir_download;
 							break;
 						}
 						if ("Get".equals(m.command) || "ADCGET".equals(m.command)) {
@@ -117,17 +143,27 @@ public class DCHandlers {
 						}
 					}
 				}
-				DCDownloader.DownloadQueueEntity entity = peerWantsToDownload ? null
-						: downloaderManager.claimRevConnectAnswer(peerNick);
+				DCDownloader.DownloadQueueEntity entity = null;
+				if (!peerWantsToDownload && pending) {
+					entity = downloaderManager.claimRevConnectAnswer(peerNick);
+					if (entity == null && peerSaidUpload) {
+						// Our $ConnectToMe is pending, but the peer connected for it through its own $ConnectToMe
+						// (e.g. it answered after we parked and asked again, or it grants a slot): still ours.
+						entity = downloaderManager.getDownloadEntityCaseInsensitive(peerNick);
+					}
+				}
+				if (entity == null && peerSaidUpload && adopter != null) {
+					entity = adopter.adoptPeerConnection(peerNick); // a parked download (e.g. after "no slots")
+				}
 				if (peerWantsToDownload) {
 					android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: " + peerNick + " wants to download from us:"
-							+ " serving it as an upload (our pending download from " + peerNick + " stays queued)");
+							+ " serving it as an upload (our download from " + peerNick + " stays queued)");
 				}
 				// Give the messages read above back to whoever handles the connection now (same order).
 				for (DCMessage m : early) h.addMessage(m);
-				android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: peer=" + peerNick + ", revConnectDownloadFound="
-						+ (entity != null) + (entity == null && downloaderManager.hasPendingFor(peerNick)
-						? " (our pending download asked with $ConnectToMe: serving the peer's upload request)" : ""));
+				android.util.Log.d("andcpp", "[DLTRACE] ConnectToMe: peer=" + peerNick + ", direction="
+						+ (peerSaidUpload ? "Upload" : peerWantsToDownload ? "Download" : "unknown")
+						+ ", pending=" + pending + ", resumable=" + resumable + ", downloadFound=" + (entity != null));
 
 				if (entity != null) {
 					client.startDownloadingFile(entity, client, rlock, h);

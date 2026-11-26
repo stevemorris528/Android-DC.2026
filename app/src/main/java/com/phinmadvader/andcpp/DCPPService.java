@@ -93,6 +93,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	// "Download only over Wi-Fi": cached result, refreshed on network/setting changes.
 	static final String WAIT_REASON_WIFI = "waiting for Wi-Fi";
+	/** $MaxedOut / ADC STA 253: the peer has us on its waiting list. */
+	static final String WAIT_REASON_NO_SLOTS = "peer has no free slots";
+	/** Fixed retry interval for WAIT_REASON_NO_SLOTS (no growing backoff). */
+	private static final long NO_SLOTS_RETRY_MILLIS = 30000L;
 	private volatile boolean downloadsBlockedByNetwork = false;
 	private SharedPreferences.OnSharedPreferenceChangeListener wifiOnlyPrefListener;
 
@@ -363,6 +367,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		private volatile long nextRetryAt = 0L;
 		/** Peer reported the file as unavailable: not re-queued automatically (user Resume clears it). */
 		private volatile boolean permanentlyFailed = false;
+		/**
+		 * Set by adoptPeerConnection(): a connection the peer started already runs this attempt, and the item was
+		 * queued only so a worker tracks it. The next start_download() leaves it alone (and clears this).
+		 */
+		private volatile boolean adoptedConnection = false;
 		public String getWaitReason() {
 			return waitReason;
 		}
@@ -417,6 +426,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					waitReason = null;
 					peerWaitRetryCount = 0;
 					nextRetryAt = 0L;
+					adoptedConnection = false;
 					permanentlyFailed = false;
 					isPaused = false;
 					File downloadedFile = new File(local_file);
@@ -544,15 +554,20 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		}
 
-		/** Parks this download with a visible reason. The scheduler retries it after nextRetryAt (30s, 60s, 120s, then 300s). */
+		/**
+		 * Parks this download with a visible reason. The scheduler retries it after nextRetryAt (30s, 60s, 120s, then
+		 * 300s). "No free slots" always waits 30 s: a slot the peer frees or grants is held for us only a few
+		 * minutes, and our retries must fall inside that window.
+		 */
 		private void markWaiting(String reason) {
 			final long[] steps = {30000L, 60000L, 120000L, 300000L};
 			int idx = Math.min(peerWaitRetryCount, steps.length - 1);
+			long delay = WAIT_REASON_NO_SLOTS.equals(reason) ? NO_SLOTS_RETRY_MILLIS : steps[idx];
 			waitReason = reason;
-			nextRetryAt = System.currentTimeMillis() + steps[idx];
-			peerWaitRetryCount = peerWaitRetryCount + 1;
+			nextRetryAt = System.currentTimeMillis() + delay;
+			if (!WAIT_REASON_NO_SLOTS.equals(reason)) peerWaitRetryCount = peerWaitRetryCount + 1;
 			Log.w("andcpp", "[DLTRACE] " + file_name + " (" + target_nick + ") -> WAITING_FOR_PEER: " + reason
-					+ ", retry in " + (steps[idx] / 1000) + "s");
+					+ ", retry in " + (delay / 1000) + "s");
 			updateFolderStatus(this, DCConstants.DownloadStatus.WAITING_FOR_PEER);
 			postWaitNotification("Waiting for peer (" + reason + ")");
 		}
@@ -663,6 +678,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 		public void start_download() throws InterruptedException {
 			if (isCancelled || isPaused) return;
+
+			if (adoptedConnection) {
+				// The peer connected to us for this download (adoptPeerConnection): that attempt is running.
+				adoptedConnection = false;
+				Log.d("andcpp", "[DLTRACE] start_download: " + file_name + " runs on a connection the peer started");
+				return;
+			}
 
 			if (waitReason != null) {
 				if (System.currentTimeMillis() < nextRetryAt) {
@@ -1048,7 +1070,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						try {
 						// Never restart a finished download, and never process one object on two workers
 						// or two downloads from the same peer at once.
-						if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.COMPLETED) {
+						// (An item adopted from a peer-started connection may finish before a worker gets to it: it
+						// still goes through the loop below once, for its completion notification and folder progress.)
+						if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.COMPLETED
+								&& !work.adoptedConnection) {
 							continue;
 						}
 						if (!work.isFileList() && !work.isCancelled && !work.isPaused) {
@@ -1209,7 +1234,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 								break;
 							} else if (work.download_status != null && work.download_status.status == DCConstants.DownloadStatus.WAITING_FOR_PEER) {
 								// Peer answered $MaxedOut: park the item and free this worker.
-								work.markWaiting("peer has no free slots");
+								work.markWaiting(WAIT_REASON_NO_SLOTS);
 								break;
 							} else if (work.download_status != null && (work.download_status.status == DCConstants.DownloadStatus.QUEUED
 									|| work.download_status.status == DCConstants.DownloadStatus.INITIATED
@@ -1475,7 +1500,10 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 	}
 
 	private final List<Thread> normalWorkers = new ArrayList<>();
-	private final Set<String> activeNicks = new HashSet<>();
+	/** Active downloads per peer (lower-case nick -> count), at most MAX_CONNECTIONS_PER_USER each. */
+	private final Map<String, Integer> activeNicks = new HashMap<>();
+	/** Like modern DC++ clients: up to this many downloads from the same user at the same time. */
+	private static final int MAX_CONNECTIONS_PER_USER = 3;
 	private final Set<DownloadObject> activeWorkerObjects = new HashSet<>();
 	private LinkedBlockingQueue<DownloadObject> normal_queue; // unbounded: adding must never block (a full fixed-size queue froze the app)
 	private ArrayList<DownloadObject> initiated_downloads;
@@ -1486,7 +1514,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		return w.target_nick == null ? "" : w.target_nick.toLowerCase(Locale.ROOT);
 	}
 
-	/** One worker per object and one active download per peer. */
+	/** One worker per object and up to MAX_CONNECTIONS_PER_USER active downloads per peer. */
 	private static final class ClaimInfo {
 		Thread owner;
 		long since;
@@ -1506,14 +1534,152 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		}
 	}
 
+	/** True if this download runs over an ADC hub (same test as start_download). */
+	private boolean isAdcDownload(DownloadObject o) {
+		HubSession own = o.hubIp != null ? sessionForUi(o.hubIp) : null;
+		return own != null && own.protocol.isAdc();
+	}
+
+	/** An unfinished download a peer-started connection could carry right now (not running, paused or cancelled). */
+	private boolean isResumableFrom(DownloadObject o, String nick, boolean adc) {
+		if (o == null || o.target_nick == null || !o.target_nick.equalsIgnoreCase(nick)) return false;
+		if (o.isFileList() || o.isCancelled || o.isPaused || o.permanentlyFailed || o.adoptedConnection) return false;
+		// FAILED items are still retried by the scheduler (unless permanentlyFailed), so only these are done.
+		DCDownloader.DownloadQueueEntity e = o.download_status;
+		if (e != null && (e.status == DCConstants.DownloadStatus.COMPLETED || e.status == DCConstants.DownloadStatus.SHUTDOWN)) return false;
+		return isAdcDownload(o) == adc;
+	}
+
+	private static boolean isRunning(DCDownloader.DownloadQueueEntity e) {
+		return e != null && (e.status == DCConstants.DownloadStatus.INITIATED
+				|| e.status == DCConstants.DownloadStatus.STARTED
+				|| e.status == DCConstants.DownloadStatus.DOWNLOADING
+				|| e.status == DCConstants.DownloadStatus.COMPLETED);
+	}
+
+	/**
+	 * An unfinished, not paused, not cancelled download from {@code nick} (case-insensitive), including parked
+	 * ones (waitReason set, e.g. after "no free slots"), that nothing is downloading right now. Null if none.
+	 * DC++-type uploaders hand out a free or granted slot by connecting to the queued user themselves, usually
+	 * while our download is parked: such a connection must be taken for this download.
+	 */
+	DownloadObject findResumableDownloadFrom(String nick, boolean adc) {
+		if (nick == null || initiated_downloads == null) return null;
+		synchronized (initiated_downloads) {
+			for (DownloadObject o : initiated_downloads) {
+				if (!isResumableFrom(o, nick, adc)) continue;
+				if (isActiveWorkerObject(o)) {
+					// A worker is waiting for its connection: on ADC the peer may use its own token for it.
+					if (adc && o.download_status != null && o.download_status.status == DCConstants.DownloadStatus.QUEUED) return o;
+					continue;
+				}
+				if (!isRunning(o.download_status)) return o;
+			}
+		}
+		return null;
+	}
+
+	/** The NMDC hub session the download from this peer would go through (for the $MyNick we send), or null. */
+	HubSession resumableDownloadSession(String nick) {
+		DownloadObject o = findResumableDownloadFrom(nick, false);
+		return o != null ? downloadSession(o.hubIp) : null;
+	}
+
+	/**
+	 * A peer connected to us, or we connected to it after its connect request, and it is the uploader ($Direction
+	 * Upload on NMDC; on ADC it waits for our CGET), but no request of ours is waiting for that connection: take
+	 * it for an unfinished download from that peer. Builds the download's entity the way start_download() does
+	 * (resume offset, status INITIATED, wait reason cleared) and queues the item so a worker tracks progress and
+	 * completion (start_download() then leaves the running attempt alone). On ADC, an item whose worker is still
+	 * waiting for its own requested connection keeps its entity and worker. Respects MAX_CONNECTIONS_PER_USER.
+	 * Returns the entity to download into, or null if there is no such download.
+	 */
+	DCDownloader.DownloadQueueEntity adoptPeerConnection(String nick, boolean adc) {
+		if (nick == null || initiated_downloads == null) return null;
+		DownloadObject chosen = null;
+		DCDownloader.DownloadQueueEntity entity = null;
+		boolean enqueue = false;
+		synchronized (initiated_downloads) {
+			synchronized (claimLock) {
+				String key = nick.toLowerCase(Locale.ROOT);
+				int busy = activeNicks.containsKey(key) ? activeNicks.get(key) : 0;
+				for (DownloadObject o : initiated_downloads) {
+					if (o.adoptedConnection && o.target_nick != null && o.target_nick.equalsIgnoreCase(nick)) busy++;
+				}
+				for (DownloadObject o : initiated_downloads) {
+					if (!isResumableFrom(o, nick, adc)) continue;
+					if (activeWorkerObjects.contains(o)) {
+						DCDownloader.DownloadQueueEntity e = o.download_status;
+						if (adc && e != null && e.status == DCConstants.DownloadStatus.QUEUED) {
+							adcTransfers.forget(e); // the peer's connection answers this request
+							e.status = DCConstants.DownloadStatus.INITIATED;
+							o.lastSignalTime = System.currentTimeMillis();
+							chosen = o;
+							entity = e;
+							break;
+						}
+						continue;
+					}
+					if (isRunning(o.download_status)) continue;
+					if (busy >= MAX_CONNECTIONS_PER_USER) {
+						Log.d("andcpp", "[DLTRACE] adoptPeerConnection: " + nick + " already has " + busy
+								+ " downloads running; not taking this connection for " + o.file_name);
+						return null;
+					}
+					HubSession s = adc ? sessionForUi(o.hubIp) : downloadSession(o.hubIp);
+					DCUser target = null;
+					if (adc && s != null && s.hub instanceof AdcHubConnection) {
+						target = ((AdcHubConnection) s.hub).userByNick(o.target_nick);
+					}
+					if (target == null) {
+						target = new DCUser();
+						target.nick = o.target_nick;
+					}
+					DCUser me = new DCUser();
+					me.nick = s != null && s.prefs != null ? s.prefs.getNick() : null;
+					File partial = new File(o.local_file);
+					if (partial.isFile()) o.pendingStartOffset = partial.length();
+					DCDownloader.DownloadQueueEntity e = new DCDownloader.DownloadQueueEntity(target, me, o.remote_file, o.local_file);
+					e.startOffset = o.pendingStartOffset;
+					e.downloadedSize = o.pendingStartOffset;
+					e.status = DCConstants.DownloadStatus.INITIATED;
+					DCDownloader.DownloadQueueEntity old = o.download_status;
+					if (old != null && old.connectionHandler != null) {
+						try { old.connectionHandler.close(); } catch (Exception ignored) {}
+					}
+					if (adc) adcTransfers.forget(old);
+					o.download_status = e;
+					o.waitReason = null;
+					o.lastSignalTime = System.currentTimeMillis();
+					o.set_start_download_time();
+					o.adoptedConnection = true;
+					chosen = o;
+					entity = e;
+					enqueue = true;
+					break;
+				}
+			}
+		}
+		if (chosen == null) return null;
+		Log.i("andcpp", "[DLTRACE] " + nick + " connected to upload to us: taking the connection for "
+				+ chosen.file_name + " (from byte " + entity.startOffset + (enqueue ? "" : ", answers our pending request") + ")");
+		if (enqueue) {
+			updateFolderStatus(chosen, DCConstants.DownloadStatus.STARTED);
+			if (normal_queue != null && !normal_queue.contains(chosen)) normal_queue.offer(chosen);
+			startNormalWorkersIfNeeded();
+		}
+		return entity;
+	}
+
 	private boolean tryClaim(DownloadObject w) {
 		synchronized (claimLock) {
 			String nick = nickKey(w);
-			if (activeWorkerObjects.contains(w) || activeNicks.contains(nick)) {
+			Integer active = activeNicks.get(nick);
+			if (activeWorkerObjects.contains(w) || (active != null && active >= MAX_CONNECTIONS_PER_USER)) {
 				return false;
 			}
 			activeWorkerObjects.add(w);
-			activeNicks.add(nick);
+			activeNicks.put(nick, active == null ? 1 : active + 1);
 			ClaimInfo ci = new ClaimInfo();
 			ci.owner = Thread.currentThread();
 			ci.since = System.currentTimeMillis();
@@ -1531,8 +1697,18 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			if (ci == null || ci.owner != Thread.currentThread()) return;
 			claimInfos.remove(w);
 			activeWorkerObjects.remove(w);
-			activeNicks.remove(nickKey(w));
+			releaseNick(nickKey(w));
 			claimLock.notifyAll(); // wake workers waiting for a free peer
+		}
+	}
+
+	/** Drops one active download from a peer's count. Call with claimLock held. */
+	private void releaseNick(String nick) {
+		Integer active = activeNicks.get(nick);
+		if (active == null || active <= 1) {
+			activeNicks.remove(nick);
+		} else {
+			activeNicks.put(nick, active - 1);
 		}
 	}
 
@@ -1569,7 +1745,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				if (ci == null) continue;
 				owner = ci.owner;
 				activeWorkerObjects.remove(w);
-				activeNicks.remove(nickKey(w));
+				releaseNick(nickKey(w));
 				claimLock.notifyAll();
 			}
 			Log.e("andcpp", "[DLTRACE] STALE CLAIM: " + w.file_name + " (" + w.target_nick + ") no progress for "
@@ -1592,7 +1768,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	private String activeNicksSnapshot() {
 		synchronized (claimLock) {
-			return activeNicks.toString();
+			return activeNicks.keySet().toString();
 		}
 	}
 
@@ -1959,6 +2135,18 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 						} else {
 							h.close();
 						}
+					}
+				});
+		com.phinvader.libjdcpp.DCHandlers.setConnectionAdopter(
+				new com.phinvader.libjdcpp.DCHandlers.PeerConnectionAdopter() {
+					@Override
+					public boolean hasResumableDownloadFrom(String peerNick) {
+						return findResumableDownloadFrom(peerNick, false) != null;
+					}
+
+					@Override
+					public DCDownloader.DownloadQueueEntity adoptPeerConnection(String peerNick) {
+						return DCPPService.this.adoptPeerConnection(peerNick, false);
 					}
 				});
 	}
