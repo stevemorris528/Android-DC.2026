@@ -126,6 +126,11 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			return type == TYPE_SEPARATOR;
 		}
 
+		/** Verlihub add-on: a menu entry that sends chatText to the hub's main chat (NMDC). */
+		static UserCommand chat(int context, String title, String chatText) {
+			return new UserCommand(1, context, title, "<%[mynick]> " + chatText.replace("$", "&#36;") + "&#124;");
+		}
+
 		/** Prompts of the %[line:...] placeholders, in order of first appearance. */
 		public List<String> linePrompts() {
 			List<String> prompts = new ArrayList<>();
@@ -2950,6 +2955,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			HubSession session = getSession(hubKey);
 			if (session != null) {
 				dcMessage.hubname_s = session.hubIp;
+				// Verlihub add-on: its own quiet requests (+myinfo, hub stats) are answered here, not in the chat.
+				if (verlihub.onMainChat(session.hubIp, dcMessage.msg_s)) return;
 				if (session.board_message_handler != null)
 					session.board_message_handler.onCommand(dcMessage);
 			}
@@ -2962,6 +2969,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		@Override
 		public void onCommand(DCMessage dcMessage) {
 			HubSession session = getSession(hubKey);
+			// Every PM the hub sends us, before anything can drop it (a PM with no parsed sender is ignored below).
+			Log.i("andcpp", "[PM-IN] " + hubKey + " to=" + dcMessage.to_user + " from=" + dcMessage.pm_from
+					+ " text=" + dcMessage.pm_text + (session == null ? " (no session: dropped)" : ""));
 			if (session != null) {
 				dcMessage.hubname_s = session.hubIp;
 				handleIncomingPrivateMessage(session, dcMessage);
@@ -3247,7 +3257,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		DCClient client = session.client;
 		HubConnection hub = session.hub;
 		if (client != null) {
-			for (DCMessage msg : client.getBoardMessages()) ret.add(msg.msg_s);
+			for (DCMessage msg : client.getBoardMessages()) {
+				if (!verlihub.isHidden(session.hubIp, msg.msg_s)) ret.add(msg.msg_s);
+			}
 		} else if (hub instanceof AdcHubConnection) {
 			ret.addAll(((AdcHubConnection) hub).boardMessages());
 		}
@@ -4692,6 +4704,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					session.client.connect(session.hubIp, session.hubPort, session.prefs);
 				}
 				
+				verlihub.onHubLock(session.hubIp, session.client.hubPk); // Verlihub add-on: "Pk=Verlihub ..."
 				session.client.bootstrap(session.myuser);
 				session.client.setCustomUserChangeHandler(new MyUserHandler(hubKey));
 				session.client.setCustomBoardMessageHandler(new MyBoardMessageHandler(hubKey));
@@ -4714,6 +4727,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				session.status = DCClientStatus.CONNECTED;
 				session.reconnectAttempts = 0; // Reset on success
 				postHubStatus(session, "Connected to " + session.address().toUrl());
+				if (!session.protocol.isAdc()) verlihub.onConnected(session); // Verlihub add-on: find our class
 				// A hub we connected to stays in the saved hubs list (until "Delete Hub"), so it survives restarts.
 				HubListFragment.saveHub(DCPPService.this, session.address().id()); // NMDC: host[:port] as before
 				ensureForeground(session.hubIp);
@@ -5018,7 +5032,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 		for (UserCommand uc : session.userCommands) {
 			if ((uc.context & contextBit) != 0) out.add(uc);
 		}
+		out.addAll(verlihub.menuCommands(session.hubIp, contextBit)); // Verlihub add-on, filtered by your class
 		return out;
+	}
+
+	/** Verlihub add-on: command menu, one-tap admin buttons and hub stats for Verlihub hubs. */
+	final VerlihubAddon verlihub = new VerlihubAddon(this);
+
+	public VerlihubAddon getVerlihub() {
+		return verlihub;
 	}
 
 	private final java.util.concurrent.ExecutorService userCommandExecutor =

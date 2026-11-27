@@ -23,6 +23,28 @@ public class MessageBoardFragment extends Fragment {
 	private ScrollView messageScrollView;
 	public boolean is_ready = false;
 	private String currentHubIp = null;
+	/** Verlihub add-on strip and menus (null until the service is bound). */
+	private VerlihubPanel verlihubPanel;
+	private View verlihubRoot;
+
+	/** Creates the Verlihub add-on panel once the service is there, and points it at this hub. */
+	private void updateVerlihub() {
+		if (verlihubRoot == null || mainActivity == null || mainActivity.mService == null) return;
+		if (verlihubPanel == null) {
+			verlihubPanel = new VerlihubPanel(mainActivity, mainActivity.mService.getVerlihub(),
+					verlihubRoot.findViewById(R.id.verlihub_bar),
+					(Button) verlihubRoot.findViewById(R.id.verlihub_tools_button));
+		}
+		verlihubPanel.setHubIp(currentHubIp);
+	}
+
+	@Override
+	public void onDestroyView() {
+		if (verlihubPanel != null) verlihubPanel.detach();
+		verlihubPanel = null;
+		verlihubRoot = null;
+		super.onDestroyView();
+	}
 
 	public String getHubIp() {
 		return currentHubIp;
@@ -37,6 +59,7 @@ public class MessageBoardFragment extends Fragment {
 
 	public void refresh() {
 		if (msg_board == null || mainActivity == null || mainActivity.mService == null) return;
+		updateVerlihub();
 		msg_board.setText("");
 		List<String> current_messages = mainActivity.mService.get_board_messages(currentHubIp);
 		if (current_messages != null) {
@@ -59,6 +82,7 @@ public class MessageBoardFragment extends Fragment {
 		messageScrollView = (ScrollView) root.findViewById(R.id.messageScrollView);
 		chatInputText = (EditText) root.findViewById(R.id.chat_input_text);
 		chatSendButton = (Button) root.findViewById(R.id.chat_send_button);
+		verlihubRoot = root;
 
 		chatSendButton.setOnClickListener(v -> sendMessage());
 

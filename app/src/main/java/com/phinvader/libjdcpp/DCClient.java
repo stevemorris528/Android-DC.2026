@@ -26,6 +26,8 @@ public class DCClient {
 	private UsersHandler mainUserHandler;
 	private MessageRouter mainMessageRouter;
 	public DCDownloader downloadHandler;
+	/** The hub software named in its $Lock "Pk=" part, or null. */
+	public volatile String hubPk;
 	/** Build m: register of pending download requests carried over from the previous hub connection. */
 	private DCDownloader keptDownloadHandler;
 
@@ -143,6 +145,7 @@ public class DCClient {
 		supported_methods.add("TTHF");
 		supported_methods.add("UserCommand"); // hubs only send $UserCommand (hub/user menus) to clients announcing it
 
+		hubPk = lock.key_s; // e.g. "Verlihub 1.6.0.0" (Verlihub add-on)
 		handler.send_supports(supported_methods);
 		handler.send_key(DCFunctions.convert_lock_to_key(lock.lock_s.getBytes()));
 

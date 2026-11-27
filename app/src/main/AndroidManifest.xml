@@ -59,8 +59,16 @@
             android:label="Android DC++ Hub Connection Test"
             android:exported="false" >
         </activity>
-        <activity 
+        <activity
             android:name="com.phinmadvader.andcpp.Settings"></activity>
+        <!-- Verlihub add-on: full-screen hub admin -->
+        <activity
+            android:name="com.phinmadvader.andcpp.HubAdminActivity"
+            android:label="Hub admin"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false">
+        </activity>
         <activity
             android:name="com.phinmadvader.andcpp.PrivateChatActivity"
             android:label="Private Chat"

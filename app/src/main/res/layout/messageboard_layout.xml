@@ -23,6 +23,32 @@
             android:textIsSelectable="true" />
     </ScrollView>
 
+    <!-- Verlihub add-on: opens the full-screen Hub admin. Hidden on other hubs. -->
+    <LinearLayout
+        android:id="@+id/verlihub_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical|end"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
+        android:paddingTop="8dp"
+        android:background="?attr/appHeaderBackgroundColor"
+        android:visibility="gone">
+
+        <!-- Styled like the Send button, in the port-forwarding blue -->
+        <Button
+            android:id="@+id/verlihub_tools_button"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:background="@drawable/btn_blue_rounded"
+            android:text="Hub admin  ›"
+            android:textColor="#FFFFFF"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
