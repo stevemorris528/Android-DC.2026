@@ -154,10 +154,26 @@ public class UserListFragment extends Fragment {
 			popup.getMenu().add(0, 3, 2, "3. Hub commands");
 		}
 
+		// Copy submenu (ids 10-16): copies one field of this user to the clipboard.
+		android.view.SubMenu copyMenu = popup.getMenu().addSubMenu(0, 4, 3,
+				(hasHubCommands ? "4" : "3") + ". Copy");
+		copyMenu.add(0, 10, 0, "Nick");
+		copyMenu.add(0, 11, 1, "Comment");
+		copyMenu.add(0, 12, 2, "Ip");
+		copyMenu.add(0, 13, 3, "Share");
+		copyMenu.add(0, 14, 4, "Tag");
+		copyMenu.add(0, 15, 5, "Email");
+		copyMenu.add(0, 16, 6, "All");
+
 		popup.setOnMenuItemClickListener(new android.widget.PopupMenu.OnMenuItemClickListener() {
 			@Override
 			public boolean onMenuItemClick(android.view.MenuItem item) {
-				switch (item.getItemId()) {
+				int id = item.getItemId();
+				if (id >= 10 && id <= 16) {
+					copyUserField(user, id);
+					return true;
+				}
+				switch (id) {
 					case 1:
 						mainActivity.open_file_list(currentHubIp, user);
 						return true;
@@ -174,6 +190,48 @@ public class UserListFragment extends Fragment {
 		});
 
 		popup.show();
+	}
+
+	private static String orEmpty(String s) {
+		return s != null ? s.trim() : "";
+	}
+
+	private static String formatShare(DCUser user) {
+		DCPPService.FileSize fs = new DCPPService.FileSize((double) user.share_size);
+		return String.format("%.4g %s", fs.fileSize, fs.unit);
+	}
+
+	/** Copies one field (menu ids 10 Nick .. 15 Email, 16 All) of the user to the clipboard. */
+	private void copyUserField(DCUserComparable user, int id) {
+		if (getActivity() == null) return;
+		String label;
+		String text;
+		switch (id) {
+			case 10: label = "Nick"; text = orEmpty(user.nick); break;
+			case 11: label = "Comment"; text = orEmpty(user.description); break;
+			case 12: label = "Ip"; text = orEmpty(user.ip); break;
+			case 13: label = "Share"; text = formatShare(user); break;
+			case 14: label = "Tag"; text = orEmpty(user.tag); break;
+			case 15: label = "Email"; text = orEmpty(user.email); break;
+			default:
+				label = "All";
+				text = "Nick: " + orEmpty(user.nick)
+						+ "\nComment: " + orEmpty(user.description)
+						+ "\nIp: " + orEmpty(user.ip)
+						+ "\nShare: " + formatShare(user)
+						+ "\nTag: " + orEmpty(user.tag)
+						+ "\nEmail: " + orEmpty(user.email);
+				break;
+		}
+		if (text.isEmpty()) {
+			Toast.makeText(getActivity(), "No " + label.toLowerCase() + " for " + user.nick, Toast.LENGTH_SHORT).show();
+			return;
+		}
+		android.content.ClipboardManager cm = (android.content.ClipboardManager)
+				getActivity().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+		if (cm == null) return;
+		cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text));
+		Toast.makeText(getActivity(), "Copied " + label.toLowerCase(), Toast.LENGTH_SHORT).show();
 	}
 
 	/**

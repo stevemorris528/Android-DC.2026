@@ -353,7 +353,7 @@ public class MainActivity extends FragmentActivity implements
 
 		// Always show Saved File Lists tab
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_SAVED_FILELISTS,
-				new SavedFileListsFragment(), "Saved", false);
+				new SavedFileListsFragment(), "File Lists", false);
 
 		// My Share: browse the shared download folder and delete files / folders (the app updates its queue and share)
 		tab_page_adapter.add_tab(TabPagerAdapter.TAB_MYSHARE,
