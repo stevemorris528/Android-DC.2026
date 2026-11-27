@@ -61,6 +61,6 @@ See `CHANGELOG.md` for what changed in each version.
 ### Credits
 stevemorris528 (PuffingMad) 2026
 
-Based on the original AnDCpp project by Anish Shankar, Lakshminarayanan Srinivasan, and Madhavan Malolan.
+Based on the original AnDCpp project.
 
 - **License:** GNU GPL v3.0 — [https://github.com/stevemorris528/Android-DC.2026/blob/master/andcpp-gradle/LICENSE](https://github.com/stevemorris528/Android-DC.2026/blob/master/LICENSE)
