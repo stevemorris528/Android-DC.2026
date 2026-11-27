@@ -465,7 +465,17 @@ public class HubListFragment extends Fragment {
                     }
                 }
             }
+            // Alphabetical by hub address (without "nmdcs://" etc.), so a hub keeps its place whether it is
+            // connected or not (the hub name shown for connected hubs isn't known while disconnected).
+            java.util.Collections.sort(newEntries, (a, b) -> sortKey(a).compareTo(sortKey(b)));
             this.entries = newEntries;
+        }
+
+        private String sortKey(HubEntry e) {
+            String id = e.hubIp != null ? e.hubIp : "";
+            int scheme = id.indexOf("://");
+            if (scheme >= 0) id = id.substring(scheme + 3);
+            return id.toLowerCase(java.util.Locale.ROOT);
         }
 
         @Override
