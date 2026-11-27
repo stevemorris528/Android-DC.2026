@@ -139,6 +139,14 @@ public class HubListFragment extends Fragment {
         return view;
     }
 
+    /** Opens the hub's chat (the row's "Open" button). */
+    private void openHub(HubEntry entry) {
+        HubAddress openAddr = HubAddress.tryParse(entry.hubIp);
+        String targetIp = entry.session != null ? entry.session.hubIp
+                : (openAddr != null ? openAddr.host : entry.hubIp);
+        mainActivity.openChatForHub(targetIp);
+    }
+
     private void showHubOptionsDialog(HubEntry entry) {
         if (entry == null) return;
         SharedPreferences prefs = mainActivity.getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE);
@@ -149,12 +157,7 @@ public class HubListFragment extends Fragment {
                 (entry.session.status == DCPPService.DCClientStatus.CONNECTING || entry.session.status == DCPPService.DCClientStatus.RECONNECTING));
 
         List<String> optionsList = new ArrayList<>();
-        if (isConnected) {
-            optionsList.add("Open Hub");
-            optionsList.add("Reconnect");
-            optionsList.add("Delete Hub");
-        } else if (isConnectingOrReconnecting) {
-            optionsList.add("Open Hub Chat");
+        if (isConnected || isConnectingOrReconnecting) {
             optionsList.add("Reconnect");
             optionsList.add("Delete Hub");
         } else {
@@ -180,13 +183,6 @@ public class HubListFragment extends Fragment {
                 .setItems(options, (dialog, which) -> {
                     String selected = options[which];
                     switch (selected) {
-                        case "Open Hub":
-                        case "Open Hub Chat":
-                            HubAddress openAddr = HubAddress.tryParse(entry.hubIp);
-                            String targetIp = entry.session != null ? entry.session.hubIp
-                                    : (openAddr != null ? openAddr.host : entry.hubIp);
-                            mainActivity.openChatForHub(targetIp);
-                            break;
                         case "Reconnect":
                             if (mainActivity.mService != null && entry.session != null
                                     && mainActivity.mService.reconnectHub(entry.session.address().sessionKey())) {
@@ -516,6 +512,16 @@ public class HubListFragment extends Fragment {
                     Toast.makeText(mainActivity, on ? "Will connect automatically at start" : "Won't connect automatically",
                             Toast.LENGTH_SHORT).show();
                 });
+            }
+
+            // Open the hub's chat straight from the row while it is connected or connecting.
+            android.widget.Button open = (android.widget.Button) convertView.findViewById(R.id.hub_open);
+            if (open != null) {
+                boolean live = entry.session != null && (entry.session.status == DCPPService.DCClientStatus.CONNECTED
+                        || entry.session.status == DCPPService.DCClientStatus.CONNECTING
+                        || entry.session.status == DCPPService.DCClientStatus.RECONNECTING);
+                open.setVisibility(live ? View.VISIBLE : View.GONE);
+                open.setOnClickListener(live ? v -> openHub(entry) : null);
             }
 
             String favIndicator = entry.isFavorite ? " ✓" : "";

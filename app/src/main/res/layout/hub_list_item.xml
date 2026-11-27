@@ -40,16 +40,47 @@
 
     </LinearLayout>
 
-    <!-- Connect this saved hub automatically when the app starts. Not focusable: the row stays tappable. -->
-    <CheckBox
-        android:id="@+id/hub_autoconnect"
+    <!-- Right side: Auto-connect on top, Open underneath. -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
         android:layout_marginLeft="8dp"
-        android:focusable="false"
-        android:text="Auto-\nconnect"
-        android:textSize="11sp"
-        android:textColor="?attr/appTextColorSecondary" />
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <!-- Connect this saved hub automatically when the app starts. Not focusable: the row stays tappable. -->
+        <CheckBox
+            android:id="@+id/hub_autoconnect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:focusable="false"
+            android:text="Auto-\nconnect"
+            android:textSize="11sp"
+            android:textColor="?attr/appTextColorSecondary" />
+
+        <!-- Opens the hub's chat directly; shown while the hub is connected or connecting. -->
+        <Button
+            android:id="@+id/hub_open"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginTop="4dp"
+            android:minWidth="64dp"
+            android:minHeight="0dp"
+            android:paddingLeft="16dp"
+            android:paddingRight="16dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:background="@drawable/hub_open_button"
+            android:stateListAnimator="@null"
+            android:focusable="false"
+            android:text="Open"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+    </LinearLayout>
 
 </LinearLayout>
