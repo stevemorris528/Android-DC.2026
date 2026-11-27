@@ -47,6 +47,15 @@ saved hubs, survive a reinstall through the settings backup in `Download/Android
 - Preserved and extended the original AnDCpp networking library.
 - ADC, ADCS and NMDCS hubs (see above).
 
+- Add Verlihub hub admin controls
+
+On Verlihub hubs, a "Hub admin" button opens a full-screen admin panel:
+- Live hub stats: CPU, RAM, users, share, load, uptime
+- Hub control: reload, restart, stop, hublist, broadcast, topic
+- User moderation: kick, ban, temp ban, gag, get IP, register, change class
+- Hub settings: name, description, owner, max users, min share
+- Your rank is detected from the hub; actions above your rank are shown locked with the rank they need
+
 See `CHANGELOG.md` for what changed in each version.
 
 ### Credits
