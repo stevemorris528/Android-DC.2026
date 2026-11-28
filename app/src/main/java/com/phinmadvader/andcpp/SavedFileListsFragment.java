@@ -25,7 +25,22 @@ public class SavedFileListsFragment extends Fragment {
         View root = inflater.inflate(R.layout.file_list, container, false);
         listView = (ListView) root.findViewById(R.id.listView);
         savedNicks = new ArrayList<>();
-        adapter = new ArrayAdapter<>(getActivity(), android.R.layout.simple_list_item_1, savedNicks);
+        // Rows drawn like the file list (row_element): file icon, user name in bold, the list's size underneath.
+        adapter = new ArrayAdapter<String>(getActivity(), R.layout.row_element, savedNicks) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View row = convertView != null ? convertView
+                        : LayoutInflater.from(getContext()).inflate(R.layout.row_element, parent, false);
+                String nick = savedNicks.get(position);
+                ((android.widget.ImageView) row.findViewById(R.id.icon)).setImageResource(R.drawable.txt);
+                ((android.widget.TextView) row.findViewById(R.id.text11)).setText(nick);
+                java.io.File f = mainActivity == null ? null
+                        : new java.io.File(new java.io.File(Settings.getDCDownloadsDirectory(mainActivity), "FileLists"), nick + ".xml");
+                DCPPService.FileSize fs = new DCPPService.FileSize((double) (f != null ? f.length() : 0));
+                ((android.widget.TextView) row.findViewById(R.id.text12)).setText(String.format("%.4g", fs.fileSize) + " " + fs.unit);
+                return row;
+            }
+        };
         listView.setAdapter(adapter);
 
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -96,7 +111,7 @@ public class SavedFileListsFragment extends Fragment {
                     }
                 }
             }
-            java.util.Collections.sort(savedNicks);
+            java.util.Collections.sort(savedNicks, String.CASE_INSENSITIVE_ORDER); // A-Z, upper/lower case alike
 
             if (adapter != null) {
                 adapter.notifyDataSetChanged();
