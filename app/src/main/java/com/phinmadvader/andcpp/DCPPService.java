@@ -2977,6 +2977,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			HubSession session = getSession(hubKey);
 			if (session != null) {
 				dcMessage.hubname_s = session.hubIp;
+				// Verlihub admin panel: replies to its commands are kept out of the chat (they show in its console).
+				if (verlihubAdmin.onMainChat(session.hubIp, dcMessage.msg_s)) return;
 				// Verlihub add-on: its own quiet requests (+myinfo, hub stats) are answered here, not in the chat.
 				if (verlihub.onMainChat(session.hubIp, dcMessage.msg_s)) return;
 				if (session.board_message_handler != null)
@@ -2996,6 +2998,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 					+ " text=" + dcMessage.pm_text + (session == null ? " (no session: dropped)" : ""));
 			if (session != null) {
 				dcMessage.hubname_s = session.hubIp;
+				// Verlihub admin panel: a hub bot's PM answering one of its commands stays out of the PM tabs.
+				if (verlihubAdmin.onPrivateMessage(session.hubIp, dcMessage.pm_from, dcMessage.pm_text)) return;
 				handleIncomingPrivateMessage(session, dcMessage);
 			}
 		}
@@ -3010,6 +3014,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			// Exact lookup: getSession() falls back to another hub when this one was removed (Delete Hub,
 			// or replaced by its secure/plain twin), and that other hub would then be "reconnected".
 			HubSession session = sessions.get(hubKey);
+			if (session != null) verlihubAdmin.onDisconnected(session.hubIp); // admin panel: drop waiting commands
 			if (session != null && session.status != DCClientStatus.DISCONNECTED) {
 				handleConnectionFailure(hubKey, session, dcMessage.quit_s);
 			}
@@ -3102,7 +3107,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			// libjdcpp parse() might have set msg_s if it didn't fully parse UserIP
 			String data = msg.msg_s != null ? msg.msg_s : "";
 			if (data.isEmpty()) return;
-			
+			HubSession ipSession = getSession(hubKey);
+			if (ipSession != null) verlihubAdmin.onUserIP(ipSession.hubIp, data); // Verlihub admin panel: user IPs
+
 			// $UserIP is a "$$"-separated list ("nick ip$$nick2 ip2$$"); many hubs end even a single
 			// entry with "$$", which used to end up in our IP ("1.2.3.4$$").
 			String detectedIp = null;
@@ -4932,6 +4939,7 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			}
 		}
 		if (session != null) {
+			verlihubAdmin.onDisconnected(session.hubIp); // admin panel: drop waiting commands
 			session.shutdown();
 		}
 		manageWakeLock();
@@ -5063,6 +5071,13 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 
 	public VerlihubAddon getVerlihub() {
 		return verlihub;
+	}
+
+	/** Verlihub admin panel (HubAdminActivity): command queue and console over the hub connection. */
+	final VerlihubAdmin verlihubAdmin = new VerlihubAdmin(this);
+
+	public VerlihubAdmin getVerlihubAdmin() {
+		return verlihubAdmin;
 	}
 
 	private final java.util.concurrent.ExecutorService userCommandExecutor =
