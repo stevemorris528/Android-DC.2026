@@ -649,22 +649,26 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				return;
 			}
 
-			// Pre-flight 1: is the peer online on any connected hub?
-			boolean userFound = false;
-			DCUser peerUser = null;
-			for (HubSession s : getActiveSessions()) {
-				if (s.client != null) {
-					for (DCUser u : s.client.get_nick_list()) {
-						if (u.nick != null && u.nick.equalsIgnoreCase(target_nick)) {
-							userFound = true;
-							peerUser = u;
-							break;
-						}
+			// Pre-flight 1: is the peer online? Our $ConnectToMe / $RevConnectToMe only reaches the peer through a
+			// hub it is on (a hub drops a request for a nick it doesn't have, without a reply), so look on our own
+			// hub first, then on the other connected NMDC hubs, and send the request through the hub we found it on.
+			DCUser peerUser = findNick(session, target_nick);
+			if (peerUser == null) {
+				for (HubSession s : getActiveSessions()) {
+					if (s == session || s.client == null || s.prefs == null
+							|| s.status != DCClientStatus.CONNECTED || s.protocol.isAdc()) continue;
+					DCUser u = findNick(s, target_nick);
+					if (u != null) {
+						Log.i("andcpp", "[DLTRACE] " + file_name + ": " + target_nick + " is not on " + session.hubIp
+								+ "; sending the request through " + s.hubIp);
+						peerUser = u;
+						session = s;
+						this.hubIp = s.hubIp;
+						break;
 					}
 				}
-				if (userFound) break;
 			}
-			if (!userFound) {
+			if (peerUser == null) {
 				markWaiting("user offline");
 				return;
 			}
@@ -687,9 +691,9 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 			my_user.ip = advertiseIp != null ? advertiseIp : "";
 			his_user.nick = target_nick;
 
-			if (!preferRevConnect && peersPreferRevConnect.contains(target_nick.toLowerCase(Locale.ROOT))) {
-				preferRevConnect = true; // another download already found this peer can't connect to us
-			}
+			// Per peer, shared by all its downloads: set when the peer didn't connect to us after our $ConnectToMe,
+			// cleared when it didn't answer our $RevConnectToMe either (or on a network change).
+			preferRevConnect = peersPreferRevConnect.contains(target_nick.toLowerCase(Locale.ROOT));
 			if (canAcceptIncoming && preferRevConnect && peerIsActive) {
 				// Our $ConnectToMe went unanswered before: let the (active) peer accept the connection instead.
 				Log.d("andcpp", "[DLTRACE] " + file_name + ": peer didn't connect to us last time; using RevConnectToMe");
@@ -706,6 +710,15 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				markWaiting(weAreActive ? "cannot accept incoming, peer passive" : "both passive");
 				return;
 			}
+		}
+
+		/** The user with this nick (case-insensitive) on that NMDC session's user list, or null. */
+		private DCUser findNick(HubSession s, String nick) {
+			if (s == null || s.client == null || nick == null) return null;
+			for (DCUser u : s.client.get_nick_list()) {
+				if (u != null && u.nick != null && u.nick.equalsIgnoreCase(nick)) return u;
+			}
+			return null;
 		}
 
 		public void start_download() throws InterruptedException {
@@ -763,9 +776,8 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 				return;
 			}
 
-			if (session == null) {
-				session = downloadSession(hubIp);
-			}
+			// initialize_download_connection() may have moved this download to the hub the peer is on.
+			session = downloadSession(hubIp);
 			if (session == null || session.client == null) {
 				return;
 			}
@@ -1304,7 +1316,17 @@ public class DCPPService extends Service implements PeerConnectionHandler.Upload
 									// Asked the peer to connect to us and it never arrived (QUEUED = nobody came):
 									// next time let it accept the connection instead (same VPN server, firewall, ...).
 									boolean wasConnectToMe = work.activeRc != null && st == DCConstants.DownloadStatus.QUEUED;
+									boolean wasPreferredRevConnect = work.myrc != null && work.preferRevConnect
+											&& st == DCConstants.DownloadStatus.QUEUED;
 									work.abandonCurrentAttempt();
+									if (wasPreferredRevConnect) {
+										// The peer didn't answer our $RevConnectToMe either: go back to $ConnectToMe for this
+										// peer next time, instead of only ever sending $RevConnectToMe for the rest of the session.
+										work.preferRevConnect = false;
+										peersPreferRevConnect.remove(work.target_nick.toLowerCase(Locale.ROOT));
+										Log.i("andcpp", "[DLTRACE] " + work.file_name + " (" + work.target_nick
+												+ "): no answer to RevConnectToMe either; next attempt uses ConnectToMe again");
+									}
 									if (wasConnectToMe && !work.preferRevConnect) {
 										work.preferRevConnect = true;
 										// Remember it for this peer: its other queued files skip the wait.
